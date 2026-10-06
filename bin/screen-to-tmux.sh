@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.3.0
+# screen-to-tmux-translator 0.3.1
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
@@ -24,7 +24,7 @@
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.3.0
+SCREEN2TMUX_VERSION=0.3.1
 
 _s2t_shell_quote()
 {
@@ -83,11 +83,7 @@ _s2t_run()
 
 _s2t_tmux()
 {
-    if [ "${_s2t_utf8:-0}" -eq 1 ]; then
-        _s2t_run tmux -u "$@"
-    else
-        _s2t_run tmux "$@"
-    fi
+    _s2t_run tmux "$@"
 }
 
 _s2t_invalid()
@@ -132,6 +128,62 @@ _s2t_external()
 _s2t_note()
 {
     printf '%s\n' "screen2tmux: note: $*" >&2
+}
+
+_s2t_uncertain_arg()
+{
+    _s2t_arg_desc=$1
+    _s2t_reason=$2
+    _s2t_suggestion=${3-}
+    printf '%s\n' "screen2tmux: WARNING: uncertain translation of argument $_s2t_arg_desc: $_s2t_reason" >&2
+    if [ -n "$_s2t_suggestion" ]; then
+        printf '%s\n' "screen2tmux: suggestion: $_s2t_suggestion" >&2
+    fi
+    return 3
+}
+
+_s2t_tmux_format_literal()
+{
+    # tmux format strings use ## for a literal #.  A number of tmux commands
+    # format-expand names before storing them (new-session -s/-n, new-window
+    # -n, rename-session, rename-window).  Escape only that documented format
+    # metacharacter; do not invent a more general quoting language.
+    _s2t_format_literal=$(printf '%s' "$1" | sed 's/#/##/g')
+}
+
+_s2t_selector_is_risky()
+{
+    # Generic tmux target strings reserve separators, IDs, braces and glob
+    # metacharacters that Screen selectors do not interpret the same way.
+    case "$1" in
+        ''|*[!A-Za-z0-9_-]*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_s2t_session_selector_is_risky()
+{
+    # Screen FindSocket() has additional session matching rules: a selector
+    # beginning with digits may match a socket PID prefix, PID prefixes are
+    # otherwise skipped, and the tty prefix is optional. tmux session targets
+    # do not have those rules. Stop instead of guessing these arguments.
+    case "$1" in
+        ''|[0-9]*|tty*|*[!A-Za-z0-9_-]*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+_s2t_guard_target_arguments()
+{
+    if [ -n "${_s2t_session:-}" ] && _s2t_session_selector_is_risky "$_s2t_session"; then
+        _s2t_uncertain_arg "Screen session selector '$_s2t_session'" "Screen socket matching may interpret leading digits as a PID, may strip PID prefixes, treats a tty prefix specially, and otherwise uses Screen-specific prefix rules; tmux target syntax has different ID, separator, and pattern rules." "Choose the intended tmux session explicitly and rewrite the target; this translator will not guess how that Screen selector should be interpreted."
+        return $?
+    fi
+    if [ -n "${_s2t_window:-}" ] && _s2t_selector_is_risky "$_s2t_window"; then
+        _s2t_uncertain_arg "Screen window selector '$_s2t_window'" "tmux window/pane targets have a different selector grammar from Screen window names and numbers." "Choose the intended tmux window explicitly and rewrite the target; this translator will not guess how that Screen selector should be interpreted."
+        return $?
+    fi
+    return 0
 }
 
 # Backward-compatible internal name: callers not yet classified more narrowly
@@ -182,6 +234,7 @@ _s2t_query()
     _s2t_cmd=${1-}
     [ -n "$_s2t_cmd" ] || { _s2t_invalid "-Q requires a query command"; return $?; }
     shift
+    _s2t_guard_target_arguments || return $?
     _s2t_make_target
     case "$_s2t_cmd" in
         windows)
@@ -196,7 +249,17 @@ _s2t_query()
         lastmsg)
             _s2t_approx "Screen -Q lastmsg returns Screen's single most recent message; tmux show-messages returns a message history with different formatting and scope." "Use tmux show-messages and select the desired entry in a script if approximate behavior is sufficient." ;;
         echo)
-            _s2t_tmux display-message -p "$*" ;;
+            if [ "$#" -eq 0 ]; then
+                _s2t_invalid "echo requires a string"
+            elif [ "$#" -eq 1 ]; then
+                _s2t_tmux display-message -pl "$1"
+            elif [ "$#" -eq 2 ] && [ "$1" = -n ]; then
+                _s2t_tmux display-message -pl "$2"
+            elif [ "$#" -eq 2 ] && [ "$1" = -p ]; then
+                _s2t_unsupported "Screen echo -p expands Screen's own % status-format language; tmux formats use a different #{} language." "Translate the Screen format deliberately instead of passing it to tmux display-message."
+            else
+                _s2t_uncertain_arg "echo arguments '$*'" "Screen accepts a narrow one/two-argument form and extra argument interpretation is not safely representable as a tmux display-message invocation." "Use Screen's documented 'echo [-n] [-p] string' form and translate the intended formatting explicitly."
+            fi ;;
         select)
             if [ "$#" -gt 0 ]; then
                 _s2t_sel=$1
@@ -218,6 +281,7 @@ _s2t_xcommand()
     _s2t_cmd=${1-}
     [ -n "$_s2t_cmd" ] || { _s2t_invalid "-X requires a Screen command"; return $?; }
     shift
+    _s2t_guard_target_arguments || return $?
     _s2t_make_target
     case "$_s2t_cmd" in
         screen)
@@ -239,13 +303,18 @@ _s2t_xcommand()
                 _s2t_cannot "Screen can choose scrollback size while creating this window; tmux history-limit is an option whose creation-time semantics are server/session scoped." "Set 'history-limit $_s2t_nw_hist' in tmux.conf before creating panes, then use tmux new-window."
                 return $?
             fi
+            if [ -n "$_s2t_nw_index" ]; then
+                _s2t_uncertain_arg "Screen window start index '$_s2t_nw_index'" "Screen treats this number as StartAt and chooses the first free window number at or above it; tmux -t :N addresses the exact index N and fails or changes behavior when N is occupied." "Choose the desired tmux index after inspecting current windows; this translator will not emulate Screen's free-slot search."
+                return $?
+            fi
             if [ -n "$_s2t_session" ] && [ -n "$_s2t_nw_index" ]; then _s2t_nw_target=$_s2t_session:$_s2t_nw_index
             elif [ -n "$_s2t_session" ]; then _s2t_nw_target=$_s2t_session
             elif [ -n "$_s2t_nw_index" ]; then _s2t_nw_target=:$_s2t_nw_index
             else _s2t_nw_target=; fi
-            if [ -n "$_s2t_nw_target" ] && [ -n "$_s2t_nw_name" ]; then _s2t_tmux new-window -t "$_s2t_nw_target" -n "$_s2t_nw_name" "$@"
+            if [ -n "$_s2t_nw_name" ]; then _s2t_tmux_format_literal "$_s2t_nw_name"; _s2t_nw_name_tmux=$_s2t_format_literal; else _s2t_nw_name_tmux=; fi
+            if [ -n "$_s2t_nw_target" ] && [ -n "$_s2t_nw_name_tmux" ]; then _s2t_tmux new-window -t "$_s2t_nw_target" -n "$_s2t_nw_name_tmux" "$@"
             elif [ -n "$_s2t_nw_target" ]; then _s2t_tmux new-window -t "$_s2t_nw_target" "$@"
-            elif [ -n "$_s2t_nw_name" ]; then _s2t_tmux new-window -n "$_s2t_nw_name" "$@"
+            elif [ -n "$_s2t_nw_name_tmux" ]; then _s2t_tmux new-window -n "$_s2t_nw_name_tmux" "$@"
             else _s2t_tmux new-window "$@"; fi ;;
         select)
             if [ "$#" -gt 0 ]; then _s2t_sel=$1; else _s2t_sel=${_s2t_window:-}; fi
@@ -253,7 +322,8 @@ _s2t_xcommand()
             if [ -n "$_s2t_session" ]; then _s2t_tmux select-window -t "$_s2t_session:$_s2t_sel"; else _s2t_tmux select-window -t ":$_s2t_sel"; fi ;;
         title)
             [ "$#" -gt 0 ] || { _s2t_invalid "title requires a title in shell translation"; return $?; }
-            if [ -n "$_s2t_target" ]; then _s2t_tmux rename-window -t "$_s2t_target" "$1"; else _s2t_tmux rename-window "$1"; fi ;;
+            _s2t_tmux_format_literal "$1"
+            if [ -n "$_s2t_target" ]; then _s2t_tmux rename-window -t "$_s2t_target" "$_s2t_format_literal"; else _s2t_tmux rename-window "$_s2t_format_literal"; fi ;;
         number)
             [ "$#" -gt 0 ] || { if [ -n "$_s2t_target" ]; then _s2t_tmux display-message -p -t "$_s2t_target" '#I'; else _s2t_tmux display-message -p '#I'; fi; return $?; }
             _s2t_dest=$1
@@ -316,7 +386,8 @@ _s2t_xcommand()
         lockscreen) _s2t_approx "Screen lockscreen locks the current Screen display; translating an external -X invocation to tmux lock-session would broaden the scope to every client on that session." "Closest client-scoped substitute is tmux lock-client when a specific tmux client context is available." ;;
         sessionname)
             [ "$#" -gt 0 ] || { _s2t_invalid "sessionname requires a new name in shell translation"; return $?; }
-            if [ -n "$_s2t_session" ]; then _s2t_tmux rename-session -t "$_s2t_session" "$1"; else _s2t_tmux rename-session "$1"; fi ;;
+            _s2t_tmux_format_literal "$1"
+            if [ -n "$_s2t_session" ]; then _s2t_tmux rename-session -t "$_s2t_session" "$_s2t_format_literal"; else _s2t_tmux rename-session "$_s2t_format_literal"; fi ;;
         hardcopy)
             _s2t_hist=0
             if [ "${1-}" = "-h" ]; then _s2t_hist=1; shift; fi
@@ -438,7 +509,7 @@ _s2t_xcommand()
         help) _s2t_approx "Screen help renders Screen's current command-class bindings; tmux list-keys renders tmux's server-wide key tables with different command names and formatting." "Closest substitute: tmux list-keys, optionally with -T TABLE." ;;
         info) _s2t_approx "Screen info emits a Screen-specific window/display status summary; tmux has no byte-compatible equivalent." "Use tmux display-message -p with explicit format variables for the fields your script needs." ;;
         lastmsg) _s2t_approx "Screen lastmsg reports one Screen message; tmux show-messages reports a differently formatted message history." "Use tmux show-messages and select the desired message in a script." ;;
-        version) _s2t_tmux -V ;;
+        version) _s2t_unsupported "Screen's internal version command reports Screen's version/status text; tmux -V reports tmux and is not an equivalent command result." "Use the native Screen command when Screen version output is required, or tmux -V explicitly for tmux's version." ;;
         license) _s2t_cannot "Screen has an interactive license command; tmux does not expose its license text as a runtime command." "Read tmux's COPYING file from the source/package." ;;
         layout)
             case "${1-}" in
@@ -476,7 +547,7 @@ screen2tmux()
     _s2t_screenrc=
     _s2t_Aflag=0
     _s2t_quiet=0
-    _s2t_utf8=0
+    _s2t_Uflag=0
     _s2t_mode=
     _s2t_list=0
     _s2t_wipe=0
@@ -498,8 +569,8 @@ screen2tmux()
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --) shift; break ;;
-            --help) _s2t_tmux -h; return $? ;;
-            --version) _s2t_tmux -V; return $? ;;
+            --help) _s2t_unsupported "Screen --help describes Screen's CLI and command model; tmux -h describes a different program and is not output-compatible." "Run the native Screen help when Screen documentation is required, or run tmux -h explicitly for tmux help."; return $? ;;
+            --version) _s2t_unsupported "Screen --version reports the GNU Screen version; tmux -V reports a different program and cannot preserve that result." "Run the native Screen binary for Screen's version, or tmux -V explicitly for tmux's version."; return $? ;;
             -list) _s2t_list=1; shift; if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then _s2t_session=$1; shift; fi; continue ;;
             -ls) _s2t_list=1; shift; if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then _s2t_session=$1; shift; fi; continue ;;
             -wipe) _s2t_list=1; _s2t_wipe=1; shift; if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then _s2t_session=$1; shift; fi; continue ;;
@@ -548,8 +619,8 @@ screen2tmux()
                         s) [ -z "$_s2t_rest" ] || { _s2t_invalid "-s requires its argument as the next word"; return $?; }; [ "$#" -gt 0 ] || { _s2t_invalid "-s requires a shell"; return $?; }; _s2t_shell=$1; shift; _s2t_opt= ;;
                         S) [ -z "$_s2t_rest" ] || { _s2t_invalid "-S requires its argument as the next word"; return $?; }; [ "$#" -gt 0 ] || { _s2t_invalid "-S requires a session name"; return $?; }; _s2t_session=$1; shift; _s2t_opt= ;;
                         X) _s2t_mode=X; _s2t_opt=$_s2t_rest ;;
-                        v) _s2t_tmux -V; return $? ;;
-                        U) _s2t_utf8=1; _s2t_opt=$_s2t_rest ;;
+                        v) _s2t_unsupported "Screen -v reports the GNU Screen version; tmux -V reports a different program and cannot preserve that result." "Run the native Screen binary for Screen's version, or tmux -V explicitly for tmux's version."; return $? ;;
+                        U) _s2t_Uflag=1; _s2t_opt=$_s2t_rest ;;
                         w)
                             if [ "$_s2t_rest" = ipe ]; then _s2t_list=1; _s2t_wipe=1; _s2t_opt=; else _s2t_invalid "unknown Screen option '-w$_s2t_rest'"; return $?; fi ;;
                         *) _s2t_invalid "unknown Screen option '-$_s2t_ch'"; return $? ;;
@@ -598,6 +669,10 @@ screen2tmux()
         return $?
     fi
 
+    if { [ "$_s2t_attach" -eq 1 ] || { [ "$_s2t_detach" -gt 0 ] && [ "$_s2t_mflag" -eq 0 ]; }; } && [ -n "$_s2t_session" ]; then
+        _s2t_guard_target_arguments || return $?
+    fi
+
     # Plain -d/-D means detach an existing Screen session.  -d -m is different:
     # it creates a new detached Screen session, so it is handled later.
     if [ "$_s2t_detach" -gt 0 ] && [ "$_s2t_attach" -eq 0 ] && [ "$_s2t_mflag" -eq 0 ]; then
@@ -610,6 +685,14 @@ screen2tmux()
     fi
 
     if [ "$_s2t_attach" -eq 1 ]; then
+        if [ "$_s2t_Aflag" -eq 1 ]; then
+            _s2t_approx "Screen -A explicitly adapts all Screen window sizes to the current terminal when attaching; tmux uses its own client/window-size policy and has no equivalent adapt-all-windows flag." "Use tmux's normal window-size policy or configure window-size explicitly. No automatic translation is executed for the -A attach semantics."
+            return $?
+        fi
+        if [ "$_s2t_Uflag" -eq 1 ]; then
+            _s2t_approx "Screen -U tells the attached Screen display to use UTF-8 and also changes the default encoding for newly created Screen windows; tmux -u only forces the client UTF-8 assumption." "If you only need tmux to assume a UTF-8 client, invoke tmux -u explicitly. The full Screen -U attach semantics are not automatically translated."
+            return $?
+        fi
         _s2t_attach_target=$_s2t_session
         if [ -n "$_s2t_window" ]; then
             if [ -z "$_s2t_session" ]; then
@@ -649,6 +732,11 @@ screen2tmux()
 
     if [ "$_s2t_detach" -eq 2 ] && [ "$_s2t_mflag" -eq 1 ]; then
         _s2t_unsupported "Screen -D -m has process/daemonization semantics that do not correspond to creating one tmux session; tmux -D instead keeps the tmux server in the foreground." "For an ordinary detached session use tmux new-session -d; for a foreground tmux server use tmux -D."
+        return $?
+    fi
+
+    if [ "$_s2t_Uflag" -eq 1 ]; then
+        _s2t_approx "Screen -U has two semantics: it declares the Screen display UTF-8 capable and sets UTF-8 as the default encoding for newly created Screen windows. tmux -u does not implement Screen's per-window encoding policy." "If you only need tmux to assume a UTF-8 client, invoke tmux -u explicitly. No automatic translation is executed for Screen -U."
         return $?
     fi
 
@@ -727,15 +815,20 @@ screen2tmux()
     # detached.  Only -d -m creates a detached new session.
     if [ "$_s2t_detach" -eq 1 ] && [ "$_s2t_mflag" -eq 1 ]; then _s2t_new_detached=1; else _s2t_new_detached=0; fi
 
-    if [ "$_s2t_Aflag" -eq 1 ]; then
-        _s2t_note "Screen -A explicitly adapts windows to the attaching display; tmux performs client/window sizing as part of its normal layout model, so no extra tmux flag is emitted."
-    fi
-
     # Automatic Screen logging is only approximately reproducible with tmux
     # pipe-pane and hooks, so never silently drop it or execute it as EXACT.
     if [ "$_s2t_log" -eq 1 ]; then
         _s2t_log_path=${_s2t_logfile:-tmux.log}
         _s2t_approx "Screen -L enables Screen's built-in logging policy; tmux has no matching startup logging flag and pipe-pane only covers selected panes unless additional hooks are installed." "Closest initial-pane substitute: create the session, then run tmux pipe-pane -o 'cat >>$_s2t_log_path'; add after-new-window/after-split-window hooks if automatic logging of future panes is required."
+        return $?
+    fi
+
+    # Screen -m deliberately forces a new Screen session even when already
+    # inside Screen. tmux deliberately blocks an attached nested new-session
+    # by default when $TMUX is set. Do not hide that safeguard or unset TMUX
+    # automatically; require an explicit operator decision.
+    if [ -n "${TMUX:-}" ] && [ "$_s2t_mflag" -eq 1 ] && [ "$_s2t_new_detached" -eq 0 ]; then
+        _s2t_approx "Screen -m forces a new attached Screen session even from inside Screen, but tmux normally rejects an attached nested new-session while TMUX is set." "If nesting is intentional, explicitly unset TMUX for the new tmux invocation; otherwise omit -m to create a window in the current tmux session."
         return $?
     fi
 
@@ -750,7 +843,8 @@ screen2tmux()
             return $?
         fi
         if [ -n "$_s2t_title" ]; then
-            _s2t_tmux new-window -n "$_s2t_title" "$@"
+            _s2t_tmux_format_literal "$_s2t_title"
+            _s2t_tmux new-window -n "$_s2t_format_literal" "$@"
         else
             _s2t_tmux new-window "$@"
         fi
@@ -768,16 +862,19 @@ screen2tmux()
     fi
 
     # Normal session creation with no semantic compromises remaining under the
-    # selected session-name policy.
-    if [ -n "$_s2t_session" ] && [ -n "$_s2t_title" ]; then
-        if [ "$_s2t_new_detached" -eq 1 ]; then _s2t_tmux new-session -d -s "$_s2t_session" -n "$_s2t_title" "$@"
-        else _s2t_tmux new-session -s "$_s2t_session" -n "$_s2t_title" "$@"; fi
-    elif [ -n "$_s2t_session" ]; then
-        if [ "$_s2t_new_detached" -eq 1 ]; then _s2t_tmux new-session -d -s "$_s2t_session" "$@"
-        else _s2t_tmux new-session -s "$_s2t_session" "$@"; fi
-    elif [ -n "$_s2t_title" ]; then
-        if [ "$_s2t_new_detached" -eq 1 ]; then _s2t_tmux new-session -d -n "$_s2t_title" "$@"
-        else _s2t_tmux new-session -n "$_s2t_title" "$@"; fi
+    # selected session-name policy. tmux format-expands -s/-n, so preserve
+    # literal Screen # characters with tmux's documented ## escape.
+    if [ -n "$_s2t_session" ]; then _s2t_tmux_format_literal "$_s2t_session"; _s2t_session_tmux=$_s2t_format_literal; else _s2t_session_tmux=; fi
+    if [ -n "$_s2t_title" ]; then _s2t_tmux_format_literal "$_s2t_title"; _s2t_title_tmux=$_s2t_format_literal; else _s2t_title_tmux=; fi
+    if [ -n "$_s2t_session_tmux" ] && [ -n "$_s2t_title_tmux" ]; then
+        if [ "$_s2t_new_detached" -eq 1 ]; then _s2t_tmux new-session -d -s "$_s2t_session_tmux" -n "$_s2t_title_tmux" "$@"
+        else _s2t_tmux new-session -s "$_s2t_session_tmux" -n "$_s2t_title_tmux" "$@"; fi
+    elif [ -n "$_s2t_session_tmux" ]; then
+        if [ "$_s2t_new_detached" -eq 1 ]; then _s2t_tmux new-session -d -s "$_s2t_session_tmux" "$@"
+        else _s2t_tmux new-session -s "$_s2t_session_tmux" "$@"; fi
+    elif [ -n "$_s2t_title_tmux" ]; then
+        if [ "$_s2t_new_detached" -eq 1 ]; then _s2t_tmux new-session -d -n "$_s2t_title_tmux" "$@"
+        else _s2t_tmux new-session -n "$_s2t_title_tmux" "$@"; fi
     else
         if [ "$_s2t_new_detached" -eq 1 ]; then _s2t_tmux new-session -d "$@"
         else _s2t_tmux new-session "$@"; fi

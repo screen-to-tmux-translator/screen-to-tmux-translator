@@ -115,6 +115,40 @@ else
     fail "could not construct tmux buffer-scope fixture"
 fi
 
+# tmux format strings use ## for a literal #. Name arguments such as
+# new-session -s are format-expanded, so the translator must escape literal
+# Screen # characters before passing them to tmux.
+if tmux_test new-session -d -s 'fmt-##{session_name}' >/dev/null 2>&1; then
+    if tmux_test has-session -t '=fmt-#{session_name}' >/dev/null 2>&1; then
+        pass "tmux ## preserves a literal # in a format-expanded session name"
+    else
+        fail "tmux format-escaped session name was not preserved literally"
+    fi
+else
+    fail "could not create format-escaped session-name fixture"
+fi
+
+# display-message -l must bypass tmux format expansion for Screen's literal
+# echo command.
+if lit=$(tmux_test display-message -p -l '#{session_name}' 2>/dev/null) && [ "$lit" = '#{session_name}' ]; then
+    pass "display-message -l preserves literal Screen echo text"
+else
+    fail "display-message -l did not preserve literal format text: ${lit-}"
+fi
+
+# Screen 'screen N' searches for the first free slot at or above N. tmux
+# new-window -t :N addresses N exactly and rejects an occupied slot.
+if tmux_test new-session -d -s startatcase >/dev/null 2>&1 && \
+   tmux_test new-window -d -t startatcase:5 -n occupied >/dev/null 2>&1; then
+    if tmux_test new-window -d -t startatcase:5 -n second >/dev/null 2>&1; then
+        fail "tmux unexpectedly treated occupied -t :5 as Screen StartAt semantics"
+    else
+        pass "tmux exact occupied index differs from Screen StartAt search"
+    fi
+else
+    fail "could not construct StartAt comparison fixture"
+fi
+
 # alternate-screen is a window/pane option in tmux, unlike Screen's single
 # backend-wide use_altscreen flag.
 if tmux_test new-session -d -s altcase -n one >/dev/null 2>&1 && \

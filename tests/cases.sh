@@ -1,4 +1,4 @@
-# Source-derived Screen CLI cases for screen-to-tmux-translator 0.2.1.
+# Source-derived Screen CLI cases for screen-to-tmux-translator 0.3.1.
 # This file is sourced by test-screen-cli.sh, which defines case_.
 # Syntax: case_ ID EXPECTED "description" [screen arguments...]
 # EXPECTED: exact | approx | moot | external | unsupported | invalid
@@ -68,8 +68,8 @@ case_ W003 exact       "create top window" -S work -X screen top
 case_ W004 exact       "create vim window" -S work -X screen vim file.txt
 case_ W005 exact       "create titled editor window" -S work -X screen -t editor vim
 case_ W006 unsupported "create window with per-window history size" -S work -X screen -h 10000 bash
-case_ W007 exact       "create window at index five" -S work -X screen 5
-case_ W008 exact       "create indexed named window" -S work -X screen 5:editor vim
+case_ W007 approx      "create window at index five" -S work -X screen 5
+case_ W008 approx      "create indexed named window" -S work -X screen 5:editor vim
 
 # Window selection/renaming/order
 case_ W101 exact       "select window zero" -S work -p 0 -X select
@@ -172,7 +172,7 @@ case_ K005 approx      "unbind all" -S work -X unbindall
 
 # Terminal/encoding
 case_ T001 unsupported "set Screen virtual TERM at startup" -T screen-256color
-case_ T002 exact       "force UTF-8 client output" -U
+case_ T002 approx      "force UTF-8 client output" -U
 case_ T003 approx      "enable truecolor" -S work -X truecolor on
 case_ T004 approx       "enable alternate screen" -S work -X altscreen on
 case_ T005 approx       "disable alternate screen" -S work -X altscreen off
@@ -241,10 +241,10 @@ case_ O019 unsupported "default shell override" -s /bin/bash
 case_ O020 approx       "session name" -S work
 case_ O021 exact       "initial window title" -t editor vim
 case_ O022 unsupported "virtual terminal type" -T screen-256color
-case_ O023 exact       "UTF-8 mode" -U
-case_ O024 exact       "version short" -v
-case_ O025 exact       "version long" --version
-case_ O026 exact       "help" --help
+case_ O023 approx      "UTF-8 mode" -U
+case_ O024 unsupported "version short" -v
+case_ O025 unsupported "version long" --version
+case_ O026 unsupported "help" --help
 
 # Native command-mode informational mappings
 case_ N001 approx      "list attached displays" -S work -X displays
@@ -253,7 +253,7 @@ case_ N003 approx      "list windows internal command" -S work -X windows
 case_ N004 approx      "help/list keys" -S work -X help
 case_ N005 approx      "info internal command" -S work -X info
 case_ N006 approx      "lastmsg internal command" -S work -X lastmsg
-case_ N007 exact       "version internal command" -S work -X version
+case_ N007 unsupported "version internal command" -S work -X version
 case_ N008 unsupported "license internal command" -S work -X license
 case_ N009 approx      "layout next" -S work -X layout next
 case_ N010 approx      "layout previous" -S work -X layout prev

@@ -78,6 +78,51 @@ options-table.c SHA-256:
 
 For plain Screen `-r`, tmux's `attach-session` is only an approximation: Screen resume semantics distinguish detached from already attached sessions, while tmux normally permits multiple clients. The wrapper preserves a Screen `-p` window in the suggested tmux `session:window` target, but no longer labels the overall `-r` behavior exact.
 
+## 0.3.1 source checks
+
+GNU Screen 5.0.2 `doc/screen.1` documents `-U` as both a terminal UTF-8 declaration and a default-new-window encoding change. `screen.c` implements that by setting `nwin_options.encoding = UTF8`. The same manual documents `-A` as adapting all windows to the current terminal; `attacher.c` passes `adaptflag` to the backend and `display.c:InitTerm()` changes resize behavior accordingly. These are not modeled as `tmux -u` or a hidden tmux resize sequence.
+
+`process.c:DoCommandEcho()` shows that ordinary `echo` is literal while `echo -p` expands Screen's `%` status format. This is why literal `-Q echo` uses tmux `display-message -pl`, but Screen `echo -p` is not translated.
+
+`process.c:DoScreen()` stores a numeric `screen N` operand in `NewWindow.StartAt`. `window.c:MakeWindow()` then increments from `StartAt` until it finds a free window number. Therefore `screen 5` is not equivalent to tmux `new-window -t :5` when slot 5 is occupied. The translator reports the state dependency instead of implementing a slot-search wrapper.
+
+The audited tmux development source format-expands session/window names in `cmd-new-session.c` (`-s`, `-n`), `cmd-new-window.c` (`-n`), `cmd-rename-session.c`, and `cmd-rename-window.c`. `regress/format-strings.sh` verifies `##` expands to a literal `#`. 0.3.1 therefore escapes literal Screen `#` only in these source-confirmed format-expanded name positions. `cmd-display-message.c` confirms `-l` bypasses format expansion.
+
+`cmd-new-session.c` also contains tmux's attached nested-session safeguard (`sessions should be nested with care, unset $TMUX to force`). The translator does not unset `$TMUX` on the user's behalf.
+
+`socket.c:FindSocket()` also explains the conservative selector warnings. Screen may strip a leading numeric `PID.` component when matching a nonnumeric selector, treats the `tty` prefix as optional, and gives leading-numeric selectors a second match path after the socket PID. Those rules are not tmux target-syntax rules, so selectors whose meaning can depend on them are reported as uncertain instead of being rewritten.
+
+Additional audited hashes:
+
+```text
+GNU Screen doc/screen.1 SHA-256:
+ba2fde926826b979f6320df57f54b291e98435ab2bdd6e07ad1951e1e4f78fda
+
+GNU Screen display.c SHA-256:
+3b34badccc7028fd45d69477b84928c4bb4773d5eb5e095fb323b625d542c5b8
+
+tmux cmd-new-session.c SHA-256:
+efc19dd76439019b028ba124eaef393516f3e17579b7cab978254bdcea6d45ee
+
+tmux cmd-new-window.c SHA-256:
+4cd3235f2fac8834c632bc987d1fe71ada11d304a0145a2b5890a4b4d2c8d771
+
+tmux cmd-rename-session.c SHA-256:
+c02a18cb346a7704e323567002f19e4401ddbb50ae7825196096d328d3a6772d
+
+tmux cmd-rename-window.c SHA-256:
+165a8d71e719a4fd1cee2a21b52417a39c81e31284e301232fed66ad291d2839
+
+tmux cmd-display-message.c SHA-256:
+e528b10d8d128f265eb1fcb4f8fd6a362ce96adb3969b8216f244196e8676766
+
+tmux cmd-find.c SHA-256:
+decb4d8aeecea0d86ace095be76a40449013fba579706b35580acefa275fcef6
+
+tmux regress/format-strings.sh SHA-256:
+f808fad0506fb6ca16193118891590a6eb8c854a4ffbbedf9313de21cf025bd5
+```
+
 ## Caveat
 
 The source hashes identify the snapshots audited for this release. A future Screen or tmux release may add, remove, or alter syntax or semantics; rerun and update the source-derived manifests before treating this translator as authoritative for a different version.

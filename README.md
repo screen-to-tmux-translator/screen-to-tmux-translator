@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.0
+# screen-to-tmux-translator 0.3.1
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -63,6 +63,27 @@ screen2tmux: APPROX: Screen focus moves among display regions; tmux select-pane 
 screen2tmux: suggestion: Closest substitute: tmux select-pane -t work:.{right-of}
 ```
 
+Argument uncertainty uses the same non-executing exit status `3`, but is called out explicitly:
+
+```text
+screen2tmux: WARNING: uncertain translation of argument Screen window selector 'editor.1': tmux window/pane targets have a different selector grammar from Screen window names and numbers.
+```
+
+This is intentionally a stop condition rather than a best-effort rewrite.
+
+## Important 0.3.1 correctness changes
+
+0.3.1 follows a stricter rule: when tmux does not actually implement the Screen feature, the translator does not build an emulation layer. It returns `UNSUPPORTED`/`APPROX` with a concrete explanation. When a Screen argument cannot be interpreted safely under tmux target syntax, it emits a specific `WARNING: uncertain translation of argument ...` message and does not execute tmux.
+
+- `screen -U` is now `APPROX`, not `tmux -u` `EXACT`. Screen `-U` both declares the display UTF-8 capable and sets UTF-8 as the default encoding for new Screen windows; tmux `-u` only forces its client UTF-8 assumption. No automatic command is executed.
+- Screen `-A` is treated as `APPROX` when it actually participates in an attach operation: Screen explicitly adapts all windows to the attaching terminal and tmux has no equivalent adapt-all-windows flag. On non-attach paths, where Screen does not use `adaptflag`, the option is semantically inert and does not force an approximation.
+- `screen -v`, `screen --version`, `screen --help`, and internal `version` are `UNSUPPORTED` as compatibility translations because tmux would report tmux help/version text, not Screen output.
+- Attached nested `screen -m` inside tmux is now `APPROX`. tmux deliberately rejects an attached nested `new-session` while `$TMUX` is set unless the operator explicitly unsets it; the translator no longer tries to bypass that safeguard.
+- `screen ... -X screen N` and `N:title` are now `APPROX`: Screen treats `N` as a `StartAt` lower bound and searches for the first free slot at or above it, whereas tmux `new-window -t :N` addresses the exact index. The translator does not emulate Screen's free-slot search.
+- tmux-format expansion is neutralized where source-confirmed name arguments are format-expanded. Literal `#` in Screen session/window names and titles becomes tmux `##` for `new-session -s/-n`, `new-window -n`, `rename-session`, and `rename-window`.
+- `screen -Q echo` uses `tmux display-message -pl` so literal text such as `#{session_name}` is not expanded by tmux. Screen `echo -p`, which uses Screen's `%` format language, is `UNSUPPORTED` rather than being reinterpreted as tmux format syntax.
+- Session/window selectors containing tmux-significant target syntax (for example `$`, `@`, `:`, `.`, braces, or glob metacharacters) stop with an explicit uncertain-argument warning instead of being guessed.
+
 ## Important 0.3.0 correctness changes
 
 0.3.0 tightens state-dependent and namespace semantics that remained after 0.2.1:
@@ -115,7 +136,7 @@ Current packaged results:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-50/50 focused semantic regression tests PASS
+68/68 focused semantic regression tests PASS
 live tmux behavior tests run when a tmux executable is available
 ```
 
@@ -136,7 +157,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.0/
+screen-to-tmux-translator-0.3.1/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

@@ -171,12 +171,12 @@
 [PASS] W006 unsupported first  create window with per-window history size
 [PASS] W006 unsupported middle create window with per-window history size
 [PASS] W006 unsupported last   create window with per-window history size
-[PASS] W007 exact       first  create window at index five
-[PASS] W007 exact       middle create window at index five
-[PASS] W007 exact       last   create window at index five
-[PASS] W008 exact       first  create indexed named window
-[PASS] W008 exact       middle create indexed named window
-[PASS] W008 exact       last   create indexed named window
+[PASS] W007 approx      first  create window at index five
+[PASS] W007 approx      middle create window at index five
+[PASS] W007 approx      last   create window at index five
+[PASS] W008 approx      first  create indexed named window
+[PASS] W008 approx      middle create indexed named window
+[PASS] W008 approx      last   create indexed named window
 [PASS] W101 exact       first  select window zero
 [PASS] W101 exact       middle select window zero
 [PASS] W101 exact       last   select window zero
@@ -417,9 +417,9 @@
 [PASS] T001 unsupported first  set Screen virtual TERM at startup
 [PASS] T001 unsupported middle set Screen virtual TERM at startup
 [PASS] T001 unsupported last   set Screen virtual TERM at startup
-[PASS] T002 exact       first  force UTF-8 client output
-[PASS] T002 exact       middle force UTF-8 client output
-[PASS] T002 exact       last   force UTF-8 client output
+[PASS] T002 approx      first  force UTF-8 client output
+[PASS] T002 approx      middle force UTF-8 client output
+[PASS] T002 approx      last   force UTF-8 client output
 [PASS] T003 approx      first  enable truecolor
 [PASS] T003 approx      middle enable truecolor
 [PASS] T003 approx      last   enable truecolor
@@ -600,18 +600,18 @@
 [PASS] O022 unsupported first  virtual terminal type
 [PASS] O022 unsupported middle virtual terminal type
 [PASS] O022 unsupported last   virtual terminal type
-[PASS] O023 exact       first  UTF-8 mode
-[PASS] O023 exact       middle UTF-8 mode
-[PASS] O023 exact       last   UTF-8 mode
-[PASS] O024 exact       first  version short
-[PASS] O024 exact       middle version short
-[PASS] O024 exact       last   version short
-[PASS] O025 exact       first  version long
-[PASS] O025 exact       middle version long
-[PASS] O025 exact       last   version long
-[PASS] O026 exact       first  help
-[PASS] O026 exact       middle help
-[PASS] O026 exact       last   help
+[PASS] O023 approx      first  UTF-8 mode
+[PASS] O023 approx      middle UTF-8 mode
+[PASS] O023 approx      last   UTF-8 mode
+[PASS] O024 unsupported first  version short
+[PASS] O024 unsupported middle version short
+[PASS] O024 unsupported last   version short
+[PASS] O025 unsupported first  version long
+[PASS] O025 unsupported middle version long
+[PASS] O025 unsupported last   version long
+[PASS] O026 unsupported first  help
+[PASS] O026 unsupported middle help
+[PASS] O026 unsupported last   help
 [PASS] N001 approx      first  list attached displays
 [PASS] N001 approx      middle list attached displays
 [PASS] N001 approx      last   list attached displays
@@ -630,9 +630,9 @@
 [PASS] N006 approx      first  lastmsg internal command
 [PASS] N006 approx      middle lastmsg internal command
 [PASS] N006 approx      last   lastmsg internal command
-[PASS] N007 exact       first  version internal command
-[PASS] N007 exact       middle version internal command
-[PASS] N007 exact       last   version internal command
+[PASS] N007 unsupported first  version internal command
+[PASS] N007 unsupported middle version internal command
+[PASS] N007 unsupported last   version internal command
 [PASS] N008 unsupported first  license internal command
 [PASS] N008 unsupported middle license internal command
 [PASS] N008 unsupported last   license internal command
@@ -683,8 +683,7 @@
 [PASS] Z010 invalid     last   invalid focus direction
 
 Summary: 683 PASS, 0 FAIL, 683 translation invocations; oracle 228 PASS/0 FAIL
-Log: /mnt/data/screen-to-tmux-translator-0.3.0/logs/test-screen-cli.log
-
+Log: /mnt/data/screen-to-tmux-translator-0.3.1/logs/test-screen-cli.log
 [PASS] -d -m preserves command operand
 [PASS] -m alone does not detach
 [PASS] screenrc is not passed to tmux -f
@@ -715,7 +714,7 @@ Log: /mnt/data/screen-to-tmux-translator-0.3.0/logs/test-screen-cli.log
 [PASS] inside tmux plain screen bash creates a window
 [PASS] inside tmux plain screen creates a window
 [PASS] inside tmux -t title creates titled window
-[PASS] inside tmux -m forces new session
+[PASS] inside tmux -m warns about tmux nesting safeguard
 [PASS] inside tmux -S warns about duplicate Screen labels
 [PASS] inside tmux -S can opt into unique-name policy
 [PASS] named session creation is approximate by default
@@ -734,9 +733,26 @@ Log: /mnt/data/screen-to-tmux-translator-0.3.0/logs/test-screen-cli.log
 [PASS] writebuf warns about server-wide tmux buffers
 [PASS] register warns about server-wide tmux buffers
 [PASS] paste with no register is not tmux paste-buffer
+[PASS] -U is partial semantics, not tmux -u exact
+[PASS] -U never auto-emits tmux -u
+[PASS] -A attach semantics do not silently disappear
+[PASS] -A on new-session path is semantically inert
+[PASS] -U does not block unrelated remote X command
+[PASS] short Screen version is not tmux version
+[PASS] long Screen version is not tmux version
+[PASS] Screen help is not tmux help
+[PASS] internal Screen version is not tmux version
+[PASS] query echo uses tmux literal mode
+[PASS] query echo -p refuses Screen format reinterpretation
+[PASS] named creation escapes tmux format hash
+[PASS] initial title escapes tmux format hash
+[PASS] runtime title escapes tmux format hash
+[PASS] runtime session rename escapes tmux format hash
+[PASS] risky Screen session selector prints uncertainty warning
+[PASS] numeric Screen session selector warns about PID ambiguity
+[PASS] risky Screen window selector prints uncertainty warning
 [PASS] dry-run renders carriage return safely
 
-Regression summary: 50 PASS, 0 FAIL
-Regression log: /mnt/data/screen-to-tmux-translator-0.3.0/logs/test-regressions.log
-
+Regression summary: 68 PASS, 0 FAIL
+Regression log: /mnt/data/screen-to-tmux-translator-0.3.1/logs/test-regressions.log
 [SKIP] live tmux behavior tests: tmux executable not installed

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 — 2026-10-04
+
+- Adopted an explicit no-emulation policy for Screen-only behavior: when tmux does not implement the same feature, the translator reports `UNSUPPORTED`/`APPROX` rather than constructing a compatibility subsystem.
+- Added `WARNING: uncertain translation of argument ...` diagnostics (exit 3, non-executing) for Screen session/window selectors that contain tmux-significant target syntax and cannot be safely reinterpreted.
+- Reclassified `-U` as `APPROX`. GNU Screen `-U` both declares a UTF-8 display and sets the default encoding for new windows; tmux `-u` does not implement Screen's per-window encoding policy.
+- Reclassified the attach-time semantics of `-A` as `APPROX`; tmux has no equivalent to Screen's explicit adapt-all-window-sizes behavior. Non-attach paths leave `-A` inert, matching Screen's source path.
+- Reclassified Screen version/help requests (`-v`, `--version`, `--help`, internal `version`) as `UNSUPPORTED` compatibility translations instead of returning tmux's unrelated help/version output.
+- Reclassified attached nested `-m` inside tmux as `APPROX` and preserved tmux's nesting safeguard instead of automatically unsetting `$TMUX`.
+- Corrected internal `screen N`/`N:title`: Screen uses `N` as a `StartAt` lower bound and searches for the first free window number at or above it. The previous exact `tmux new-window -t :N` mapping was state-dependent and is now an uncertainty warning/`APPROX`.
+- Added deterministic tmux format escaping for literal Screen names/titles in source-confirmed format-expanded arguments: `#` becomes `##` for `new-session -s/-n`, `new-window -n`, `rename-session`, and `rename-window`.
+- Changed `-Q echo` to `tmux display-message -pl` for literal output and rejected Screen `echo -p` format strings rather than interpreting them as tmux formats.
+- Expanded focused regressions from 50 to 68 checks, including format-injection/literal-name cases, uncertain selectors, `-U`, `-A`, version/help, nested `-m`, and `echo -p`.
+- 0.3.1 packaged results: 683/683 translator permutations PASS, 228/228 syntax-oracle cases PASS, 68/68 focused regressions PASS; live tmux behavior checks are present but skipped in this build environment because no tmux executable is installed.
+
 ## 0.3.0 — 2026-10-04
 
 - Reclassified the entire `-R/-RR` create-or-attach family as `APPROX`. GNU Screen filters candidate sockets by attached/detached state and `-RR` has distinct multiple-match selection behavior; tmux `new-session -A` does not preserve those rules.

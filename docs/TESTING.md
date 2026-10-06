@@ -66,7 +66,7 @@ RESULT
 
 Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and preserved exactly in the hex fields.
 
-`logs/test-regressions.log` records the focused semantic regressions accumulated through 0.3.0.
+`logs/test-regressions.log` records the focused semantic regressions accumulated through 0.3.1.
 
 ## Focused regressions
 
@@ -101,14 +101,21 @@ Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and pr
 - backend-wide Screen `altscreen` versus pane/window-scoped tmux settings;
 - Screen copy/register state versus server-wide tmux buffers;
 - interactive no-argument `paste`;
-- duplicate Screen `-S` labels versus unique tmux session names and the explicit unique-name opt-in.
+- duplicate Screen `-S` labels versus unique tmux session names and the explicit unique-name opt-in;
+- Screen `-U` versus tmux `-u` partial semantics;
+- Screen `-A` versus tmux client/window sizing;
+- version/help output non-equivalence;
+- nested attached `-m` and tmux's `$TMUX` safeguard;
+- literal tmux-format escaping in names/titles and literal `-Q echo`;
+- Screen `screen N` StartAt semantics;
+- explicit uncertain-argument warnings for incompatible target syntax.
 
 ## Current packaged result
 
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       50 PASS, 0 FAIL
+focused regressions:       68 PASS, 0 FAIL
 live tmux behavior:         optional; skipped if tmux is unavailable
 ```
 

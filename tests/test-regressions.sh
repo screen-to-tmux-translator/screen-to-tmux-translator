@@ -145,7 +145,7 @@ expect_class_contains "Screen help is not claimed output-compatible" 3 "server-w
 expect_exact_in_tmux "inside tmux plain screen bash creates a window" "'tmux' 'new-window' 'bash'" --dry-run bash
 expect_exact_in_tmux "inside tmux plain screen creates a window" "'tmux' 'new-window'" --dry-run
 expect_exact_in_tmux "inside tmux -t title creates titled window" "'tmux' 'new-window' '-n' 'editor' 'vim'" --dry-run -t editor vim
-expect_exact_in_tmux "inside tmux -m forces new session" "'tmux' 'new-session' 'bash'" --dry-run -m bash
+expect_class_contains_in_tmux "inside tmux -m warns about tmux nesting safeguard" 3 "normally rejects an attached nested new-session" --dry-run -m bash
 expect_class_contains_in_tmux "inside tmux -S warns about duplicate Screen labels" 3 "multiple sessions whose socket names share the same -S label" --dry-run -S work bash
 expect_exact_unique_in_tmux "inside tmux -S can opt into unique-name policy" "'tmux' 'new-session' '-s' 'work' 'bash'" --dry-run -S work bash
 
@@ -166,6 +166,27 @@ expect_class_contains "readbuf warns about server-wide tmux buffers" 3 "shared b
 expect_class_contains "writebuf warns about server-wide tmux buffers" 3 "server-wide" --dry-run -S work -X writebuf /tmp/text
 expect_class_contains "register warns about server-wide tmux buffers" 3 "server-wide" --dry-run -S work -X register a hello
 expect_class_contains "paste with no register is not tmux paste-buffer" 2 "interactive register prompt" --dry-run -S work -p 0 -X paste
+
+# 0.3.1 hardening: no invented feature emulation, literal tmux-format data, and
+# explicit uncertainty warnings for target arguments with incompatible grammars.
+expect_class_contains "-U is partial semantics, not tmux -u exact" 3 "two semantics" --dry-run -U
+expect_not_contains "-U never auto-emits tmux -u" 3 "'tmux' '-u'" --dry-run -U
+expect_class_contains "-A attach semantics do not silently disappear" 3 "no equivalent adapt-all-windows flag" --dry-run -A -x work
+expect_exact "-A on new-session path is semantically inert" "'tmux' 'new-session'" --dry-run -A
+expect_exact "-U does not block unrelated remote X command" "'tmux' 'send-keys' '-l' '-t' 'work:0' 'hello'" --dry-run -U -S work -p 0 -X stuff hello
+expect_class_contains "short Screen version is not tmux version" 2 "reports the GNU Screen version" --dry-run -v
+expect_class_contains "long Screen version is not tmux version" 2 "reports the GNU Screen version" --dry-run --version
+expect_class_contains "Screen help is not tmux help" 2 "describes Screen's CLI" --dry-run --help
+expect_class_contains "internal Screen version is not tmux version" 2 "reports Screen's version/status text" --dry-run -S work -X version
+expect_exact "query echo uses tmux literal mode" "'tmux' 'display-message' '-pl' '#{session_name}'" --dry-run -S work -Q echo '#{session_name}'
+expect_class_contains "query echo -p refuses Screen format reinterpretation" 2 "Screen echo -p expands Screen's own % status-format language" --dry-run -S work -Q echo -p '%n %t'
+expect_exact_unique "named creation escapes tmux format hash" "'tmux' 'new-session' '-s' 'work-##{host}'" --dry-run -S 'work-#{host}'
+expect_exact "initial title escapes tmux format hash" "'tmux' 'new-session' '-n' '##{session_name}' 'vim'" --dry-run -t '#{session_name}' vim
+expect_exact "runtime title escapes tmux format hash" "'tmux' 'rename-window' '-t' 'work:2' '##{session_name}'" --dry-run -S work -p 2 -X title '#{session_name}'
+expect_exact "runtime session rename escapes tmux format hash" "'tmux' 'rename-session' '-t' 'work' 'dev-##(printf pwn)'" --dry-run -S work -X sessionname 'dev-#(printf pwn)'
+expect_class_contains "risky Screen session selector prints uncertainty warning" 3 "WARNING: uncertain translation of argument Screen session selector" --dry-run -S '$1' -X quit
+expect_class_contains "numeric Screen session selector warns about PID ambiguity" 3 "may interpret leading digits as a PID" --dry-run -r 12345
+expect_class_contains "risky Screen window selector prints uncertainty warning" 3 "WARNING: uncertain translation of argument Screen window selector" --dry-run -S work -p 'editor.1' -X stuff x
 
 CR=$(printf '\r')
 CURRENT_NAME='dry-run renders carriage return safely'
