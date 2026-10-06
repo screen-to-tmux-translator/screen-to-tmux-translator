@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.4.3
+# screen-to-tmux-translator 0.4.4
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -143,18 +143,25 @@ export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES
 
 then named creation is permitted as an `EXACT` mapping within that explicit policy.
 
-## Build original and patched tmux
+## Build tmux
 
-`build_tmux.sh` is the generic builder. Give it any tmux version/ref and it builds **both** an untouched original and a Screen-compat patched variant:
+`build_tmux_patched.sh` is the patched-only generic builder and is the default builder used by `run-tests.sh --build`:
 
 ```sh
-sh build_tmux.sh                 # defaults to 3.7d
+sh build_tmux_patched.sh                 # defaults to patched 3.7d
+sh build_tmux_patched.sh latest
+sh build_tmux_patched.sh 3.7d,latest
+```
+
+`build_tmux.sh` remains available when you explicitly want **both** an untouched original and a Screen-compat patched variant:
+
+```sh
 sh build_tmux.sh 3.7d
 sh build_tmux.sh 3.7d,latest
 sh build_tmux.sh 3.7d 3.8 latest
 ```
 
-`latest` resolves the current upstream `master`/`main` commit. Other values are first treated as exact tags, branches, or commits, then as tmux's historical `release_VERSION` branch form. The original and patched variants are pinned to the same commit whenever the original build completed successfully. The older four one-variant front ends remain available for compatibility.
+`latest` resolves the current upstream `master`/`main` commit. Other values are first treated as exact tags, branches, or commits, then as tmux's historical `release_VERSION` branch form. When both variants are requested, the patched tree is pinned to the same commit as the successful original build. The older four one-variant front ends remain available for compatibility.
 
 The default runtime layout is now grouped by purpose:
 
@@ -187,7 +194,16 @@ sh build_tmux.sh --verbosity normal 3.7d   # default
 sh build_tmux.sh --verbosity verbose 3.7d
 ```
 
-Normal mode suppresses the enormous repeated compiler command lines and instead reports concise progress such as `Compiling cmd-new-session.c ... [OK]`. The complete raw Autotools/configure/build transcript is still retained in each build directory's `build.log`. Interactive build output uses the same selective `SCREEN2TMUX_COLOR=auto|always|never` / `NO_COLOR` policy as the translator and test runner.
+Normal mode suppresses the enormous repeated compiler command lines. Configure checks are normalized and de-duplicated before display: repeated header usability/presence/final checks collapse to one header name, common compiler/autotools wording is shortened, cached `yes`/`no` answers are classified with the other booleans, and internal compiler-wrapper paths are replaced with the actual compiler name. `Configure yes` and `Configure no` remain space-separated, while `Configure values` remains comma-separated; all three wrap at the measured console width.
+
+Compilation progress is emitted as one width-wrapped stream rather than one terminal row per source file, for example:
+
+```text
+Compiling attributes.c ... [OK] cfg.c ... [OK] alerts.c ... [OK] cmd-bind-key.c ... [OK]
+          cmd-attach-session.c ... [OK] client.c ... [OK]
+```
+
+The complete raw Autotools/configure/build transcript is still retained in each build directory's `build.log`. Interactive build output uses the same selective `SCREEN2TMUX_COLOR=auto|always|never` / `NO_COLOR` policy as the translator and test runner.
 
 Before downloading, the shared builder checks the normal tmux-from-Git prerequisites: a C compiler and make, Git, Autoconf/Automake, yacc or bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities. Missing dependencies can be installed interactively through `apt-get`, `dnf`, `yum`, `apk`, or Homebrew; `SCREEN2TMUX_AUTO_INSTALL=yes|no` pre-answers that prompt.
 
@@ -212,15 +228,16 @@ Run everything:
 sh run-tests.sh
 ```
 
-`run-tests.sh` can also build before testing. `--build` alone builds 3.7d; a comma- or space-separated list builds every requested version, always as original + patched pairs:
+`run-tests.sh` can also build before testing. `--build` alone builds the **patched** 3.7d variant; a comma- or space-separated list builds the patched form of every requested version. Add `--compile-original` only when you also want the pristine original build(s):
 
 ```sh
 sh run-tests.sh --build
 sh run-tests.sh --build 3.7d,latest
+sh run-tests.sh --build latest --compile-original
 sh run-tests.sh --build 3.7d 3.8 latest --verbosity normal
 ```
 
-`--verbosity quiet|normal|verbose` defaults to `normal`. In normal mode the build phase condenses Autoconf checks into three width-aware groups: successful yes checks (names in green), no checks (names in red), and non-boolean `name=value` results separated by commas. The leading `checking for ` text is removed. Compiler output remains concise per-file progress instead of raw command lines. Quiet mode also hides routine per-case PASS rows from the terminal while leaving detailed logs unchanged; verbose mode exposes the full build stream.
+`--verbosity quiet|normal|verbose` defaults to `normal`. In normal mode the build phase condenses Autoconf checks into three width-aware, normalized groups: successful yes checks (names in green), no checks (names in red), and non-boolean `name=value` results separated by commas. Redundant header probe wording and internal compiler-wrapper paths are removed from the presentation. Compiler results are likewise grouped into one width-wrapped `Compiling ...` stream rather than one line per file. Quiet mode also hides routine per-case PASS rows from the terminal while leaving detailed logs unchanged; verbose mode exposes the full raw build stream.
 
 The aggregate runner executes the Screen syntax oracle, expected translator exit-class checks, and interface equivalence in one matrix. First/middle/last dry-run placements are still all exercised internally, but each Screen case is printed only once. The result, description, and Screen-command columns are fixed, and every `->` marker is aligned so the tmux side begins in one column. Ordinary command arguments are shown without unnecessary quotes.
 
@@ -279,7 +296,7 @@ Current packaged verification:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-106/106 focused semantic regression tests PASS
+108/108 focused semantic regression tests PASS
 683 placement variants per selected equivalence interface
 228/228 aggregated equivalence command cases PASS (three packaged interfaces)
 0 equivalence divergences in the packaged source/script set
@@ -293,7 +310,7 @@ logs/test-regressions-<timestamp>.log
 logs/test-interface-equivalence-<timestamp>.log
 logs/test-tmux-behavior-<timestamp>.log
 logs/test-run-console-<timestamp>.log
-logs/screen-to-tmux-translator-0.4.3-test-logs-<timestamp>.zip
+logs/screen-to-tmux-translator-0.4.4-test-logs-<timestamp>.zip
 ```
 
 `test-interface-equivalence-*` is now the combined Screen/oracle/interface log; `tests/test-screen-cli.sh` remains available as a standalone diagnostic harness but is not rerun by the aggregate runner. When successful builds are discovered, every patched `screen` hardlink joins the combined matrix, patched builds receive hardlink/execution checks, and each patched tmux version receives one live-behavior log. Original tmux binaries are not rerun through that behavior suite. When `--build` is used, the concise build-run log is included in the same ZIP.
@@ -338,12 +355,13 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.4.3/
+screen-to-tmux-translator-0.4.4/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
 ├── MANIFEST.sha256
 ├── build_tmux.sh
+├── build_tmux_patched.sh
 ├── build_tmux_3.7d.sh
 ├── build_tmux_3.7d_patched.sh
 ├── build_tmux_latest.sh

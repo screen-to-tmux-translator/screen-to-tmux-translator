@@ -452,8 +452,8 @@ else
 fi
 
 
-CURRENT_NAME='generic tmux builder and legacy front-ends are present'
-if [ -x "$PROJECT/build_tmux.sh" ] && [ -x "$PROJECT/build_tmux_3.7d.sh" ] && [ -x "$PROJECT/build_tmux_3.7d_patched.sh" ] && \
+CURRENT_NAME='generic tmux builders and legacy front-ends are present'
+if [ -x "$PROJECT/build_tmux.sh" ] && [ -x "$PROJECT/build_tmux_patched.sh" ] && [ -x "$PROJECT/build_tmux_3.7d.sh" ] && [ -x "$PROJECT/build_tmux_3.7d_patched.sh" ] && \
    [ -x "$PROJECT/build_tmux_latest.sh" ] && [ -x "$PROJECT/build_tmux_latest_patched.sh" ]; then
     pass "$CURRENT_NAME"
 else
@@ -490,6 +490,17 @@ else
     fail "$CURRENT_NAME (rc=$_RC calls=$_BCALLS)"
 fi
 
+CURRENT_NAME='patched tmux builder defaults to patched 3.7d only'
+: > "$_BTMP/calls"
+SCREEN2TMUX_BUILD_ONE="$_BTMP/driver" SCREEN2TMUX_BUILD_STUB_LOG="$_BTMP/calls" NO_COLOR=1 sh "$PROJECT/build_tmux_patched.sh" --verbosity quiet >/dev/null 2>&1
+_RC=$?
+_BCALLS=$(cat "$_BTMP/calls")
+if [ "$_RC" -eq 0 ] && [ "$_BCALLS" = "3.7d 3.7d 1" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$_RC calls=$_BCALLS)"
+fi
+
 CURRENT_NAME='generic tmux builder accepts comma-separated versions'
 : > "$_BTMP/calls"
 SCREEN2TMUX_BUILD_ONE="$_BTMP/driver" SCREEN2TMUX_BUILD_STUB_LOG="$_BTMP/calls" NO_COLOR=1 sh "$PROJECT/build_tmux.sh" --verbosity quiet 3.7d,latest >/dev/null 2>&1
@@ -502,13 +513,15 @@ else
 fi
 rm -rf "$_BTMP"
 
-CURRENT_NAME='normal build verbosity summarizes configure results'
-if grep -F 'emit_items("Configure yes", "yes", yes, ny, "  ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'emit_items("Configure no", "no", no, nn, "  ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'emit_items("Configure values", "values", values, nv, ", ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'sub(/^for /, "", name)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'awk -v width="$DISPLAY_WIDTH"' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'Compiling " $0 " ... [OK]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+CURRENT_NAME='normal build verbosity summarizes coherent configure and compile results'
+if grep -F 'emit_items("Configure yes", yes, ny, "  ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'emit_items("Configure no", no, nn, "  ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'emit_items("Configure values", values, nv, ", ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'sub(/ usability$/, "", name)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'sub(/ presence$/, "", name)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'function emit_compile' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'prefix = "Compiling "' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'comp[++nc] = $0 " ... [OK]"' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
@@ -524,13 +537,24 @@ else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='run-tests build option defaults to 3.7d and accepts version lists'
+CURRENT_NAME='run-tests builds patched only by default and exposes compile-original'
 if grep -F -- '--build [VERSION ...]' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F -- '--compile-original' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F 'BUILD_VERSIONS=3.7d' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
-   grep -F 'append_build_versions "$1"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+   grep -F '_builder=$HERE/build_tmux_patched.sh' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F '[ "$COMPILE_ORIGINAL" -eq 0 ] || _builder=$HERE/build_tmux.sh' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='compile-original is rejected without build'
+_CO_OUT=$(NO_COLOR=1 sh "$PROJECT/run-tests.sh" --compile-original 2>&1)
+_CO_RC=$?
+if [ "$_CO_RC" -eq 64 ] && printf '%s\n' "$_CO_OUT" | grep -F -- '--compile-original requires --build' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$_CO_RC output=$_CO_OUT)"
 fi
 
 CURRENT_NAME='run-tests discovers arbitrary successful builds dynamically'
@@ -645,7 +669,7 @@ fi
 CURRENT_NAME='run-tests exposes normal build verbosity by default'
 if grep -F 'VERBOSITY=normal' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F -- '--verbosity LEVEL' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
-   grep -F 'sh "$HERE/build_tmux.sh"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+   grep -F 'sh "$_builder"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"

@@ -14,6 +14,7 @@ EQUIV_CUSTOM=0
 VERBOSITY=normal
 BUILD_REQUESTED=0
 BUILD_VERSIONS=
+COMPILE_ORIGINAL=0
 LIST_EQUIV=0
 TAB=$(printf '\t')
 
@@ -22,9 +23,11 @@ usage()
     cat <<'USAGE'
 Usage: sh run-tests.sh [options]
 
-  --build [VERSION ...]       Build both original and patched tmux variants
-                              before testing. With no VERSION, builds 3.7d.
-                              Versions may be comma-separated or space-separated.
+  --build [VERSION ...]       Build patched tmux variant(s) before testing.
+                              With no VERSION, builds 3.7d. Versions may be
+                              comma-separated or space-separated.
+  --compile-original          With --build, also compile the pristine original
+                              variant for each requested tmux version.
   --verbosity LEVEL           quiet, normal (default), or verbose. This controls
                               build console detail; quiet also suppresses routine
                               per-case PASS rows from the terminal only.
@@ -39,6 +42,7 @@ Usage: sh run-tests.sh [options]
 Examples:
   sh run-tests.sh --build
   sh run-tests.sh --build 3.7d,latest
+  sh run-tests.sh --build latest --compile-original
   sh run-tests.sh --build 3.7d 3.8 latest --verbosity normal
 
 The canonical screen-function-source interface is always the equivalence reference.
@@ -68,6 +72,7 @@ while [ "$#" -gt 0 ]; do
             done
             ;;
         --build=*) BUILD_REQUESTED=1; append_build_versions "${1#*=}"; shift ;;
+        --compile-original) COMPILE_ORIGINAL=1; shift ;;
         --verbosity)
             [ "$#" -ge 2 ] || { printf 'ERROR: --verbosity requires quiet, normal, or verbose.\n' >&2; exit 64; }
             VERBOSITY=$2; shift 2 ;;
@@ -91,6 +96,10 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case "$VERBOSITY" in quiet|normal|verbose) : ;; *) printf 'ERROR: --verbosity must be quiet, normal, or verbose.\n' >&2; exit 64 ;; esac
+if [ "$COMPILE_ORIGINAL" -eq 1 ] && [ "$BUILD_REQUESTED" -eq 0 ]; then
+    printf 'ERROR: --compile-original requires --build.\n' >&2
+    exit 64
+fi
 if [ "$BUILD_REQUESTED" -eq 1 ] && [ -z "$BUILD_VERSIONS" ]; then BUILD_VERSIONS=3.7d; fi
 
 # Listing current interfaces is a read-only operation and should not create a
@@ -241,7 +250,9 @@ run_build_component()
     (
         set -- --verbosity "$VERBOSITY"
         for _bv in $BUILD_VERSIONS; do set -- "$@" "$_bv"; done
-        NO_COLOR=1 SCREEN2TMUX_COLOR=never SCREEN2TMUX_CONSOLE_WIDTH="$CONSOLE_WIDTH" sh "$HERE/build_tmux.sh" "$@"
+        _builder=$HERE/build_tmux_patched.sh
+        [ "$COMPILE_ORIGINAL" -eq 0 ] || _builder=$HERE/build_tmux.sh
+        NO_COLOR=1 SCREEN2TMUX_COLOR=never SCREEN2TMUX_CONSOLE_WIDTH="$CONSOLE_WIDTH" sh "$_builder" "$@"
         _rc=$?; printf '%s\n' "$_rc" > "$_rc_file"; exit 0
     ) 2>&1 | tee -a "$CONSOLE_LOG" "$BUILD_RUN_LOG" | terminal_stream
     [ -r "$_rc_file" ] || return 125
@@ -252,7 +263,10 @@ run_build_component()
     printf 'screen-to-tmux-translator test run\nVERSION: %s\nRUN_TIMESTAMP: %s\nRUN_STARTED: %s\nPROJECT: %s\n' "$VERSION" "$RUN_TIMESTAMP" "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$HERE"
     printf 'CONSOLE_WIDTH: %s (%s; measured once at startup)\nVERBOSITY: %s\n' "$CONSOLE_WIDTH" "$WIDTH_SOURCE" "$VERBOSITY"
     if [ "$TEST_QUIET" -eq 1 ]; then printf 'MAPPINGS: hidden (--quiet)\n'; else printf 'MAPPINGS: shown\n'; fi
-    if [ "$BUILD_REQUESTED" -eq 1 ]; then printf 'BUILD_REQUEST: %s\n' "$BUILD_VERSIONS"; else printf 'BUILD_REQUEST: none\n'; fi
+    if [ "$BUILD_REQUESTED" -eq 1 ]; then
+        printf 'BUILD_REQUEST: %s\n' "$BUILD_VERSIONS"
+        if [ "$COMPILE_ORIGINAL" -eq 1 ]; then printf 'BUILD_VARIANTS: original + patched\n'; else printf 'BUILD_VARIANTS: patched only\n'; fi
+    else printf 'BUILD_REQUEST: none\n'; fi
     printf '%s\n' '=============================================================================='
 } | tee -a "$CONSOLE_LOG" | terminal_stream
 

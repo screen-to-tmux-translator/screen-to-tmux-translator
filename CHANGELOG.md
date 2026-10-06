@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.4 — 2026-10-05
+
+- Made normal configure output more coherent by normalizing and de-duplicating Autoconf probe names. Header usability/presence/final triples collapse to one header name, common `whether`/`working` boilerplate is removed, cached booleans are classified with yes/no, common tool labels are shortened, and internal `.screen2tmux-cc` paths are replaced with the actual compiler in displayed values.
+- Collapsed successful compiler progress into one console-width-aware `Compiling ...` stream containing `file.c ... [OK]` entries, instead of printing one terminal row per source file. Raw compiler/build output remains unchanged in `build.log`.
+- Added `build_tmux_patched.sh`, a generic patched-only companion to `build_tmux.sh`. It accepts the same version lists and verbosity options and defaults to patched tmux 3.7d.
+- Changed `run-tests.sh --build` to compile patched variants only by default. Added `--compile-original` to explicitly request the previous original+patched pair for every requested version.
+- Added focused regressions for the patched-only builder, `--compile-original` selection, normalized configure rendering, and grouped compile progress. Focused regressions are now 108 PASS. Translation semantics are unchanged from 0.4.3.
+
 ## 0.4.3 — 2026-10-05
 
 - Reworked normal build configure output. Autoconf checks are grouped into width-aware `Configure yes`, `Configure no`, and comma-separated `Configure values` summaries; the leading `checking for ` text is removed. In color mode, successful names are green and failed names are red without coloring the whole line.

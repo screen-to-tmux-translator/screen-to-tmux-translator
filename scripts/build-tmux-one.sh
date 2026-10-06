@@ -287,13 +287,57 @@ render_build_stream()
             '
             ;;
         normal)
-            awk -v width="$DISPLAY_WIDTH" '
-            function add_cfg(kind, name, value) {
-                if (kind == "yes") yes[++ny] = name
-                else if (kind == "no") no[++nn] = name
-                else values[++nv] = name "=" value
+            awk -v width="$DISPLAY_WIDTH" -v realcc="$CC_BIN" '
+            function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+            function clean_name(name,    hadlib) {
+                name = trim(name)
+                sub(/^for /, "", name)
+                sub(/^whether /, "", name)
+                gsub(/[^[:space:]]*\/\.screen2tmux-cc/, "C compiler", name)
+                sub(/ usability$/, "", name)
+                sub(/ presence$/, "", name)
+                sub(/^working /, "", name)
+                if (name == "a BSD-compatible install") name = "install"
+                else if (name == "a thread-safe mkdir -p") name = "mkdir -p"
+                else if (name == "gawk") name = "awk"
+                else if (name == "gcc") name = "C compiler"
+                else if (name == "build environment is sane") name = "build environment sane"
+                else if (name == "we are cross compiling") name = "cross compiling"
+                else if (name == "we are using the GNU C compiler") name = "GNU C compiler"
+                else if (name == "build system type") name = "build"
+                else if (name == "host system type") name = "host"
+                else if (name == "that generated files are newer than configure") name = "generated files newer than configure"
+                else if (name == "C compiler default output file name") name = "compiler output"
+                else if (name == "suffix of executables") name = "executable suffix"
+                else if (name == "suffix of object files") name = "object suffix"
+                else if (name == "C compiler option to accept ISO C89") name = "C89 mode"
+                else if (name == "C compiler option to accept ISO C99") name = "C99 mode"
+                else if (name == "dependency style of C compiler") name = "dependency style"
+                else if (name == "how to run the C preprocessor") name = "C preprocessor"
+                else if (name == "grep that handles long lines and -e") name = "grep"
+                else if (name == "pkg-config is at least version 0.9.0") name = "pkg-config >= 0.9.0"
+                else if (name == "it is safe to define __EXTENSIONS__") name = "safe to define __EXTENSIONS__"
+                else if (name ~ /^if free doesn.t work very well$/) name = "free workaround needed"
+                if (name ~ /^library containing /) { sub(/^library containing /, "", name); name = name " library" }
+                gsub(/ is declared$/, " declared", name)
+                return trim(name)
             }
-            function emit_items(label, kind, a, n, sep,    i,prefix,indent,line,piece,item) {
+            function clean_value(value) {
+                value = trim(value)
+                sub(/^\(cached\)[[:space:]]*/, "", value)
+                gsub(/[^[:space:]]*\/\.screen2tmux-cc/, realcc, value)
+                return value
+            }
+            function add_cfg(kind, name, value,    key) {
+                name = clean_name(name)
+                value = clean_value(value)
+                if (name == "C compiler" && value != "yes" && value != "no") value = realcc
+                key = name SUBSEP value
+                if (kind == "yes") { if (!seen_yes[name]++) yes[++ny] = name }
+                else if (kind == "no") { if (!seen_no[name]++) no[++nn] = name }
+                else if (!seen_values[key]++) values[++nv] = name "=" value
+            }
+            function emit_items(label, a, n, sep,    i,prefix,indent,line,piece,item) {
                 if (n == 0) return
                 prefix = label ": "
                 indent = sprintf("%*s", length(prefix), "")
@@ -308,19 +352,37 @@ render_build_stream()
                 }
                 print line
             }
+            function emit_compile(    i,prefix,indent,line,piece,item) {
+                if (nc == 0) return
+                prefix = "Compiling "
+                indent = sprintf("%*s", length(prefix), "")
+                line = prefix
+                for (i = 1; i <= nc; i++) {
+                    item = comp[i]
+                    piece = (line == prefix ? "" : " ") item
+                    if (length(line) > length(prefix) && length(line) + length(piece) > width) {
+                        print line
+                        line = indent item
+                    } else line = line piece
+                }
+                print line
+                delete comp; nc=0
+            }
             function flush_cfg() {
-                emit_items("Configure yes", "yes", yes, ny, "  ")
-                emit_items("Configure no", "no", no, nn, "  ")
-                emit_items("Configure values", "values", values, nv, ", ")
-                delete yes; delete no; delete values; ny=nn=nv=0
+                emit_items("Configure yes", yes, ny, "  ")
+                emit_items("Configure no", no, nn, "  ")
+                emit_items("Configure values", values, nv, ", ")
+                delete yes; delete no; delete values
+                delete seen_yes; delete seen_no; delete seen_values
+                ny=nn=nv=0
             }
             function capture_cfg(line,    p,name,value) {
                 if (!in_cfg || line !~ /^checking /) return 0
                 p = index(line, "... ")
                 if (!p) return 0
                 name = substr(line, 10, p - 10)
-                sub(/^for /, "", name)
-                value = substr(line, p + 4)
+                value = clean_value(substr(line, p + 4))
+                name = clean_name(name)
                 if (value == "yes") add_cfg("yes", name, value)
                 else if (value == "no") add_cfg("no", name, value)
                 else add_cfg("value", name, value)
@@ -329,28 +391,31 @@ render_build_stream()
             /^@@S2T_STAGE_BEGIN\t/ {
                 sub(/^@@S2T_STAGE_BEGIN\t/, "")
                 in_cfg = ($0 == "Configuring tmux")
+                in_compile = ($0 == "Compiling tmux")
                 print $0 " ..."
                 next
             }
             /^@@S2T_STAGE_OK\t/ {
                 sub(/^@@S2T_STAGE_OK\t/, "")
                 if ($0 == "Configuring tmux") flush_cfg()
-                in_cfg = 0
+                if ($0 == "Compiling tmux") emit_compile()
+                in_cfg = 0; in_compile = 0
                 print "[OK] " $0
                 next
             }
             /^@@S2T_STAGE_FAIL\t/ {
                 sub(/^@@S2T_STAGE_FAIL\t/, "")
                 if ($0 == "Configuring tmux") flush_cfg()
-                in_cfg = 0
+                if ($0 == "Compiling tmux") emit_compile()
+                in_cfg = 0; in_compile = 0
                 print "[FAIL] " $0
                 next
             }
-            /^@@S2T_COMPILE_OK\t/ { sub(/^@@S2T_COMPILE_OK\t/, ""); print "Compiling " $0 " ... [OK]"; next }
-            /^@@S2T_COMPILE_FAIL\t/ { sub(/^@@S2T_COMPILE_FAIL\t/, ""); print "Compiling " $0 " ... [FAIL]"; next }
+            /^@@S2T_COMPILE_OK\t/ { sub(/^@@S2T_COMPILE_OK\t/, ""); comp[++nc] = $0 " ... [OK]"; next }
+            /^@@S2T_COMPILE_FAIL\t/ { sub(/^@@S2T_COMPILE_FAIL\t/, ""); comp[++nc] = $0 " ... [FAIL]"; next }
             { if (capture_cfg($0)) next }
-            /(^|[^A-Za-z])(warning:|WARNING:)/ { print; next }
-            /(^|[^A-Za-z])(error:|ERROR:|fatal:)/ { print; next }
+            /(^|[^A-Za-z])(warning:|WARNING:)/ { if (in_compile) emit_compile(); print; next }
+            /(^|[^A-Za-z])(error:|ERROR:|fatal:)/ { if (in_compile) emit_compile(); print; next }
             '
             ;;
     esac | color_build_stream
