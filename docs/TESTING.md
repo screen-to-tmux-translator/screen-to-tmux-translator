@@ -54,7 +54,7 @@ middle: screen ARG1 --dry-run ARG2 ...
 last:   screen ARG1 ARG2 ... --dry-run
 ```
 
-The suite still executes and logs every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after every placement succeeds, together with one canonical mapping in the form `result | description | screen command -> tmux command`. Both pipe columns are fixed. Ordinary argv are shown bare; quoting is retained only where shell protection or single-line control-byte escaping is needed. If any placement fails, that failing placement is printed explicitly. The detailed `test-screen-cli-*.log` retains the complete per-placement records. `run-tests.sh --quiet` hides the mapping columns without suppressing ordinary PASS/FAIL progress.
+The combined aggregate matrix still executes every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after the oracle, reference-class checks, and all selected interface comparisons succeed. The display form is `result | description | screen command -> tmux command`; the two pipe columns and the `->` column are aligned. Ordinary argv are shown bare; quoting is retained only where shell protection or single-line control-byte escaping is needed. `run-tests.sh --quiet` hides the mapping columns without suppressing ordinary PASS/FAIL progress. `tests/test-screen-cli.sh` remains available separately when the older per-invocation hex diagnostic log is desired.
 
 ## Logs
 
@@ -79,7 +79,6 @@ Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and pr
 `run-tests.sh` chooses one timestamp once and uses it for every artifact from that invocation:
 
 ```text
-test-screen-cli-YYYYMMDD-HHMMSS.log
 test-regressions-YYYYMMDD-HHMMSS.log
 test-interface-equivalence-YYYYMMDD-HHMMSS.log
 test-tmux-behavior-YYYYMMDD-HHMMSS.log
@@ -87,7 +86,7 @@ test-run-console-YYYYMMDD-HHMMSS.log
 screen-to-tmux-translator-<VERSION>-test-logs-YYYYMMDD-HHMMSS.zip
 ```
 
-The ZIP is produced after all test layers finish. With no compiled tmux build present it contains the five base `.log` files; when successful compiled builds are discovered it also contains the generated built-hardlink and per-build behavior logs. A `--build` run additionally includes `test-build-<timestamp>.log`. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
+The ZIP is produced after all test layers finish. With no compiled tmux build present it contains those four base `.log` files. When patched builds are discovered, the system-tmux behavior log is replaced by one behavior log per patched version and the built-hardlink integration log is added. A `--build` run additionally includes `test-build-<timestamp>.log`. The standalone `test-screen-cli.sh` creates its own detailed CLI log only when invoked directly. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
 
 `SCREEN2TMUX_RUN_TIMESTAMP` may be set for deterministic filenames; `SCREEN2TMUX_LOG_DIR` may be set to redirect all runtime artifacts. ZIP creation prefers the `zip` executable and falls back to Python 3 `zipfile`. Runtime log files are intentionally excluded from the static package checksum manifest.
 
@@ -99,9 +98,9 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.2.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.3.
 
-`logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records unified interface parity. `screen-function-source.sh` is always the reference. By default the minified source, standalone `screen.sh`, and every discovered patched tmux hardlink named `screen` are each run over the complete 683 first/middle/last placement matrix. Each Screen case prints one PASS only when every selected interface agrees with the reference for every placement. On failure the console lists only the interface/placement combinations that diverged; the log retains each comparison record. `run-tests.sh --equivalence NAME` (repeatable) restricts this layer to named interfaces, and `--list-equivalence-interfaces` prints accepted names.
+`logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, standalone `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with full paths. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 
 ## Focused regressions
 
@@ -154,7 +153,7 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 ```text
 translation permutations:       683 PASS, 0 FAIL
 syntax oracle base cases:       228 PASS, 0 FAIL
-focused regressions:            102 PASS, 0 FAIL
+focused regressions:            106 PASS, 0 FAIL
 packaged equivalence interfaces: 3 (canonical source, minified source, screen.sh)
 equivalence variants/interface: 683
 equivalence command cases:      228 PASS, 0 FAIL
@@ -176,7 +175,7 @@ With patched builds present, each discovered `screen` hardlink becomes an additi
 
 If tmux is not installed, this layer reports `SKIP` and exits successfully; the source-derived syntax oracle and translator regressions still run.
 
-## Generic tmux build and compiled-interface layer (0.4.2)
+## Generic tmux build and compiled-interface layer (0.4.3)
 
 The preferred build entry point is:
 
@@ -194,6 +193,9 @@ Normal build verbosity is deliberately compact:
 Generating build system ...
 [OK] Generating build system
 Configuring tmux ...
+Configure yes: gcc  stdlib.h  libevent  ncurses
+Configure no: legacy-feature
+Configure values: build system type=x86_64-pc-linux-gnu, compiler=gcc
 [OK] Configuring tmux
 Compiling alerts.c ... [OK]
 Compiling cmd-new-session.c ... [OK]
@@ -202,11 +204,11 @@ Compiling cmd-new-session.c ... [OK]
 [OK] Installing tmux
 ```
 
-`--verbosity quiet|normal|verbose` is supported by both `build_tmux.sh` and `run-tests.sh`, with `normal` as the default. Full raw build diagnostics remain in each build directory's `build.log`; normal console rendering suppresses repeated compiler command lines. Selective color follows `SCREEN2TMUX_COLOR` / `NO_COLOR`.
+`--verbosity quiet|normal|verbose` is supported by both `build_tmux.sh` and `run-tests.sh`, with `normal` as the default. In normal mode Autoconf `yes` names are grouped in green, `no` names in red, and all other results are grouped as comma-separated `name=value` entries. The `checking for ` prefix is removed and each conceptual group wraps at the measured console width. Full raw build diagnostics remain in each build directory's `build.log`; normal console rendering also suppresses repeated compiler command lines. Selective color follows `SCREEN2TMUX_COLOR` / `NO_COLOR`.
 
 `run-tests.sh --build` builds 3.7d before testing. Versions following `--build` may be comma- or space-separated. Build failures set the eventual run status to FAIL but do not prevent discovery/testing of other variants that completed successfully.
 
-Every discovered patched build contributes its `screen` hardlink to the unified 683-variant equivalence matrix. The interface name is dynamic (`tmux-3.7d`, `tmux-latest`, `tmux-<other-version>`), so the suite is no longer limited to two hardcoded versions. Every patched build additionally receives inode-identity, compiled dry-run, and real-execution smoke checks. Every successful original **and** patched tmux binary receives the isolated live behavior suite.
+Every discovered patched build contributes its `screen` hardlink to the unified 683-variant equivalence matrix. The interface name is dynamic (`tmux-3.7d`, `tmux-latest`, `tmux-<other-version>`), so the suite is no longer limited to two hardcoded versions. Every patched build additionally receives inode-identity, compiled dry-run, and real-execution smoke checks. The isolated live behavior suite runs once per version against the patched tmux only; original binaries are retained as pristine build baselines.
 
 Individual equivalence selection examples:
 

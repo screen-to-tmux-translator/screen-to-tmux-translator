@@ -1,6 +1,6 @@
 # Source basis
 
-**0.4.2 note:** translation semantics and audited upstream source assumptions are unchanged from 0.4.1; this release generalizes build orchestration, runtime layout, verbosity, discovery, and compiled-interface testing.
+**0.4.3 note:** translation semantics and audited upstream source assumptions remain unchanged from 0.4.2. This release changes build/test presentation and orchestration only: compact configure summaries, a combined oracle/equivalence matrix, aligned mapping output, and patched-only per-version live behavior runs.
 
 This release was built against the source archives supplied during the project work. At 0.4.0 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
 

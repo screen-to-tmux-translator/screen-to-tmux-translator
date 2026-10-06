@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.4.2
+# screen-to-tmux-translator 0.4.3
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -220,17 +220,17 @@ sh run-tests.sh --build 3.7d,latest
 sh run-tests.sh --build 3.7d 3.8 latest --verbosity normal
 ```
 
-`--verbosity quiet|normal|verbose` defaults to `normal`. In normal mode the build phase uses concise colorized stage/per-file progress instead of raw compiler command lines. Quiet mode also hides routine per-case PASS rows from the terminal while leaving the detailed logs unchanged; verbose mode exposes the full build stream.
+`--verbosity quiet|normal|verbose` defaults to `normal`. In normal mode the build phase condenses Autoconf checks into three width-aware groups: successful yes checks (names in green), no checks (names in red), and non-boolean `name=value` results separated by commas. The leading `checking for ` text is removed. Compiler output remains concise per-file progress instead of raw command lines. Quiet mode also hides routine per-case PASS rows from the terminal while leaving detailed logs unchanged; verbose mode exposes the full build stream.
 
-Translation-oriented PASS rows show one canonical mapping per Screen case, even though the first/middle/last dry-run placements are all still exercised internally. Both pipe columns are fixed: result, then description, then the Screen-to-tmux mapping. Ordinary command arguments are shown without unnecessary quotes; quoting is retained only when needed to represent a shell argument safely.
+The aggregate runner executes the Screen syntax oracle, expected translator exit-class checks, and interface equivalence in one matrix. First/middle/last dry-run placements are still all exercised internally, but each Screen case is printed only once. The result, description, and Screen-command columns are fixed, and every `->` marker is aligned so the tmux side begins in one column. Ordinary command arguments are shown without unnecessary quotes.
 
 ```text
-[PASS] C001 exact                    | start a new session                                                  | screen -> tmux new-session
-[PASS] W004 exact                    | create vim window                                                    | screen -S work -X screen vim file.txt -> tmux new-window -t work vim file.txt
-[PASS] Q004 exact                    | query window number                                                  | screen -S work -Q number -> tmux display-message -p -t work '#{window_index} (#{window_name})'
+[PASS] C001 exact          | start a new session                                  | screen                                            -> tmux new-session
+[PASS] W004 exact          | create vim window                                    | screen -S work -X screen vim file.txt             -> tmux new-window -t work vim file.txt
+[PASS] Q004 exact          | query window number                                  | screen -S work -Q number                          -> tmux display-message -p -t work '#{window_index} (#{window_name})'
 ```
 
-For `APPROX`, `UNSUPPORTED`, `MOOT`, `EXTERNAL`, and `INVALID` cases the right side intentionally states that there is no automatically executed tmux command rather than presenting a suggestion as though it were exact. Detailed logs still contain every first/middle/last invocation and its raw output.
+For `APPROX`, `UNSUPPORTED`, `MOOT`, `EXTERNAL`, and `INVALID` cases the right side intentionally states that there is no automatically executed tmux command rather than presenting a suggestion as though it were exact. The combined matrix log records every placement's reference exit status and every interface comparison; `tests/test-screen-cli.sh` remains available separately when raw per-invocation output and argv hex are needed.
 
 To hide only the mapping columns while keeping normal PASS/FAIL progress:
 
@@ -246,15 +246,14 @@ sh run-tests.sh --truncate-lines 120
 
 The typo-compatible alias `--trunkate-lines 120` is also accepted.
 
-The test system has four always-available layers plus automatic compiled-binary layers:
+The aggregate test run has three primary layers plus compiled-build checks:
 
-1. A **Screen syntax oracle**, independent from the translator, built from GNU Screen 5.0.2 `comm.c` command metadata plus a separate top-level CLI parser.
-2. Translator tests that insert `--dry-run` at first/middle/last positions. `first` means immediately after `screen`, `middle` means after the first real Screen argument, and `last` means after all real Screen arguments. Successful placements collapse to one console case row; a failure still names the exact placement.
-3. A unified **interface-equivalence suite**. `screen-function-source.sh` is the reference. By default the suite also checks `screen-function-source-minified.sh`, `screen.sh`, and every discovered patched tmux hardlink named `screen` across the full 683-placement matrix. If every selected interface agrees for a Screen case, one PASS row is printed. On a mismatch, only the interfaces/placements that diverged are listed after that case.
-4. An **optional live tmux behavioral suite** using an isolated server. It skips cleanly when no tmux executable is available.
-5. Discovered patched tmux builds also receive hardlink-identity, compiled dry-run smoke, real-execution smoke, and per-version live tmux behavior checks. Their 683-way translation matrix is not printed a second time because it is already part of the unified equivalence layer.
+1. A combined **Screen CLI/oracle + interface-equivalence matrix**. The GNU Screen 5.0.2 source-derived oracle validates each base command, the canonical translator is checked for the expected result class on all first/middle/last placements, and every selected interface is compared byte-for-byte and exit-status-for-exit-status against that reference. One PASS row is printed per Screen case.
+2. **Focused regressions** for semantic and runner/build behavior.
+3. **Live tmux behavior** on an isolated server. With discovered patched builds, this runs once per version against the patched tmux only; pristine originals are build baselines and are not behavior-tested. Without a patched build, the suite falls back to a system tmux and skips cleanly if none is installed.
+4. Every discovered patched build also receives hardlink-identity, compiled dry-run smoke, and real-execution smoke checks. Its full 683-placement translation matrix is already covered by the combined interface layer and is not printed again.
 
-The default equivalence interfaces are named at the beginning of the run. With both patched builds present they are:
+The resolved equivalence interfaces are printed on separate lines with their full paths. With both patched builds present they are conceptually:
 
 ```text
 screen-function-source.sh (reference)
@@ -280,7 +279,7 @@ Current packaged verification:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-102/102 focused semantic regression tests PASS
+106/106 focused semantic regression tests PASS
 683 placement variants per selected equivalence interface
 228/228 aggregated equivalence command cases PASS (three packaged interfaces)
 0 equivalence divergences in the packaged source/script set
@@ -290,15 +289,14 @@ C integration harness: -std=c99 -Wall -Wextra -Werror PASS
 Each `sh run-tests.sh` invocation creates one timestamped run set. With no compiled build present, the base set is:
 
 ```text
-logs/test-screen-cli-<timestamp>.log
 logs/test-regressions-<timestamp>.log
 logs/test-interface-equivalence-<timestamp>.log
 logs/test-tmux-behavior-<timestamp>.log
 logs/test-run-console-<timestamp>.log
-logs/screen-to-tmux-translator-0.4.2-test-logs-<timestamp>.zip
+logs/screen-to-tmux-translator-0.4.3-test-logs-<timestamp>.zip
 ```
 
-When successful builds are discovered, every patched `screen` hardlink joins the unified equivalence matrix; patched builds also receive hardlink/execution checks, and every successful original or patched tmux binary receives its own live-behavior log. When `--build` is used, the concise build-run log is included in the same ZIP.
+`test-interface-equivalence-*` is now the combined Screen/oracle/interface log; `tests/test-screen-cli.sh` remains available as a standalone diagnostic harness but is not rerun by the aggregate runner. When successful builds are discovered, every patched `screen` hardlink joins the combined matrix, patched builds receive hardlink/execution checks, and each patched tmux version receives one live-behavior log. Original tmux binaries are not rerun through that behavior suite. When `--build` is used, the concise build-run log is included in the same ZIP.
 
 ## Test-run artifact naming
 
@@ -340,7 +338,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.4.2/
+screen-to-tmux-translator-0.4.3/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

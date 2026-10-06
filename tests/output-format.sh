@@ -1,13 +1,17 @@
 # Shared compact console formatting helpers for test scripts. POSIX sh.
 # Detailed logs remain unmodified/full; these helpers only format stdout.
 
-_s2t_test_map_left_width=${SCREEN2TMUX_MAP_LEFT_WIDTH:-36}
-case "$_s2t_test_map_left_width" in ''|*[!0-9]*) _s2t_test_map_left_width=36 ;; esac
-[ "$_s2t_test_map_left_width" -ge 20 ] 2>/dev/null || _s2t_test_map_left_width=36
+_s2t_test_map_left_width=${SCREEN2TMUX_MAP_LEFT_WIDTH:-26}
+case "$_s2t_test_map_left_width" in ''|*[!0-9]*) _s2t_test_map_left_width=26 ;; esac
+[ "$_s2t_test_map_left_width" -ge 20 ] 2>/dev/null || _s2t_test_map_left_width=26
 
-_s2t_test_map_desc_width=${SCREEN2TMUX_MAP_DESC_WIDTH:-68}
-case "$_s2t_test_map_desc_width" in ''|*[!0-9]*) _s2t_test_map_desc_width=68 ;; esac
-[ "$_s2t_test_map_desc_width" -ge 20 ] 2>/dev/null || _s2t_test_map_desc_width=68
+_s2t_test_map_desc_width=${SCREEN2TMUX_MAP_DESC_WIDTH:-52}
+case "$_s2t_test_map_desc_width" in ''|*[!0-9]*) _s2t_test_map_desc_width=52 ;; esac
+[ "$_s2t_test_map_desc_width" -ge 20 ] 2>/dev/null || _s2t_test_map_desc_width=52
+
+_s2t_test_map_screen_width=${SCREEN2TMUX_MAP_SCREEN_WIDTH:-49}
+case "$_s2t_test_map_screen_width" in ''|*[!0-9]*) _s2t_test_map_screen_width=49 ;; esac
+[ "$_s2t_test_map_screen_width" -ge 6 ] 2>/dev/null || _s2t_test_map_screen_width=49
 
 _s2t_test_quiet=${SCREEN2TMUX_TEST_QUIET:-0}
 
@@ -110,9 +114,9 @@ _s2t_test_print_case()
     if [ "$_s2t_test_quiet" = 1 ]; then
         printf '%-*s %s\n' "$_s2t_test_map_left_width" "$_tf_prefix" "$_tf_desc"
     else
-        printf '%-*s | %-*s | %s -> %s\n' \
+        printf '%-*s | %-*s | %-*s -> %s\n' \
             "$_s2t_test_map_left_width" "$_tf_prefix" \
             "$_s2t_test_map_desc_width" "$_tf_desc" \
-            "$_tf_screen" "$_tf_tmux"
+            "$_s2t_test_map_screen_width" "$_tf_screen" "$_tf_tmux"
     fi
 }

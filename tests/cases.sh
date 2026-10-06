@@ -201,7 +201,7 @@ case_ A007 unsupported "Screen authentication" -S work -X auth on
 case_ A008 unsupported "startup Screen authentication" -P -S work
 
 # Serial/direct-device/Telnet/ZMODEM special forms
-case_ X001 external    "direct serial tty device command treated as initial process argument" /dev/ttyS0
+case_ X001 external    "direct serial tty device" /dev/ttyS0
 case_ X002 external    "direct serial tty with baud operand" /dev/ttyS0 9600
 case_ X003 external    "direct USB serial tty with baud operand" /dev/ttyUSB0 115200
 case_ X004 external    "native serial break" -S work -X break

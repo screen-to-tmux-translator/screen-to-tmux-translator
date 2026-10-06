@@ -26,7 +26,7 @@ as release_VERSION branches.
 
 Verbosity:
   quiet    stage results and errors only
-  normal   default; concise stages plus "Compiling file.c ... [OK]"
+  normal   default; concise configure summary plus "Compiling file.c ... [OK]"
   verbose  full Autotools/configure/make output
 
 Default layout:

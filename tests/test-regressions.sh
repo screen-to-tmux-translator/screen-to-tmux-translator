@@ -502,10 +502,23 @@ else
 fi
 rm -rf "$_BTMP"
 
-CURRENT_NAME='normal build verbosity renders concise compile progress'
-if grep -F 'Compiling " $0 " ... [OK]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'SCREEN2TMUX_CC_PROGRESS=1 make -j"$JOBS"' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'quiet|normal|verbose' "$PROJECT/build_tmux.sh" >/dev/null 2>&1; then
+CURRENT_NAME='normal build verbosity summarizes configure results'
+if grep -F 'emit_items("Configure yes", "yes", yes, ny, "  ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'emit_items("Configure no", "no", no, nn, "  ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'emit_items("Configure values", "values", values, nv, ", ")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'sub(/^for /, "", name)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'awk -v width="$DISPLAY_WIDTH"' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'Compiling " $0 " ... [OK]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='configure yes/no color is token scoped'
+if grep -F 'Configure yes:' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'G substr(line,p+1) Z' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'R substr(line,p+1) Z' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'SCREEN2TMUX_CONSOLE_WIDTH="$CONSOLE_WIDTH"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
@@ -529,20 +542,20 @@ else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='mapping formatter aligns both pipe columns'
-_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=36 SCREEN2TMUX_MAP_DESC_WIDTH=68 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"; _s2t_test_print_case "[PASS] tmux-latest C001 exact" "a much longer description" "screen -d -m" "tmux new-session -d"' sh "$PROJECT/tests/output-format.sh")
+CURRENT_NAME='mapping formatter aligns pipes and arrows'
+_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=26 SCREEN2TMUX_MAP_DESC_WIDTH=52 SCREEN2TMUX_MAP_SCREEN_WIDTH=49 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"; _s2t_test_print_case "[PASS] Z008 invalid" "a much longer description" "screen -S work -X definitely-not-a-screen-command" "<INVALID Screen syntax>"' sh "$PROJECT/tests/output-format.sh")
 _FMT_POS=$(printf '%s
-' "$_FMT_OUT" | awk -F'|' 'NR==1 {a1=index($0,"|"); a2=a1+index(substr($0,a1+1),"|")} NR==2 {b1=index($0,"|"); b2=b1+index(substr($0,b1+1),"|")} END {print a1 ":" a2 ":" b1 ":" b2}')
-if [ "$_FMT_POS" = '38:109:38:109' ]; then
+' "$_FMT_OUT" | awk 'NR==1 {p1=index($0,"|"); a1=index($0,"->")} NR==2 {p2=index($0,"|"); a2=index($0,"->")} END {print p1 ":" a1 ":" p2 ":" a2}')
+if [ "$_FMT_POS" = '28:135:28:135' ]; then
     pass "$CURRENT_NAME"
 else
-    fail "$CURRENT_NAME (pipe columns $_FMT_POS)"
+    fail "$CURRENT_NAME (columns $_FMT_POS)"
 fi
 
 CURRENT_NAME='mapping formatter puts description before command mapping'
-_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=36 SCREEN2TMUX_MAP_DESC_WIDTH=68 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "start a new session" "screen" "tmux new-session"' sh "$PROJECT/tests/output-format.sh")
+_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=26 SCREEN2TMUX_MAP_DESC_WIDTH=52 SCREEN2TMUX_MAP_SCREEN_WIDTH=49 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "start a new session" "screen" "tmux new-session"' sh "$PROJECT/tests/output-format.sh")
 case "$_FMT_OUT" in
-    *'| start a new session'*'| screen -> tmux new-session') pass "$CURRENT_NAME" ;;
+    *'| start a new session'*'| screen'*'-> tmux new-session') pass "$CURRENT_NAME" ;;
     *) fail "$CURRENT_NAME (output=$_FMT_OUT)" ;;
 esac
 
@@ -563,7 +576,7 @@ else
 fi
 
 CURRENT_NAME='quiet mapping formatter suppresses screen-to-tmux column'
-_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=1 SCREEN2TMUX_MAP_LEFT_WIDTH=36 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"' sh "$PROJECT/tests/output-format.sh")
+_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=1 SCREEN2TMUX_MAP_LEFT_WIDTH=26 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"' sh "$PROJECT/tests/output-format.sh")
 if ! printf '%s
 ' "$_FMT_OUT" | grep -F ' | ' >/dev/null 2>&1 && printf '%s
 ' "$_FMT_OUT" | grep -F 'one' >/dev/null 2>&1; then
@@ -579,8 +592,37 @@ else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='equivalence harness aggregates all selected interfaces per case'
-if grep -F 'Equivalence interfaces (' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 &&    grep -F '[DIVERGED]' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 &&    grep -F '_s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
+CURRENT_NAME='equivalence harness combines oracle and all selected interfaces per case'
+if grep -F 'Equivalence interfaces (' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F 'screen_syntax_oracle "$@"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F "printf '  %s\\n    %s\\n' \"\$_ilabel\" \"\$_ipath\"" "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F '[DIVERGED]' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   ! grep -F '_way="${INTERFACE_COUNT}-way"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='aggregate runner prints the Screen matrix only once'
+if grep -F "Screen CLI/oracle + interface equivalence tests" "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   ! grep -F "run_component 'screen CLI/oracle tests'" "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   ! grep -F "run_component 'interface equivalence tests'" "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='built live behavior runs only against patched tmux'
+if grep -F '[ "$_variant" = patched ] || continue' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'tmux $_name patched behavior tests' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'The pristine originals are build baselines' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='build registry preserves original build directory field'
+if grep -F '_screen=-' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"

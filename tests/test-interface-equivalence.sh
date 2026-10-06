@@ -10,12 +10,13 @@ MINIFIED=${MINIFIED_SOURCE:-$PROJECT/bin/screen-function-source-minified.sh}
 STANDALONE=${STANDALONE_SCREEN:-$PROJECT/bin/screen.sh}
 WORKER=$TEST_DIR/interface-equivalence-worker.sh
 CASES=$TEST_DIR/cases.sh
+ORACLE=${ORACLE:-$TEST_DIR/screen-syntax-oracle.sh}
 RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
 EQUIV_LOG=${EQUIV_LOG:-$PROJECT/logs/test-interface-equivalence-$RUN_TIMESTAMP.log}
 REQUESTED=${SCREEN2TMUX_EQUIV_INTERFACES:-all}
 EXTERNAL_BUILT_REGISTRY=${SCREEN2TMUX_EQUIV_BUILT_REGISTRY:-}
 
-for _f in "$CANONICAL" "$WORKER" "$CASES"; do
+for _f in "$CANONICAL" "$WORKER" "$CASES" "$ORACLE"; do
     [ -r "$_f" ] || { printf 'ERROR: cannot read equivalence input: %s\n' "$_f" >&2; exit 2; }
 done
 mkdir -p "$(dirname -- "$EQUIV_LOG")"
@@ -24,6 +25,8 @@ mkdir -p "$(dirname -- "$EQUIV_LOG")"
 . "$CANONICAL"
 # shellcheck disable=SC1090
 . "$TEST_DIR/output-format.sh"
+# shellcheck disable=SC1090
+. "$ORACLE"
 
 _tmp=${TMPDIR:-/tmp}/screen2tmux-equivalence-$$
 rm -rf "$_tmp"
@@ -36,15 +39,46 @@ BUILT_INPUT=$_tmp/built-registry.tsv
 : > "$CASE_MAP"; : > "$REGISTRY"; : > "$BUILT_INPUT"
 TAB=$(printf '\t')
 
+expected_rc()
+{
+    case "$1" in
+        exact) printf '0' ;;
+        unsupported) printf '2' ;;
+        approx) printf '3' ;;
+        moot) printf '4' ;;
+        external) printf '5' ;;
+        invalid) printf '64' ;;
+        *) printf '255' ;;
+    esac
+}
+
+ORACLE_PASS=0
+ORACLE_FAIL=0
 case_()
 {
     _cm_id=$1; _cm_class=$2; _cm_desc=$3
     shift 3
     _cm_screen=$(_s2t_test_format_argv screen "$@")
-    printf '%s\t%s\t%s\t%s\n' "$_cm_id" "$_cm_class" "$_cm_desc" "$_cm_screen" >> "$CASE_MAP"
+    _cm_expected_rc=$(expected_rc "$_cm_class")
+    screen_syntax_oracle "$@" >/dev/null 2>&1
+    _cm_oracle_rc=$?
+    if [ "$_cm_class" = invalid ]; then _cm_oracle_expected=64; else _cm_oracle_expected=0; fi
+    if [ "$_cm_oracle_rc" -eq "$_cm_oracle_expected" ]; then
+        _cm_oracle_ok=1; _cm_oracle_reason=-; ORACLE_PASS=$((ORACLE_PASS + 1))
+    else
+        _cm_oracle_ok=0; ORACLE_FAIL=$((ORACLE_FAIL + 1))
+        _cm_oracle_reason=$(printf '%s' "${SCREEN_ORACLE_REASON:-unknown oracle failure}" | tr '\t\n' '  ')
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$_cm_id" "$_cm_class" "$_cm_desc" "$_cm_screen" "$_cm_expected_rc" \
+        "$_cm_oracle_expected" "$_cm_oracle_rc" "$_cm_oracle_ok" "$_cm_oracle_reason" >> "$CASE_MAP"
 }
 # shellcheck disable=SC1090
 . "$CASES"
+
+# Fit the Screen-command column to the longest command in this corpus so every
+# -> marker begins in the same column without reserving unnecessary space.
+_s2t_test_map_screen_width=$(awk -F '\t' 'length($4) > m { m=length($4) } END { print (m ? m : 49) }' "$CASE_MAP")
 
 _color_enabled=0
 if [ -z "${NO_COLOR:-}" ]; then
@@ -148,9 +182,11 @@ if [ "$REQUESTED" != all ]; then
 fi
 
 INTERFACE_COUNT=$(wc -l < "$REGISTRY" | tr -d ' ')
-INTERFACE_LABELS=$(awk -F '\t' '{ if (NR>1) printf ", "; printf "%s", $4 } END { print "" }' "$REGISTRY")
-printf '%bEquivalence interfaces (%s):%b %s\n' "$C" "$INTERFACE_COUNT" "$Z" "$INTERFACE_LABELS"
-printf 'INTERFACES\t%s\t%s\n' "$INTERFACE_COUNT" "$INTERFACE_LABELS" >> "$EQUIV_LOG"
+printf '%bEquivalence interfaces (%s):%b\n' "$C" "$INTERFACE_COUNT" "$Z"
+while IFS="$TAB" read -r _iname _imode _ipath _ilabel; do
+    printf '  %s\n    %s\n' "$_ilabel" "$_ipath"
+    printf 'INTERFACE\t%s\t%s\t%s\t%s\n' "$_iname" "$_imode" "$_ipath" "$_ilabel" >> "$EQUIV_LOG"
+done < "$REGISTRY"
 
 REF_DIR=$_tmp/out-screen-function-source
 PIDS=$_tmp/worker-pids.tsv
@@ -176,8 +212,8 @@ while IFS="$TAB" read -r _pid _name _out; do
     [ "$_count" -eq "$REF_COUNT" ] || { printf 'ERROR: equivalence interface %s produced %s variants, expected %s\n' "$_name" "$_count" "$REF_COUNT" >&2; exit 2; }
 done < "$PIDS"
 
-CASE_PASS=0; CASE_FAIL=0; VARIANT_COMPARISONS=0; DIVERGENCES=0
-_current_id=; _current_desc=; _current_class=; _current_screen=; _current_last_base=; _current_ok=1
+CASE_PASS=0; CASE_FAIL=0; VARIANT_COMPARISONS=0; DIVERGENCES=0; VALIDATION_FAILURES=0
+_current_id=; _current_desc=; _current_class=; _current_screen=; _current_last_base=; _current_ok=1; _current_expected_rc=0
 _current_div=$_tmp/current-divergences
 : > "$_current_div"
 flush_case()
@@ -185,12 +221,11 @@ flush_case()
     [ -n "$_current_id" ] || return 0
     _mout=$(cat "$REF_DIR/$_current_last_base.out")
     _mtmux=$(_s2t_test_rhs_for_class "$_current_class" "$_mout")
-    _way="${INTERFACE_COUNT}-way"
     if [ "$_current_ok" -eq 1 ]; then
-        CASE_PASS=$((CASE_PASS + 1)); _prefix=$(printf '[PASS] %s %s %s' "$_current_id" "$_current_class" "$_way")
+        CASE_PASS=$((CASE_PASS + 1)); _prefix=$(printf '[PASS] %s %s' "$_current_id" "$_current_class")
         _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux"
     else
-        CASE_FAIL=$((CASE_FAIL + 1)); _prefix=$(printf '[FAIL] %s %s %s' "$_current_id" "$_current_class" "$_way")
+        CASE_FAIL=$((CASE_FAIL + 1)); _prefix=$(printf '[FAIL] %s %s' "$_current_id" "$_current_class")
         _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux"; cat "$_current_div"
     fi
     : > "$_current_div"
@@ -201,12 +236,27 @@ while IFS="$TAB" read -r _base _id _place _desc; do
         flush_case
         _current_id=$_id; _current_desc=$_desc; _current_ok=1; _current_last_base=
         _map=$(awk -F '\t' -v id="$_id" '$1 == id { print; exit }' "$CASE_MAP")
-        IFS="$TAB" read -r _mid _current_class _mdesc _current_screen <<EOF_MAP
+        IFS="$TAB" read -r _mid _current_class _mdesc _current_screen _current_expected_rc _oracle_expected _oracle_actual _oracle_ok _oracle_reason <<EOF_MAP
 $_map
 EOF_MAP
+        if [ "$_oracle_ok" -eq 1 ]; then
+            _current_ok=1
+            printf 'ORACLE\tPASS\t%s\t%s\n' "$_id" "$_oracle_actual" >> "$EQUIV_LOG"
+        else
+            _current_ok=0; VALIDATION_FAILURES=$((VALIDATION_FAILURES + 1))
+            printf '    [ORACLE FAIL] expected=%s actual=%s (%s)\n' "$_oracle_expected" "$_oracle_actual" "$_oracle_reason" >> "$_current_div"
+            printf 'ORACLE\tFAIL\t%s\t%s\t%s\t%s\n' "$_id" "$_oracle_expected" "$_oracle_actual" "$_oracle_reason" >> "$EQUIV_LOG"
+        fi
     fi
     _current_last_base=$_base
     _rr=$(cat "$REF_DIR/$_base.rc")
+    if [ "$_rr" -ne "$_current_expected_rc" ]; then
+        _current_ok=0; VALIDATION_FAILURES=$((VALIDATION_FAILURES + 1))
+        printf '    [REFERENCE FAIL] placement=%s expected rc=%s actual rc=%s\n' "$_place" "$_current_expected_rc" "$_rr" >> "$_current_div"
+        printf 'REFERENCE\tFAIL\t%s\t%s\t%s\t%s\n' "$_id" "$_place" "$_current_expected_rc" "$_rr" >> "$EQUIV_LOG"
+    else
+        printf 'REFERENCE\tPASS\t%s\t%s\t%s\n' "$_id" "$_place" "$_rr" >> "$EQUIV_LOG"
+    fi
     while IFS="$TAB" read -r _name _mode _path _label; do
         [ "$_name" = screen-function-source ] && continue
         VARIANT_COMPARISONS=$((VARIANT_COMPARISONS + 1))
@@ -251,12 +301,15 @@ while IFS="$TAB" read -r _name _mode _path _label; do
     if [ "$_er" -ne "$_exec_rr" ] || ! cmp -s "$_exec_ref" "$_tmp/exec.$_name"; then _exec_ok=0; printf '    [DIVERGED] %s execution path\n' "$_label" >> "$_exec_div"; fi
 done < "$REGISTRY"
 if [ "$_exec_ok" -eq 1 ]; then
-    _s2t_test_print_case "[PASS] EXEC ${_exec_count}-way" 'normal execution path (script/source interfaces)' "$(_s2t_test_format_argv screen -d -m bash)" "$(_s2t_test_format_argv tmux new-session -d bash)"
+    _s2t_test_print_case "[PASS] EXEC" 'normal execution path (script/source interfaces)' "$(_s2t_test_format_argv screen -d -m bash)" "$(_s2t_test_format_argv tmux new-session -d bash)"
 else
-    _s2t_test_print_case "[FAIL] EXEC ${_exec_count}-way" 'normal execution path (script/source interfaces)' "$(_s2t_test_format_argv screen -d -m bash)" "$(_s2t_test_format_argv tmux new-session -d bash)"; cat "$_exec_div"; CASE_FAIL=$((CASE_FAIL + 1))
+    _s2t_test_print_case "[FAIL] EXEC" 'normal execution path (script/source interfaces)' "$(_s2t_test_format_argv screen -d -m bash)" "$(_s2t_test_format_argv tmux new-session -d bash)"; cat "$_exec_div"; CASE_FAIL=$((CASE_FAIL + 1))
 fi
 
-printf 'SUMMARY: interfaces=%s variants=%s cases_pass=%s cases_fail=%s comparisons=%s divergences=%s\n' "$INTERFACE_COUNT" "$REF_COUNT" "$CASE_PASS" "$CASE_FAIL" "$VARIANT_COMPARISONS" "$DIVERGENCES" >> "$EQUIV_LOG"
-printf '\n%bInterface equivalence summary:%b %s interfaces; %s variants/interface; %s %bPASS%b cases/%s %bFAIL%b; %s comparisons; %s divergences\n' "$C" "$Z" "$INTERFACE_COUNT" "$REF_COUNT" "$CASE_PASS" "$G" "$Z" "$CASE_FAIL" "$R" "$Z" "$VARIANT_COMPARISONS" "$DIVERGENCES"
-printf '%bEquivalence log:%b %s\n' "$C" "$Z" "$EQUIV_LOG"
-[ "$CASE_FAIL" -eq 0 ]
+printf 'SUMMARY: interfaces=%s variants=%s cases_pass=%s cases_fail=%s oracle_pass=%s oracle_fail=%s validation_failures=%s comparisons=%s divergences=%s\n' \
+    "$INTERFACE_COUNT" "$REF_COUNT" "$CASE_PASS" "$CASE_FAIL" "$ORACLE_PASS" "$ORACLE_FAIL" "$VALIDATION_FAILURES" "$VARIANT_COMPARISONS" "$DIVERGENCES" >> "$EQUIV_LOG"
+printf '\n%bScreen/interface summary:%b %s interfaces; %s variants/interface; oracle %s %bPASS%b/%s %bFAIL%b; %s %bPASS%b cases/%s %bFAIL%b; %s comparisons; %s divergences\n' \
+    "$C" "$Z" "$INTERFACE_COUNT" "$REF_COUNT" "$ORACLE_PASS" "$G" "$Z" "$ORACLE_FAIL" "$R" "$Z" \
+    "$CASE_PASS" "$G" "$Z" "$CASE_FAIL" "$R" "$Z" "$VARIANT_COMPARISONS" "$DIVERGENCES"
+printf '%bCombined log:%b %s\n' "$C" "$Z" "$EQUIV_LOG"
+[ "$CASE_FAIL" -eq 0 ] && [ "$ORACLE_FAIL" -eq 0 ] && [ "$VALIDATION_FAILURES" -eq 0 ]

@@ -57,6 +57,17 @@ JOBS=${TMUX_BUILD_JOBS:-$_jobs}
 case "$JOBS" in ''|*[!0-9]*) printf 'ERROR: TMUX_BUILD_JOBS must be a positive integer.\n' >&2; exit 64 ;; esac
 [ "$JOBS" -gt 0 ] || { printf 'ERROR: TMUX_BUILD_JOBS must be greater than zero.\n' >&2; exit 64; }
 
+DISPLAY_WIDTH=${SCREEN2TMUX_CONSOLE_WIDTH:-}
+if [ -z "$DISPLAY_WIDTH" ]; then
+    if [ -r /dev/tty ] && command -v stty >/dev/null 2>&1; then
+        _display_size=$(stty size </dev/tty 2>/dev/null || :)
+        case "$_display_size" in *' '*) DISPLAY_WIDTH=${_display_size#* } ;; esac
+    fi
+    [ -n "$DISPLAY_WIDTH" ] || DISPLAY_WIDTH=${COLUMNS:-120}
+fi
+case "$DISPLAY_WIDTH" in ''|*[!0-9]*) DISPLAY_WIDTH=120 ;; esac
+[ "$DISPLAY_WIDTH" -ge 40 ] 2>/dev/null || DISPLAY_WIDTH=120
+
 print_dependency_help()
 {
     cat >&2 <<'HELP'
@@ -276,12 +287,68 @@ render_build_stream()
             '
             ;;
         normal)
-            awk '
-            /^@@S2T_STAGE_BEGIN\t/ { sub(/^@@S2T_STAGE_BEGIN\t/, ""); print $0 " ..."; next }
-            /^@@S2T_STAGE_OK\t/ { sub(/^@@S2T_STAGE_OK\t/, ""); print "[OK] " $0; next }
-            /^@@S2T_STAGE_FAIL\t/ { sub(/^@@S2T_STAGE_FAIL\t/, ""); print "[FAIL] " $0; next }
+            awk -v width="$DISPLAY_WIDTH" '
+            function add_cfg(kind, name, value) {
+                if (kind == "yes") yes[++ny] = name
+                else if (kind == "no") no[++nn] = name
+                else values[++nv] = name "=" value
+            }
+            function emit_items(label, kind, a, n, sep,    i,prefix,indent,line,piece,item) {
+                if (n == 0) return
+                prefix = label ": "
+                indent = sprintf("%*s", length(prefix), "")
+                line = prefix
+                for (i = 1; i <= n; i++) {
+                    item = a[i]
+                    piece = (line == prefix ? "" : sep) item
+                    if (length(line) > length(prefix) && length(line) + length(piece) > width) {
+                        print line
+                        line = indent item
+                    } else line = line piece
+                }
+                print line
+            }
+            function flush_cfg() {
+                emit_items("Configure yes", "yes", yes, ny, "  ")
+                emit_items("Configure no", "no", no, nn, "  ")
+                emit_items("Configure values", "values", values, nv, ", ")
+                delete yes; delete no; delete values; ny=nn=nv=0
+            }
+            function capture_cfg(line,    p,name,value) {
+                if (!in_cfg || line !~ /^checking /) return 0
+                p = index(line, "... ")
+                if (!p) return 0
+                name = substr(line, 10, p - 10)
+                sub(/^for /, "", name)
+                value = substr(line, p + 4)
+                if (value == "yes") add_cfg("yes", name, value)
+                else if (value == "no") add_cfg("no", name, value)
+                else add_cfg("value", name, value)
+                return 1
+            }
+            /^@@S2T_STAGE_BEGIN\t/ {
+                sub(/^@@S2T_STAGE_BEGIN\t/, "")
+                in_cfg = ($0 == "Configuring tmux")
+                print $0 " ..."
+                next
+            }
+            /^@@S2T_STAGE_OK\t/ {
+                sub(/^@@S2T_STAGE_OK\t/, "")
+                if ($0 == "Configuring tmux") flush_cfg()
+                in_cfg = 0
+                print "[OK] " $0
+                next
+            }
+            /^@@S2T_STAGE_FAIL\t/ {
+                sub(/^@@S2T_STAGE_FAIL\t/, "")
+                if ($0 == "Configuring tmux") flush_cfg()
+                in_cfg = 0
+                print "[FAIL] " $0
+                next
+            }
             /^@@S2T_COMPILE_OK\t/ { sub(/^@@S2T_COMPILE_OK\t/, ""); print "Compiling " $0 " ... [OK]"; next }
             /^@@S2T_COMPILE_FAIL\t/ { sub(/^@@S2T_COMPILE_FAIL\t/, ""); print "Compiling " $0 " ... [FAIL]"; next }
+            { if (capture_cfg($0)) next }
             /(^|[^A-Za-z])(warning:|WARNING:)/ { print; next }
             /(^|[^A-Za-z])(error:|ERROR:|fatal:)/ { print; next }
             '
@@ -295,6 +362,22 @@ color_build_stream()
     awk -v G="$G" -v R="$R" -v Y="$Y" -v C="$C" -v Z="$Z" '
     {
         line=$0
+        if (line ~ /^Configure yes:/) {
+            p=index(line,":"); print C substr(line,1,p-1) Z ":" G substr(line,p+1) Z; cfg="yes"; next
+        }
+        if (line ~ /^Configure no:/) {
+            p=index(line,":"); print C substr(line,1,p-1) Z ":" R substr(line,p+1) Z; cfg="no"; next
+        }
+        if (line ~ /^Configure values:/) {
+            p=index(line,":"); print C substr(line,1,p-1) Z substr(line,p); cfg="values"; next
+        }
+        if (cfg != "" && line ~ /^ +/) {
+            if (cfg == "yes") print G line Z
+            else if (cfg == "no") print R line Z
+            else print line
+            next
+        }
+        cfg=""
         gsub(/\[OK\]/, G "[OK]" Z, line)
         gsub(/\[FAIL\]/, R "[FAIL]" Z, line)
         sub(/^Compiling /, C "Compiling" Z " ", line)

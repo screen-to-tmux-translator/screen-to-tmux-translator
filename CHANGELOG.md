@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.3 — 2026-10-05
+
+- Reworked normal build configure output. Autoconf checks are grouped into width-aware `Configure yes`, `Configure no`, and comma-separated `Configure values` summaries; the leading `checking for ` text is removed. In color mode, successful names are green and failed names are red without coloring the whole line.
+- Combined the aggregate Screen CLI/oracle validation and interface-equivalence matrix into one pass. The Screen 5.0.2 oracle and expected reference exit class are now checked inside the equivalence harness, so `run-tests.sh` prints each of the 228 Screen cases only once while still exercising all 683 first/middle/last placements per selected interface. The standalone `tests/test-screen-cli.sh` remains available for detailed per-invocation diagnostics.
+- Equivalence interfaces are now printed one per line with their full paths. Removed the redundant `N-way` suffix from every case row.
+- Tightened mapping columns and aligned every `->` marker so tmux commands start in the same column. Shortened the longest serial-device description from `direct serial tty device command treated as initial process argument` to `direct serial tty device`.
+- Live tmux behavior checks now run once per discovered version against the patched tmux only. Pristine original builds remain build/reference baselines and are no longer rerun through the same behavior suite. If no patched build exists, the runner still falls back to a system tmux.
+- Fixed original-build discovery display so the build directory is retained instead of appearing as an empty `()`.
+- Added regressions for configure grouping/color scope, combined matrix execution, aligned arrows, full-path interface listing, patched-only behavior runs, and original build-registry field preservation. Focused regressions are now 106 PASS.
+- Translation semantics are unchanged from 0.4.2.
+
 ## 0.4.2 — 2026-10-05
 
 - Added `build_tmux.sh`, a generic POSIX front end that accepts one or more tmux versions/refs (comma- or space-separated), defaults to 3.7d, and builds both original and patched variants for every requested version. `latest` resolves upstream master/main; other values accept exact refs and the historical `release_VERSION` branch convention.
