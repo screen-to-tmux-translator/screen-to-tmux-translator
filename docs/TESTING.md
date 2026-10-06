@@ -1,20 +1,42 @@
 # Testing model
 
-## Purpose
+## Goals
 
-The test suite checks that the translator recognizes the Screen command-line forms catalogued from GNU Screen 5.0.2 and classifies each as either:
+The suite separately answers two questions:
 
-- `mapped`: a safe tmux command can be emitted;
-- `unsupported`: the Screen operation is valid/recognized but cannot be translated faithfully;
-- `invalid`: negative-control syntax which must be rejected.
+1. Is the tested argv a valid GNU Screen 5.0.2 command-line form?
+2. If valid, does the translator classify and handle it as intended?
 
-## Why the tests do not execute native GNU Screen
+This separation fixes the main weakness in 0.1.0, where translator expectations and syntax validity came from the same manifest and could therefore agree on the same mistake.
 
-GNU Screen has no native dry-run facility. Many valid commands have unavoidable effects: starting persistent processes, attaching/detaching terminals, manipulating session sockets, touching login accounting, opening serial devices, or terminating sessions. The project therefore performs parser-level validation against its source-derived case manifest through the replacement `screen()` function.
+## Screen syntax oracle
 
-## Dry-run placement test
+`tests/screen-syntax-oracle.sh` does not source or call the translator. It uses:
 
-Every nonempty case is invoked three ways:
+- a separate top-level Screen option parser for the tested CLI grammar;
+- `docs/screen-5.0.2-command-manifest.tsv`, generated from Screen 5.0.2 `comm.c`;
+- `CAN_QUERY` metadata to distinguish commands allowed through `-Q`;
+- command arity expressions such as `ARGS_0`, `ARGS_12`, `ARGS_1234`, and `ARGS_ORMORE`;
+- narrow semantic checks used by negative controls, such as valid `focus` directions.
+
+GNU Screen has no native side-effect-free dry-run mode, so invoking the real binary is not a safe general syntax validator: valid commands can create persistent processes, detach terminals, touch utmp, open serial devices, kill sessions, and so on.
+
+## Translator classes
+
+```text
+EXACT        exit 0   safe automatic translation
+UNSUPPORTED  exit 2   valid Screen operation, no safe automatic translation
+APPROX       exit 3   useful substitute exists but semantics differ
+MOOT         exit 4   tmux architecture removes the need for the operation
+EXTERNAL     exit 5   substitute requires a non-tmux program
+INVALID      exit 64  invalid/unknown Screen syntax
+```
+
+Only `EXACT` mappings execute tmux when `--dry-run` is absent.
+
+## Dry-run placement
+
+Every nonempty case is tested with `--dry-run` inserted at three positions:
 
 ```text
 screen --dry-run <args...>
@@ -22,13 +44,11 @@ screen <first-arg> --dry-run <remaining-args...>
 screen <args...> --dry-run
 ```
 
-The zero-argument Screen invocation has two distinct placements.
+The zero-argument Screen invocation has first/last placements, which are equivalent after insertion.
 
-This directly tests the project's guarantee that `--dry-run` is recognized anywhere in the Screen argument vector.
+## Logs
 
-## Result log
-
-Each invocation appends a record containing:
+`logs/test-screen-cli.log` records for every concrete invocation:
 
 ```text
 CASE
@@ -36,20 +56,39 @@ DESCRIPTION
 DRY_RUN_PLACEMENT
 EXPECTED_CLASS
 EXPECTED_EXIT
-INPUT
+INPUT_DISPLAY
+INPUT_ARGV_HEX_BEGIN ... INPUT_ARGV_HEX_END
 ACTUAL_EXIT
-OUTPUT_BEGIN ... OUTPUT_END
+OUTPUT_DISPLAY_BEGIN ... OUTPUT_DISPLAY_END
+OUTPUT_HEX
 RESULT
 ```
 
-The default log is `logs/test-screen-cli.log`.
+Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and preserved exactly in the hex fields.
 
-## Exit expectations
+`logs/test-regressions.log` records the focused semantic regressions introduced in 0.2.0.
+
+## Focused regressions
+
+`tests/test-regressions.sh` checks the bugs observed after the 0.1.0 package was run on a real system, including:
+
+- `-d -m <program>` operand handling;
+- `-m` not implying detach;
+- screenrc/tmux.conf incompatibility;
+- Screen `source` incompatibility;
+- logging not being silently dropped;
+- attach preselection preservation;
+- region/pane focus target correctness;
+- no invented resize direction;
+- layout abstraction mismatch;
+- ACL scope mismatch;
+- serial mappings being external;
+- safe rendering of carriage-return bytes.
+
+## Current packaged result
 
 ```text
-mapped       -> 0
-unsupported  -> 2
-invalid      -> 64
+translation permutations: 683 PASS, 0 FAIL
+syntax oracle base cases: 228 PASS, 0 FAIL
+focused regressions:       15 PASS, 0 FAIL
 ```
-
-Any mismatch is a test failure.

@@ -1,13 +1,13 @@
-# screen-to-tmux-translator 0.1.0
+# screen-to-tmux-translator 0.2.0
 
-A POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
+A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
-The project defines two shell functions:
+It defines:
 
 - `screen2tmux ...` — explicit translator entry point.
-- `screen ...` — drop-in Screen-compatible entry point, unless `SCREEN2TMUX_NO_SCREEN_FUNCTION=1` is set before sourcing the script.
+- `screen ...` — optional drop-in shell function, unless `SCREEN2TMUX_NO_SCREEN_FUNCTION=1` is set before sourcing the file.
 
-The translator maps Screen operations to tmux where the semantics are sufficiently close. When Screen exposes functionality tmux does not have, or where a superficially similar tmux command would change the semantics materially, it refuses the translation and prints the reason plus a suggested alternative.
+The translator executes only mappings classified as **EXACT**. When a tmux command is merely similar, broader in scope, depends on an external program, or the Screen operation is unnecessary under tmux's architecture, the translator explains that instead of silently executing a misleading substitute.
 
 ## Load it
 
@@ -15,9 +15,9 @@ The translator maps Screen operations to tmux where the semantics are sufficient
 . ./bin/screen-to-tmux.sh
 ```
 
-This intentionally defines a shell function named `screen`, so it shadows an installed GNU Screen executable in that shell. To invoke the native executable anyway, use `command screen ...`.
+This defines a shell function named `screen`, shadowing an installed GNU Screen executable in that shell. Use `command screen ...` to invoke the native executable.
 
-To load only `screen2tmux` without defining the `screen` function:
+To define only `screen2tmux`:
 
 ```sh
 SCREEN2TMUX_NO_SCREEN_FUNCTION=1
@@ -35,91 +35,109 @@ screen -S work --dry-run -X stuff hello
 screen -S work -X stuff hello --dry-run
 ```
 
-A mapped command prints the shell-quoted tmux command instead of executing it:
+An exact mapping prints the tmux argv instead of executing it:
 
 ```text
-'tmux' 'send-keys' '-l' '-t' 'work' 'hello'
+'tmux' 'send-keys' '-l' '-t' 'work:0' 'hello'
 ```
 
-A valid Screen operation that cannot be represented faithfully prints a reason and suggestion:
+Control bytes are escaped in dry-run output so they cannot corrupt the terminal or log. For example a carriage return is shown as `\r`.
+
+## Translation classes and exit status
+
+| Status | Class | Meaning |
+| ---: | --- | --- |
+| `0` | `EXACT` | Safe enough to execute automatically; under `--dry-run`, prints the tmux command. |
+| `2` | `UNSUPPORTED` | Valid Screen operation, but no safe automatic tmux equivalent is implemented. |
+| `3` | `APPROX` | A useful tmux substitute exists, but semantics differ materially; it is not executed. |
+| `4` | `MOOT` | tmux architecture makes the Screen operation unnecessary. |
+| `5` | `EXTERNAL` | Closest substitute requires a non-tmux program such as `picocom` or `telnet`. |
+| `64` | `INVALID` | Invalid or unknown Screen syntax for this translator. |
+
+Other statuses can come from tmux itself when an `EXACT` mapping is executed without `--dry-run`.
+
+Example approximation:
 
 ```text
-screen2tmux: cannot translate exactly: Screen removes a display region without killing its window; tmux has no separate region object because a pane is both the PTY and the layout object.
-screen2tmux: suggestion: Use resize-pane -Z to zoom, or break-pane before kill-pane if you need to preserve the process.
+screen2tmux: APPROX: Screen focus moves among display regions; tmux select-pane moves among PTY panes, so the object model is different.
+screen2tmux: suggestion: Closest substitute: tmux select-pane -t work:.{right-of}
 ```
 
-## Exit status
+## Important 0.2.0 correctness changes
 
-| Status | Meaning |
-| ---: | --- |
-| `0` | Screen command was translated; tmux was executed, or printed under `--dry-run`. |
-| `2` | Screen syntax/operation is recognized, but there is no faithful automatic tmux equivalent. |
-| `64` | Invalid or unknown Screen syntax for the translator. |
-| other | When not using `--dry-run`, tmux's own exit status may be returned. |
+0.2.0 fixes semantic false positives found by running the 0.1.0 test suite on a real system:
+
+- `screen -d -m bash` now keeps `bash` as the initial program instead of misreading it as a session name.
+- `screen -m` no longer translates to a detached tmux session; Screen `-m` means “force a new Screen session despite `$STY`”, not “detach”.
+- `screen -c FILE` never becomes `tmux -f FILE`; Screen and tmux configuration languages are different.
+- `screen ... -X source FILE` never becomes `tmux source-file FILE` without translation of the file contents.
+- `screen -L` and `-Logfile` are no longer silently discarded.
+- `screen -p 2 -r work` now preserves the selected window as `tmux attach-session -t work:2`.
+- Screen region operations (`split`, `focus`, `only`, `resize`) are classified as approximations instead of exact pane operations.
+- Screen saved layouts are no longer conflated with tmux pane-layout objects.
+- Screen ACL add/delete operations are no longer executed automatically as tmux `server-access`, because that would broaden scope from one Screen session to the entire tmux server.
+- Direct serial/Telnet substitutions are classified as `EXTERNAL`, not exact tmux mappings.
+- Dry-run/log rendering escapes control bytes, fixing carriage-return corruption in test logs.
 
 ## Tests
 
-Run:
+Run everything:
 
 ```sh
-./tests/test-screen-cli.sh
+sh run-tests.sh
 ```
 
-The harness sources the translator and **calls the drop-in `screen()` function**, always with `--dry-run`. For each source-derived Screen command-line case it tests dry-run in the first argument position, an interior position where one exists, and the last position.
+The test system has two layers:
 
-Current project test inventory:
+1. A **Screen syntax oracle**, independent from the translator, built from GNU Screen 5.0.2 `comm.c` command metadata plus a separate top-level CLI parser.
+2. Translator tests that insert `--dry-run` at first/middle/last positions and compare the resulting classification.
 
-- 218 source-derived valid Screen command-line cases.
-- 10 negative controls.
-- 683 concrete dry-run invocations after placement permutations.
-- Current packaged result: **683 PASS, 0 FAIL**.
+Current packaged results:
 
-Console PASS/FAIL results use ANSI colors when stdout is a terminal. Set `NO_COLOR=1` to disable colors.
+```text
+683/683 translation dry-run permutations PASS
+228/228 independent Screen syntax oracle cases PASS
+15/15 focused semantic regression tests PASS
+```
 
-The complete input/output transcript is written to:
+Logs:
 
 ```text
 logs/test-screen-cli.log
+logs/test-regressions.log
 ```
 
-You may choose another path:
+`test-screen-cli.log` records the displayed input, exact argv bytes in hex, output, output bytes in hex, expected class, actual exit code, and PASS/FAIL for every invocation.
 
-```sh
-LOG_FILE=/tmp/screen2tmux.log ./tests/test-screen-cli.sh
-```
+## Source basis
 
-## What "syntax validation" means here
+The bundled command manifest was generated from the GNU Screen 5.0.2 source supplied with this project work. The tmux mappings were audited against the supplied tmux `next-3.9` development source snapshot. See `docs/SOURCE-BASIS.md`.
 
-GNU Screen itself does **not** provide a native `--dry-run` option. The test suite therefore does not execute a real Screen process for each case. Instead:
-
-1. The case manifest is derived from the GNU Screen 5.0.2 command-line/parser behavior and the valid command forms catalogued while inspecting that source tree.
-2. The harness calls this project's replacement `screen()` function with `--dry-run`.
-3. A valid mapped command must return `0`.
-4. A valid but deliberately unsupported Screen operation must return `2` with an explanation.
-5. Negative controls must return `64`.
-
-This validates the translator's Screen parser and classification without creating sessions, detaching terminals, touching utmp, opening serial devices, or otherwise causing the side effects that native Screen command validation would entail.
-
-Some Screen facilities are build/platform dependent, especially built-in Telnet and utmp support. Their syntactic forms remain represented in the manifest because they are valid forms in configurations where those features are compiled.
-
-## Files
+## Project files
 
 ```text
-screen-to-tmux-translator-0.1.0/
+screen-to-tmux-translator-0.2.0/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
+├── MANIFEST.sha256
 ├── bin/
 │   └── screen-to-tmux.sh
 ├── docs/
-│   └── TESTING.md
+│   ├── SOURCE-BASIS.md
+│   ├── TESTING.md
+│   └── screen-5.0.2-command-manifest.tsv
 ├── tests/
 │   ├── cases.sh
+│   ├── screen-syntax-oracle.sh
+│   ├── test-regressions.sh
 │   └── test-screen-cli.sh
-└── logs/
-    └── test-screen-cli.log
+├── logs/
+│   ├── test-regressions.log
+│   └── test-screen-cli.log
+└── run-tests.sh
 ```
 
-## Scope and safety
+## Scope
 
-The translator is intentionally conservative. It does not silently replace a Screen operation with a tmux operation that would destroy a process, weaken access controls, or otherwise alter important semantics. Examples include Screen display-region removal, detailed Screen ACLs/writelock, native serial BREAK, ZMODEM handling, and legacy character-set translation.
+This is intentionally not a promise that every Screen feature has a lossless tmux equivalent. GNU Screen and tmux have different object models, security models, configuration languages, terminal compatibility assumptions, and serial/network features. The translator's policy is to execute only mappings judged safe enough to call exact and to surface semantic differences explicitly everywhere else.
