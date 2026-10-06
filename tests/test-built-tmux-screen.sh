@@ -194,6 +194,62 @@ for SCREEN_BIN do
         printf 'STRICT_NOTICE\tFAIL\t%s\trc=%s\texists_rc=%s\n' "$LABEL" "$_strict_named_rc" "$_strict_named_exists" >> "$LOG"
     fi
 
+    # EXTERNAL startup mappings can execute through the compiled hardlink when
+    # the required helper exists. Use a private telnet stub and a fresh tmux
+    # server so the server inherits the helper directory in PATH.
+    TOTAL=$((TOTAL + 1))
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-server >/dev/null 2>&1 || :
+    _external_bin=$RUNTIME/external-bin
+    _external_args=$RUNTIME/telnet.args
+    mkdir -p "$_external_bin"
+    cat > "$_external_bin/telnet" <<EOF_EXTERNAL_HELPER
+#!/bin/sh
+printf '%s\n' "\$@" > '$_external_args'
+sleep 1
+EOF_EXTERNAL_HELPER
+    chmod 755 "$_external_bin/telnet"
+    PATH="$_external_bin:$PATH" HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" NO_COLOR=1 SCREEN2TMUX_COLOR=never \
+       "$SCREEN_BIN" -d -m //telnet example.com 23 >"$RUNTIME/external.out" 2>"$RUNTIME/external.err"
+    _external_rc=$?
+    sleep 1
+    if [ "$_external_rc" -eq 0 ] && [ -f "$_external_args" ] && \
+       [ "$(sed -n '1p' "$_external_args")" = example.com ] && \
+       [ "$(sed -n '2p' "$_external_args")" = 23 ] && \
+       grep -F 'screen2tmux: EXTERNAL:' "$RUNTIME/external.err" >/dev/null 2>&1; then
+        PASS=$((PASS + 1))
+        _s2t_test_print_case "[PASS] $LABEL EXTERNAL" 'compiled EXTERNAL mapping launches installed telnet helper' \
+            "$(_s2t_test_format_argv screen -d -m //telnet example.com 23)" \
+            "$(_s2t_test_format_argv tmux new-session -d telnet example.com 23)"
+        printf 'EXTERNAL_EXEC\tPASS\t%s\n' "$LABEL" >> "$LOG"
+    else
+        FAIL=$((FAIL + 1))
+        printf '%b[FAIL]%b %s compiled executable-EXTERNAL integration check failed (rc=%s)\n' "$R" "$Z" "$LABEL" "$_external_rc"
+        printf 'EXTERNAL_EXEC\tFAIL\t%s\trc=%s\n' "$LABEL" "$_external_rc" >> "$LOG"
+        [ ! -s "$RUNTIME/external.err" ] || sed 's/^/  external stderr: /' "$RUNTIME/external.err"
+        [ ! -f "$_external_args" ] || sed 's/^/  helper argv: /' "$_external_args"
+    fi
+
+    # Strict mode must keep the same helper-backed EXTERNAL mapping advisory
+    # and must not create a tmux server or execute the helper.
+    TOTAL=$((TOTAL + 1))
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-server >/dev/null 2>&1 || :
+    rm -f "$_external_args"
+    PATH="$_external_bin:$PATH" HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" NO_COLOR=1 SCREEN2TMUX_COLOR=never \
+       "$SCREEN_BIN" --strict -d -m //telnet example.com 23 >"$RUNTIME/external-strict.out" 2>"$RUNTIME/external-strict.err"
+    _external_strict_rc=$?
+    if [ "$_external_strict_rc" -eq 5 ] && [ ! -e "$_external_args" ] && \
+       grep -F -- '--strict keeps EXTERNAL mappings advisory' "$RUNTIME/external-strict.err" >/dev/null 2>&1; then
+        PASS=$((PASS + 1))
+        _s2t_test_print_case "[PASS] $LABEL STRICT-EXTERNAL" 'compiled strict mode blocks helper-backed EXTERNAL execution' \
+            "$(_s2t_test_format_argv screen --strict -d -m //telnet example.com 23)" '<EXTERNAL: advisory only>'
+        printf 'STRICT_EXTERNAL\tPASS\t%s\n' "$LABEL" >> "$LOG"
+    else
+        FAIL=$((FAIL + 1))
+        printf '%b[FAIL]%b %s compiled strict-EXTERNAL integration check failed (rc=%s helper_ran=%s)\n' \
+            "$R" "$Z" "$LABEL" "$_external_strict_rc" "$([ -e "$_external_args" ] && printf yes || printf no)"
+        printf 'STRICT_EXTERNAL\tFAIL\t%s\trc=%s\n' "$LABEL" "$_external_strict_rc" >> "$LOG"
+    fi
+
     HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-server >/dev/null 2>&1 || :
 done
 

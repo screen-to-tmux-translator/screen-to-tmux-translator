@@ -209,7 +209,10 @@ expect_class_contains "focus right is approximation with correct target" 0 "work
 expect_not_contains "resize +5 does not invent down direction" 3 "resize-pane -D" -S work -X resize +5 --dry-run
 expect_class_contains "Screen layout next is not claimed exact" 0 "saved display-region layouts" -S work -X layout next --dry-run
 expect_class_contains "ACL add warns about server-wide scope" 0 "server level" -S work -X acladd alice --dry-run
-expect_class_contains "direct serial mapping is external" 5 "EXTERNAL" /dev/ttyUSB0 115200 --dry-run
+expect_class_contains "direct serial mapping is external" 0 "EXTERNAL" /dev/ttyUSB0 115200 --dry-run
+expect_class_contains "direct serial dry-run shows picocom tmux command" 0 "'tmux' 'new-session' 'picocom' '-b' '115200' '/dev/ttyUSB0'" /dev/ttyUSB0 115200 --dry-run
+expect_class_contains "telnet dry-run shows external-client tmux command" 0 "'tmux' 'new-session' 'telnet' 'example.com' '23'" //telnet example.com 23 --dry-run
+expect_class_contains "IPv6 telnet dry-run preserves address-family selection" 0 "'tmux' 'new-session' 'telnet' '-6' 'example.com'" -6 //telnet example.com --dry-run
 expect_class_contains "plain -r warns before executing closest attach" 0 "normally refuses an already attached session" -r work --dry-run
 expect_exact "--strict leaves EXACT mappings available" "'tmux' 'new-session' '-d' 'bash'" --strict --dry-run -d -m bash
 expect_class_contains "--strict makes executable APPROX advisory" 3 "--strict keeps APPROX mappings advisory" --strict --dry-run -r work
@@ -262,6 +265,70 @@ else
     fail "$CURRENT_NAME (rc=$RC sentinel=$([ -e "$_s2t_strict_sentinel" ] && printf yes || printf no) output=$OUT)"
 fi
 rm -rf "$_s2t_strict_stub"
+
+CURRENT_NAME='external telnet mapping executes when telnet is installed'
+_s2t_external_stub=${TMPDIR:-/tmp}/screen2tmux-external-exec-$$
+rm -rf "$_s2t_external_stub"
+mkdir -p "$_s2t_external_stub"
+cat > "$_s2t_external_stub/telnet" <<'EOF_EXTERNAL_TELNET'
+#!/bin/sh
+exit 0
+EOF_EXTERNAL_TELNET
+cat > "$_s2t_external_stub/picocom" <<'EOF_EXTERNAL_PICOCOM'
+#!/bin/sh
+exit 0
+EOF_EXTERNAL_PICOCOM
+cat > "$_s2t_external_stub/tmux" <<'EOF_EXTERNAL_TMUX'
+#!/bin/sh
+printf 'EXTERNAL_TMUX_EXEC'
+for a do printf ' <%s>' "$a"; done
+printf '\n'
+EOF_EXTERNAL_TMUX
+chmod 755 "$_s2t_external_stub/telnet" "$_s2t_external_stub/picocom" "$_s2t_external_stub/tmux"
+OUT=$(PATH="$_s2t_external_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen //telnet example.com 23 2>&1)
+RC=$?
+if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -F 'screen2tmux: EXTERNAL:' >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'EXTERNAL_TMUX_EXEC <new-session> <telnet> <example.com> <23>' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='external serial mapping executes when picocom is installed'
+OUT=$(PATH="$_s2t_external_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen /dev/ttyUSB0 115200 2>&1)
+RC=$?
+if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -F 'EXTERNAL_TMUX_EXEC <new-session> <picocom> <-b> <115200> </dev/ttyUSB0>' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='--strict blocks executable EXTERNAL mapping'
+_s2t_external_sentinel=$_s2t_external_stub/executed
+cat > "$_s2t_external_stub/tmux" <<'EOF_EXTERNAL_STRICT_TMUX'
+#!/bin/sh
+printf 'executed\n' > "${SCREEN2TMUX_EXTERNAL_SENTINEL:?}"
+exit 0
+EOF_EXTERNAL_STRICT_TMUX
+chmod 755 "$_s2t_external_stub/tmux"
+OUT=$(PATH="$_s2t_external_stub:$PATH" SCREEN2TMUX_EXTERNAL_SENTINEL="$_s2t_external_sentinel" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen --strict //telnet example.com 23 2>&1)
+RC=$?
+if [ "$RC" -eq 5 ] && [ ! -e "$_s2t_external_sentinel" ] && printf '%s\n' "$OUT" | grep -F -- '--strict keeps EXTERNAL mappings advisory' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC sentinel=$([ -e "$_s2t_external_sentinel" ] && printf yes || printf no) output=$OUT)"
+fi
+
+CURRENT_NAME='--strict dry-run shows EXTERNAL command but returns advisory status'
+OUT=$(PATH="$_s2t_external_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen --strict --dry-run //telnet example.com 23 2>&1)
+RC=$?
+if [ "$RC" -eq 5 ] && printf '%s\n' "$OUT" | grep -F "'tmux' 'new-session' 'telnet' 'example.com' '23'" >/dev/null 2>&1 && printf '%s\n' "$OUT" | grep -F -- '--strict keeps EXTERNAL mappings advisory' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+rm -rf "$_s2t_external_stub"
+
 expect_class_contains "hardcopy explicit file is approximation" 3 "not byte-for-byte equivalent" -S work -p 0 -X hardcopy /tmp/window.txt --dry-run
 expect_class_contains "removebuf does not delete tmux buffer" 2 "exchange file" -S work -X removebuf --dry-run
 expect_not_contains "removebuf never emits delete-buffer" 2 "delete-buffer'" -S work -X removebuf --dry-run
@@ -312,7 +379,7 @@ expect_class_contains "compatibility help is available" 0 "screen-to-tmux compat
 expect_class_contains "compatibility help identifies Screen 5.0.x syntax" 0 "GNU Screen 5.0.x-style command-line syntax" --dry-run --help
 expect_class_contains "compatibility help explains tmux differences" 0 "Important tmux-underneath differences" --dry-run --help
 expect_class_contains "compatibility help documents dryrun alias" 0 "--dry-run / --dryrun" --dry-run --help
-expect_class_contains "compatibility help documents strict mode" 0 "Never execute APPROX mappings" --dry-run --help
+expect_class_contains "compatibility help documents strict mode" 0 "Never execute APPROX or EXTERNAL mappings" --dry-run --help
 expect_class_contains "internal Screen version is not tmux version" 2 "reports Screen's version/status text" --dry-run -S work -X version
 expect_exact "query echo uses tmux literal mode" "'tmux' 'display-message' '-pl' '#{session_name}'" --dry-run -S work -Q echo '#{session_name}'
 expect_class_contains "query echo -p refuses Screen format reinterpretation" 2 "Screen echo -p expands Screen's own % status-format language" --dry-run -S work -Q echo -p '%n %t'
@@ -717,6 +784,21 @@ if [ "$_FMT_POS" = '28:135:28:135' ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (columns $_FMT_POS)"
+fi
+
+CURRENT_NAME='mapping formatter colorizes class result with class color'
+_FMT_OUT=$(NO_COLOR= SCREEN2TMUX_COLOR=always SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=26 SCREEN2TMUX_MAP_DESC_WIDTH=52 SCREEN2TMUX_MAP_SCREEN_WIDTH=49 sh -c '. "$1"; _s2t_test_print_case "[PASS] P013 unsupported" "flow off form" "screen -fn" "<UNSUPPORTED>" unsupported; _s2t_test_print_case "[PASS] C027 moot" "wipe stale sessions" "screen -wipe" "<MOOT: no tmux action>" moot; _s2t_test_print_case "[PASS] C007 approx" "start named editor session" "screen -S editor vim file.txt" "tmux new-session -s editor vim file.txt" approx-run' sh "$PROJECT/tests/output-format.sh")
+_FMT_HEX=$(printf '%s' "$_FMT_OUT" | od -An -v -tx1 | tr -d ' \n')
+_ESC=$(printf '\033')
+if printf '%s\n' "$_FMT_OUT" | grep -F "${_ESC}[31m<UNSUPPORTED>${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_FMT_OUT" | grep -F "${_ESC}[36m<MOOT: no tmux action>${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_FMT_OUT" | grep -F "${_ESC}[33mtmux new-session -s editor vim file.txt${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_FMT_OUT" | grep -F "${_ESC}[31munsupported${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_FMT_OUT" | grep -F "${_ESC}[36mmoot${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_FMT_OUT" | grep -F "${_ESC}[33mapprox${_ESC}[0m" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (hex=$_FMT_HEX)"
 fi
 
 CURRENT_NAME='mapping formatter puts description before command mapping'

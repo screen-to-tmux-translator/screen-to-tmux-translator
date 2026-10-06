@@ -1,5 +1,5 @@
 #!/bin/sh
-SCREEN2TMUX_VERSION=0.4.7
+SCREEN2TMUX_VERSION=0.4.8
 case ${0##*/} in
     screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)
         _s2t_source_name=${0##*/}
@@ -156,7 +156,7 @@ _s2t_help()
     _s2t_help_row APPROX      'APPROX'      'Semantics differ; concrete one-command substitutes execute after a warning, otherwise translation stays advisory.'
     _s2t_help_row UNSUPPORTED 'UNSUPPORTED' 'Valid Screen behavior has no safe tmux equivalent; no emulation is invented.'
     _s2t_help_row MOOT        'MOOT'        'Screen-only maintenance/architecture is unnecessary under tmux.'
-    _s2t_help_row EXTERNAL    'EXTERNAL'    'Closest substitute needs another program such as picocom/telnet/ssh.'
+    _s2t_help_row EXTERNAL    'EXTERNAL'    'Closest substitute needs another program; concrete helper-backed mappings run when that helper is installed (unless --strict).'
     _s2t_help_row VARIES      'VARIES'      'Depends on subcommand, selector, runtime state, or invocation context.'
     _s2t_help_heading 'Top-level Screen options'
     _s2t_help_row VARIES      '-4 / -6'              'Only meaningful for Screen built-in network forms; external-client substitution may be required.'
@@ -193,7 +193,7 @@ _s2t_help()
     _s2t_help_row VARIES      '-X command [args]'     'Screen commands are translated individually; see common command groups below.'
     _s2t_help_heading 'Translator extensions'
     _s2t_help_row EXTENSION   '--dry-run / --dryrun'  'Print the translated tmux argv or diagnostic instead of executing it.'
-    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX mappings; they remain advisory and return status 3.'
+    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX or EXTERNAL mappings; APPROX returns 3 and EXTERNAL returns 5.'
     _s2t_help_row EXTENSION   '--help'                'Show this compatibility-aware help page.'
     _s2t_help_heading 'Common -X / -Q command coverage'
     _s2t_help_row EXACT       'stuff/select/title/kill' 'Direct pane/window operations for safe targets; literal data is protected from tmux format expansion.'
@@ -210,7 +210,7 @@ _s2t_help()
     _s2t_help_row UNSUPPORTED 'multiuser/writelock'      'Screen per-session/per-window security model is not recreated on top of tmux.'
     _s2t_help_row UNSUPPORTED 'encoding/charset'         'Screen character-set machinery is not reprogrammed in the translator.'
     _s2t_help_row UNSUPPORTED 'paste/removebuf'          'Screen register/exchange-file semantics differ from tmux server-wide buffers.'
-    _s2t_help_row EXTERNAL    '/dev/tty*, //telnet'      'Use a real serial/network client inside a tmux pane; tmux itself is not a serial/telnet engine.'
+    _s2t_help_row EXTERNAL    '/dev/tty*, //telnet'      'Concrete mappings launch picocom/telnet inside tmux when installed; tmux itself is not a serial/telnet engine.'
     _s2t_help_heading 'Important tmux-underneath differences'
     printf '%s\n' '  * tmux multi-client attachment is native and often simpler, but that makes Screen -r semantics only approximate.'
     printf '%s\n' '  * tmux uses unique session names; Screen socket labels can repeat because the PID is part of the socket name.'
@@ -223,8 +223,8 @@ _s2t_help()
     printf '%s\n' '  SCREEN2TMUX_COLOR=auto|always|never          control selective diagnostic/help color.'
     printf '%s\n' '  NO_COLOR=1                                  disable ANSI color unconditionally.'
     _s2t_help_heading 'Exit status'
-    printf '%s\n' '  0 exact/help success or successful executable approximation; 2 unsupported; 3 advisory approximate/uncertain (and all APPROX under --strict); 4 moot; 5 external; 64 invalid syntax.'
-    printf '%s\n' '  Executed EXACT/APPROX mappings return the underlying tmux command status in normal mode; --strict never executes APPROX.'
+    printf '%s\n' '  0 exact/help success or successful executable APPROX/EXTERNAL mapping; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 advisory/missing-helper external; 64 invalid syntax.'
+    printf '%s\n' '  Executed mappings return the underlying tmux command status in normal mode; --strict never executes APPROX or EXTERNAL.'
 }
 _s2t_invalid()
 {
@@ -288,6 +288,79 @@ _s2t_moot()
 _s2t_external()
 {
     _s2t_report EXTERNAL 5 "$1" "${2-}"
+}
+_s2t_external_exec()
+{
+    _s2t_ee_helper=$1
+    _s2t_ee_reason=$2
+    _s2t_ee_suggestion=$3
+    shift 3
+    _s2t_report EXTERNAL 0 "$_s2t_ee_reason" "$_s2t_ee_suggestion" || return $?
+    if [ "${_s2t_strict:-0}" -eq 1 ]; then
+        _s2t_strict_label=$(_s2t_color_token yellow STRICT)
+        printf 'screen2tmux: %s: --strict keeps EXTERNAL mappings advisory; tmux was not executed.\n' "$_s2t_strict_label" >&2
+        if [ "${_s2t_dry_run:-0}" -eq 1 ]; then
+            _s2t_print_command tmux "$@"
+        fi
+        return 5
+    fi
+    if [ "${_s2t_dry_run:-0}" -eq 1 ]; then
+        _s2t_print_command tmux "$@"
+        return 0
+    fi
+    if ! command -v "$_s2t_ee_helper" >/dev/null 2>&1; then
+        _s2t_note "external helper '$_s2t_ee_helper' is not installed; tmux was not executed."
+        return 5
+    fi
+    _s2t_tmux "$@"
+}
+_s2t_external_tmux_call()
+{
+    _s2t_etc_helper=$1
+    _s2t_etc_reason=$2
+    _s2t_etc_suggestion=$3
+    shift 3
+    if [ "${_s2t_Uflag:-0}" -eq 1 ]; then
+        _s2t_external_exec "$_s2t_etc_helper" "$_s2t_etc_reason" "$_s2t_etc_suggestion" -u "$@"
+    else
+        _s2t_external_exec "$_s2t_etc_helper" "$_s2t_etc_reason" "$_s2t_etc_suggestion" "$@"
+    fi
+}
+_s2t_external_launch()
+{
+    _s2t_el_helper=$1
+    _s2t_el_reason=$2
+    _s2t_el_suggestion=$3
+    shift 3
+    if [ -n "${TMUX:-}" ] && [ "${_s2t_mflag:-0}" -eq 0 ] && [ -z "${_s2t_session:-}" ]; then
+        if [ -n "${_s2t_title:-}" ]; then
+            _s2t_tmux_format_literal "$_s2t_title"
+            _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-window -n "$_s2t_format_literal" "$@"
+        else
+            _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-window "$@"
+        fi
+        return $?
+    fi
+    if [ -n "${_s2t_session:-}" ]; then _s2t_tmux_format_literal "$_s2t_session"; _s2t_el_session=$_s2t_format_literal; else _s2t_el_session=; fi
+    if [ -n "${_s2t_title:-}" ]; then _s2t_tmux_format_literal "$_s2t_title"; _s2t_el_title=$_s2t_format_literal; else _s2t_el_title=; fi
+    if [ "${_s2t_detach:-0}" -eq 1 ] && [ "${_s2t_mflag:-0}" -eq 1 ]; then _s2t_el_detached=1; else _s2t_el_detached=0; fi
+    if [ "$_s2t_el_detached" -eq 1 ] && [ -n "$_s2t_el_session" ] && [ -n "$_s2t_el_title" ]; then
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session -d -s "$_s2t_el_session" -n "$_s2t_el_title" "$@"
+    elif [ "$_s2t_el_detached" -eq 1 ] && [ -n "$_s2t_el_session" ]; then
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session -d -s "$_s2t_el_session" "$@"
+    elif [ "$_s2t_el_detached" -eq 1 ] && [ -n "$_s2t_el_title" ]; then
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session -d -n "$_s2t_el_title" "$@"
+    elif [ "$_s2t_el_detached" -eq 1 ]; then
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session -d "$@"
+    elif [ -n "$_s2t_el_session" ] && [ -n "$_s2t_el_title" ]; then
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session -s "$_s2t_el_session" -n "$_s2t_el_title" "$@"
+    elif [ -n "$_s2t_el_session" ]; then
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session -s "$_s2t_el_session" "$@"
+    elif [ -n "$_s2t_el_title" ]; then
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session -n "$_s2t_el_title" "$@"
+    else
+        _s2t_external_tmux_call "$_s2t_el_helper" "$_s2t_el_reason" "$_s2t_el_suggestion" new-session "$@"
+    fi
 }
 _s2t_note()
 {
@@ -972,7 +1045,7 @@ screen2tmux()
                 if [ "$#" -gt 0 ]; then
                     case "$1" in
                         *[!0-9]*)
-                            _s2t_external "Screen accepts native tty/stty option syntax for direct device windows; tmux has no built-in serial endpoint." "Run a serial application inside tmux and translate the tty settings explicitly, for example: tmux new-session 'picocom -b 115200 /dev/ttyUSB0'."
+                            _s2t_external "Screen accepts native tty/stty option syntax for direct device windows; tmux has no built-in serial endpoint." "Translate those device settings explicitly for picocom, tio, minicom, cu, or another serial client."
                             return $?
                             ;;
                         *) _s2t_baud=$1; shift ;;
@@ -982,12 +1055,12 @@ screen2tmux()
                     _s2t_external "Screen accepts additional native tty/stty options for direct device windows; tmux has no built-in serial endpoint." "Translate those settings to picocom, tio, minicom, or cu options explicitly."
                     return $?
                 fi
-                if [ -n "${TMUX:-}" ] && [ "$_s2t_mflag" -eq 0 ] && [ -z "$_s2t_session" ]; then _s2t_serial_create='tmux new-window'; else _s2t_serial_create="tmux new-session${_s2t_session:+ -s $_s2t_session}"; fi
                 if [ -n "$_s2t_baud" ]; then
-                    _s2t_external "Screen can attach its window directly to $_s2t_dev; tmux panes always run a process on a PTY." "Closest substitute: $_s2t_serial_create picocom -b $_s2t_baud $_s2t_dev"
+                    set -- picocom -b "$_s2t_baud" "$_s2t_dev"
                 else
-                    _s2t_external "Screen can attach its window directly to $_s2t_dev; tmux panes always run a process on a PTY." "Closest substitute: $_s2t_serial_create picocom $_s2t_dev"
+                    set -- picocom "$_s2t_dev"
                 fi
+                _s2t_external_launch picocom "Screen can attach its window directly to $_s2t_dev; tmux panes always run a process on a PTY, so a serial client is required." "Using picocom as the serial endpoint when installed." "$@"
                 return $?
                 ;;
             //telnet)
@@ -997,11 +1070,14 @@ screen2tmux()
                 shift
                 _s2t_port=${1-}
                 if [ "$#" -gt 1 ]; then _s2t_invalid "//telnet accepts host and optional port"; return $?; fi
-                _s2t_telnet_af=
-                [ "$_s2t_af" = 4 ] && _s2t_telnet_af=' -4'
-                [ "$_s2t_af" = 6 ] && _s2t_telnet_af=' -6'
-                if [ -n "${TMUX:-}" ] && [ "$_s2t_mflag" -eq 0 ] && [ -z "$_s2t_session" ]; then _s2t_telnet_create='tmux new-window'; else _s2t_telnet_create="tmux new-session${_s2t_session:+ -s $_s2t_session}"; fi
-                _s2t_external "Screen's //telnet is a built-in network terminal endpoint; tmux has no built-in Telnet client." "Closest substitute: $_s2t_telnet_create telnet$_s2t_telnet_af $_s2t_host${_s2t_port:+ $_s2t_port}"
+                if [ "$_s2t_af" = 4 ]; then
+                    if [ -n "$_s2t_port" ]; then set -- telnet -4 "$_s2t_host" "$_s2t_port"; else set -- telnet -4 "$_s2t_host"; fi
+                elif [ "$_s2t_af" = 6 ]; then
+                    if [ -n "$_s2t_port" ]; then set -- telnet -6 "$_s2t_host" "$_s2t_port"; else set -- telnet -6 "$_s2t_host"; fi
+                else
+                    if [ -n "$_s2t_port" ]; then set -- telnet "$_s2t_host" "$_s2t_port"; else set -- telnet "$_s2t_host"; fi
+                fi
+                _s2t_external_launch telnet "Screen's //telnet is built in; tmux has no Telnet client but can run one as the pane process." "Using the external telnet client when installed." "$@"
                 return $?
                 ;;
         esac

@@ -44,7 +44,7 @@ TAB=$(printf '\t')
 expected_rc()
 {
     case "$1" in
-        exact|approx-run) printf '0' ;;
+        exact|approx-run|external-run) printf '0' ;;
         unsupported) printf '2' ;;
         approx) printf '3' ;;
         moot) printf '4' ;;
@@ -228,11 +228,11 @@ flush_case()
     _mout=$(cat "$REF_DIR/$_current_last_base.out")
     _mtmux=$(_s2t_test_rhs_for_class "$_current_class" "$_mout")
     if [ "$_current_ok" -eq 1 ]; then
-        CASE_PASS=$((CASE_PASS + 1)); _display_class=$_current_class; [ "$_display_class" = approx-run ] && _display_class=approx; _prefix=$(printf '[PASS] %s %s' "$_current_id" "$_display_class")
-        _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux"
+        CASE_PASS=$((CASE_PASS + 1)); _display_class=$_current_class; [ "$_display_class" = approx-run ] && _display_class=approx; [ "$_display_class" = external-run ] && _display_class=external; _prefix=$(printf '[PASS] %s %s' "$_current_id" "$_display_class")
+        _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux" "$_current_class"
     else
-        CASE_FAIL=$((CASE_FAIL + 1)); _display_class=$_current_class; [ "$_display_class" = approx-run ] && _display_class=approx; _prefix=$(printf '[FAIL] %s %s' "$_current_id" "$_display_class")
-        _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux"; cat "$_current_div"
+        CASE_FAIL=$((CASE_FAIL + 1)); _display_class=$_current_class; [ "$_display_class" = approx-run ] && _display_class=approx; [ "$_display_class" = external-run ] && _display_class=external; _prefix=$(printf '[FAIL] %s %s' "$_current_id" "$_display_class")
+        _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux" "$_current_class"; cat "$_current_div"
     fi
     : > "$_current_div"
 }

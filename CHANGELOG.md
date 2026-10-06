@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.8 — 2026-10-06
+
+- Colorized the complete right-hand mapping result with the same semantic class color used by the case label. `UNSUPPORTED` results are red, `MOOT` results cyan, executable/advisory `APPROX` results yellow, `EXTERNAL` results magenta, `INVALID` results red, and exact tmux mappings green.
+- Added concrete helper-backed `EXTERNAL` mappings for direct serial-device startup and Screen `//telnet`: tmux now launches `picocom` or `telnet` as the pane process when that helper is installed. Dry-run always shows the concrete tmux argv without requiring the helper.
+- Preserved `EXTERNAL` classification for those mappings because tmux itself still provides only the PTY/session host; the external client implements the serial or Telnet protocol. Missing helpers return status 5 without invoking tmux.
+- Extended `--strict` so executable `EXTERNAL` mappings also remain advisory and never invoke tmux. Runtime serial controls such as `break` and `flow` remain advisory `EXTERNAL` operations because no helper-independent tmux command safely reproduces their Screen endpoint semantics.
+- Added regressions for helper-backed Telnet/serial execution, strict suppression of executable `EXTERNAL`, concrete external dry-run argv, IPv6 Telnet argument preservation, and class-matched mapping colors. Focused regressions are now 130 PASS.
+- Extended the compiled patched-tmux integration suite with real helper-backed `EXTERNAL` execution and strict-EXTERNAL suppression checks; a built version now runs eight hardlink integration checks.
+
 ## 0.4.7 — 2026-10-06
 
 - Added translator-owned `--strict`, accepted anywhere in the argument vector like `--dry-run`. `EXACT` mappings retain normal behavior; every `APPROX` mapping becomes advisory, returns status 3, and never invokes tmux. `--strict --dry-run` still prints the closest tmux argv for inspection without executing it.

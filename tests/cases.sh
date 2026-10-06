@@ -1,4 +1,4 @@
-# Source-derived Screen CLI cases for screen-to-tmux-translator 0.4.7.
+# Source-derived Screen CLI cases for screen-to-tmux-translator 0.4.8.
 # This file is sourced by test-screen-cli.sh, which defines case_.
 # Syntax: case_ ID EXPECTED "description" [screen arguments...]
 # EXPECTED: exact | approx-run | approx | moot | external | unsupported | invalid
@@ -201,18 +201,18 @@ case_ A007 unsupported "Screen authentication" -S work -X auth on
 case_ A008 unsupported "startup Screen authentication" -P -S work
 
 # Serial/direct-device/Telnet/ZMODEM special forms
-case_ X001 external    "direct serial tty device" /dev/ttyS0
-case_ X002 external    "direct serial tty with baud operand" /dev/ttyS0 9600
-case_ X003 external    "direct USB serial tty with baud operand" /dev/ttyUSB0 115200
+case_ X001 external-run "direct serial tty device" /dev/ttyS0
+case_ X002 external-run "direct serial tty with baud operand" /dev/ttyS0 9600
+case_ X003 external-run "direct USB serial tty with baud operand" /dev/ttyUSB0 115200
 case_ X004 external    "native serial break" -S work -X break
 case_ X005 external    "timed native serial break" -S work -X break 500
 case_ X006 external    "Screen flow on" -S work -X flow on
 case_ X007 external    "Screen flow off" -S work -X flow off
 case_ X008 external    "Screen flow auto" -S work -X flow auto
-case_ X009 external    "built-in telnet special command represented as argv" //telnet example.com
-case_ X010 external    "built-in telnet with port represented as argv" //telnet example.com 23
-case_ X011 external    "IPv4 telnet selection" -4 //telnet example.com
-case_ X012 external    "IPv6 telnet selection" -6 //telnet example.com
+case_ X009 external-run "built-in telnet special command represented as argv" //telnet example.com
+case_ X010 external-run "built-in telnet with port represented as argv" //telnet example.com 23
+case_ X011 external-run "IPv4 telnet selection" -4 //telnet example.com
+case_ X012 external-run "IPv6 telnet selection" -6 //telnet example.com
 case_ X013 unsupported "ZMODEM auto" -S work -X zmodem auto
 case_ X014 unsupported "ZMODEM catch" -S work -X zmodem catch
 case_ X015 unsupported "ZMODEM pass" -S work -X zmodem pass

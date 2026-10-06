@@ -15,6 +15,43 @@ case "$_s2t_test_map_screen_width" in ''|*[!0-9]*) _s2t_test_map_screen_width=49
 
 _s2t_test_quiet=${SCREEN2TMUX_TEST_QUIET:-0}
 
+_s2t_test_class_color_code()
+{
+    case "$1" in
+        exact) printf '\033[32m' ;;
+        approx|approx-run) printf '\033[33m' ;;
+        unsupported|invalid) printf '\033[31m' ;;
+        moot) printf '\033[36m' ;;
+        external|external-run) printf '\033[35m' ;;
+        *) printf '' ;;
+    esac
+}
+
+_s2t_test_color_enabled()
+{
+    [ -z "${NO_COLOR:-}" ] || return 1
+    case "${SCREEN2TMUX_COLOR:-auto}" in
+        always) return 0 ;;
+        never) return 1 ;;
+        auto|'') [ -t 1 ] && [ "${TERM:-}" != dumb ] ;;
+        *) return 1 ;;
+    esac
+}
+
+_s2t_test_color_class_token()
+{
+    _tf_cc_class=$1
+    _tf_cc_text=$2
+    if _s2t_test_color_enabled; then
+        _tf_cc_code=$(_s2t_test_class_color_code "$_tf_cc_class")
+        if [ -n "$_tf_cc_code" ]; then
+            printf '%b%s%b' "$_tf_cc_code" "$_tf_cc_text" '\033[0m'
+            return
+        fi
+    fi
+    printf '%s' "$_tf_cc_text"
+}
+
 # Human-readable shell command rendering. Keep ordinary argv bare and quote only
 # arguments that actually need shell protection (spaces, #, backslashes, control
 # bytes, etc.). Control bytes keep the translator's one-line escaped form.
@@ -107,6 +144,14 @@ _s2t_test_rhs_for_class()
         approx) printf '%s' '<APPROX: advisory only>' ;;
         unsupported) printf '%s' '<UNSUPPORTED>' ;;
         moot) printf '%s' '<MOOT: no tmux action>' ;;
+        external-run)
+            _tf_last=$(printf '%s\n' "$_tf_output" | tail -n 1)
+            if _tf_pretty=$(_s2t_test_pretty_tmux_output "$_tf_last"); then
+                printf '%s' "$_tf_pretty"
+            else
+                printf '%s' '<EXTERNAL program required>'
+            fi
+            ;;
         external) printf '%s' '<EXTERNAL program required>' ;;
         invalid) printf '%s' '<INVALID Screen syntax>' ;;
         *) printf '%s' '<no automatic tmux command>' ;;
@@ -119,7 +164,27 @@ _s2t_test_print_case()
     _tf_desc=$2
     _tf_screen=$3
     _tf_tmux=$4
-    if [ "$_s2t_test_quiet" = 1 ]; then
+    _tf_class=${5-}
+
+    if [ -n "$_tf_class" ]; then
+        _tf_prefix_head=${_tf_prefix% *}
+        _tf_prefix_class=${_tf_prefix##* }
+        _tf_prefix_len=${#_tf_prefix}
+        _tf_prefix_pad=$((_s2t_test_map_left_width - _tf_prefix_len))
+        [ "$_tf_prefix_pad" -gt 0 ] || _tf_prefix_pad=1
+        printf '%s ' "$_tf_prefix_head"
+        _s2t_test_color_class_token "$_tf_class" "$_tf_prefix_class"
+        printf '%*s' "$_tf_prefix_pad" ''
+        if [ "$_s2t_test_quiet" = 1 ]; then
+            printf ' %s\n' "$_tf_desc"
+        else
+            printf ' | %-*s | %-*s -> ' \
+                "$_s2t_test_map_desc_width" "$_tf_desc" \
+                "$_s2t_test_map_screen_width" "$_tf_screen"
+            _s2t_test_color_class_token "$_tf_class" "$_tf_tmux"
+            printf '\n'
+        fi
+    elif [ "$_s2t_test_quiet" = 1 ]; then
         printf '%-*s %s\n' "$_s2t_test_map_left_width" "$_tf_prefix" "$_tf_desc"
     else
         printf '%-*s | %-*s | %-*s -> %s\n' \
