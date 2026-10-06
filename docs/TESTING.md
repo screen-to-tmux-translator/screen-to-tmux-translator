@@ -26,13 +26,13 @@ GNU Screen has no native side-effect-free dry-run mode, so invoking the real bin
 ```text
 EXACT        exit 0   safe automatic translation
 UNSUPPORTED  exit 2   valid Screen operation, no safe automatic translation
-APPROX       exit 3   useful substitute exists but semantics differ
+APPROX       exit 0/3 semantics differ: executable one-command substitute / advisory only
 MOOT         exit 4   tmux architecture removes the need for the operation
 EXTERNAL     exit 5   substitute requires a non-tmux program
 INVALID      exit 64  invalid/unknown Screen syntax
 ```
 
-Only `EXACT` mappings execute tmux when `--dry-run` is absent.
+Both `EXACT` and concrete one-command `APPROX` mappings execute tmux when `--dry-run` is absent. Executable `APPROX` first emits its semantic warning; advisory `APPROX` returns 3 without executing.
 
 ## Dry-run placement
 
@@ -98,7 +98,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.5.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.6.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, both one-line source variants, standalone self-contained `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with full paths. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 
@@ -155,7 +155,7 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 ```text
 translation permutations:       683 PASS, 0 FAIL
 syntax oracle base cases:       228 PASS, 0 FAIL
-focused regressions:            113 PASS, 0 FAIL
+focused regressions:            114 PASS, 0 FAIL
 packaged equivalence interfaces: 5 (canonical, minified, two one-line sources, screen.sh)
 equivalence variants/interface: 683
 equivalence command cases:      228 PASS, 0 FAIL

@@ -1,5 +1,5 @@
 #!/bin/sh
-# POSIX-shell standalone CLI/oracle harness for screen-to-tmux-translator 0.4.5.
+# POSIX-shell standalone CLI/oracle harness for screen-to-tmux-translator 0.4.6.
 # 1. Validate base Screen syntax with an independent Screen 5.0.2 oracle.
 # 2. Exercise translator --dry-run at first/middle/last argument positions.
 # 3. Log escaped argv/output plus exact byte hex.
@@ -64,7 +64,7 @@ hex_bytes()
 expected_rc()
 {
     case "$1" in
-        exact) printf '0' ;;
+        exact|approx-run) printf '0' ;;
         unsupported) printf '2' ;;
         approx) printf '3' ;;
         moot) printf '4' ;;
@@ -120,7 +120,7 @@ run_variant()
     TOTAL=$((TOTAL + 1))
     case "$_rv_expected" in
         exact)       _rv_class_color=$C_GREEN ;;
-        approx)      _rv_class_color=$C_YELLOW ;;
+        approx|approx-run) _rv_class_color=$C_YELLOW ;;
         unsupported) _rv_class_color=$C_RED ;;
         moot)        _rv_class_color=$C_CYAN ;;
         external)    _rv_class_color=$C_MAGENTA ;;
@@ -195,7 +195,8 @@ case_()
     if [ "$FAIL" -eq "$_c_fail_before" ]; then
         _c_screen=$(_s2t_test_format_argv screen "$@")
         _c_tmux=$(_s2t_test_rhs_for_class "$_c_expected" "$_rv_output")
-        _c_prefix=$(printf '[PASS] %s %-11s' "$_c_id" "$_c_expected")
+        _c_display_class=$_c_expected; [ "$_c_display_class" = approx-run ] && _c_display_class=approx
+        _c_prefix=$(printf '[PASS] %s %-11s' "$_c_id" "$_c_display_class")
         _s2t_test_print_case "$_c_prefix" "$_c_desc" "$_c_screen" "$_c_tmux"
     fi
 }

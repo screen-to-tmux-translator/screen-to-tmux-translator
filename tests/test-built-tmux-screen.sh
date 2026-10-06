@@ -125,6 +125,31 @@ for SCREEN_BIN do
         printf '%b[FAIL]%b %s real screen hardlink execution smoke test failed\n' "$R" "$Z" "$LABEL"
         printf 'EXEC\tFAIL\t%s\n' "$LABEL" >> "$LOG"
     fi
+
+    # A real executable-APPROX check. The compatibility layer must emit its
+    # warning and still hand the translated command back to this patched tmux
+    # process for execution.
+    TOTAL=$((TOTAL + 1))
+    _approx_session=screen2tmux_approx_$$
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-session -t "$_approx_session" >/dev/null 2>&1 || :
+    if HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" new-session -d -s "$_approx_session" >/dev/null 2>"$RUNTIME/approx-create.err" && \
+       HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" NO_COLOR=1 SCREEN2TMUX_COLOR=never \
+       "$SCREEN_BIN" -S "$_approx_session" -X hardstatus off >"$RUNTIME/approx.out" 2>"$RUNTIME/approx.err" && \
+       grep -F 'screen2tmux: APPROX:' "$RUNTIME/approx.err" >/dev/null 2>&1 && \
+       _approx_status=$(HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" show-options -t "$_approx_session" -v status 2>"$RUNTIME/approx-show.err") && \
+       [ "$_approx_status" = off ]; then
+        PASS=$((PASS + 1))
+        _s2t_test_print_case "[PASS] $LABEL APPROX" 'compiled APPROX warning followed by real tmux execution' \
+            "$(_s2t_test_format_argv screen -S "$_approx_session" -X hardstatus off)" \
+            "$(_s2t_test_format_argv tmux set-option -t "$_approx_session" status off)"
+        printf 'APPROX_EXEC\tPASS\t%s\n' "$LABEL" >> "$LOG"
+    else
+        FAIL=$((FAIL + 1))
+        printf '%b[FAIL]%b %s compiled executable-APPROX integration check failed\n' "$R" "$Z" "$LABEL"
+        printf 'APPROX_EXEC\tFAIL\t%s\n' "$LABEL" >> "$LOG"
+        [ ! -s "$RUNTIME/approx.err" ] || sed 's/^/  approx stderr: /' "$RUNTIME/approx.err"
+        [ ! -s "$RUNTIME/approx-show.err" ] || sed 's/^/  show stderr: /' "$RUNTIME/approx-show.err"
+    fi
     HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-server >/dev/null 2>&1 || :
 done
 

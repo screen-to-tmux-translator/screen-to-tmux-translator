@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.4.5
+# screen-to-tmux-translator 0.4.6
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -7,7 +7,7 @@ It defines:
 - `screen2tmux ...` — explicit translator entry point.
 - `screen ...` — optional drop-in shell function, unless `SCREEN2TMUX_NO_SCREEN_FUNCTION=1` is set before sourcing the file.
 
-The translator executes only mappings classified as **EXACT**. When a tmux command is merely similar, broader in scope, depends on an external program, or the Screen operation is unnecessary under tmux's architecture, the translator explains that instead of silently executing a misleading substitute.
+Mappings classified as **EXACT** execute automatically. An **APPROX** mapping also executes when the translator can express a useful closest substitute as one concrete tmux command: it first prints an `APPROX` diagnostic explaining the semantic difference, then runs that command. Approximations that still require runtime choice, multiple coordinated commands, shell redirection, or an indeterminate client/direction remain advisory and do not execute. Broader-scope tmux substitutes may execute when they are concrete, but the warning calls out that scope difference first.
 
 ## Load it
 
@@ -83,23 +83,25 @@ Only semantic tokens and headings are colorized; descriptions remain in the norm
 
 | Status | Class | Meaning |
 | ---: | --- | --- |
-| `0` | `EXACT` | Safe enough to execute automatically; under `--dry-run`, prints the tmux command. |
+| `0` | `EXACT` / executable `APPROX` | Exact mappings execute automatically. Concrete one-command approximations print their warning and then execute; under `--dry-run`, the command is printed instead. |
 | `2` | `UNSUPPORTED` | Valid Screen operation, but no safe automatic tmux equivalent is implemented. |
-| `3` | `APPROX` | A useful tmux substitute exists, but semantics differ materially; it is not executed. |
+| `3` | advisory `APPROX` | Semantics differ and no single sufficiently safe command can be run automatically; the diagnostic/suggestion is advisory only. |
 | `4` | `MOOT` | tmux architecture makes the Screen operation unnecessary. |
 | `5` | `EXTERNAL` | Closest substitute requires a non-tmux program such as `picocom` or `telnet`. |
 | `64` | `INVALID` | Invalid or unknown Screen syntax for this translator. |
 
-Other statuses can come from tmux itself when an `EXACT` mapping is executed without `--dry-run`.
+Other statuses can come from tmux itself when an `EXACT` or executable `APPROX` mapping runs without `--dry-run`.
 
-Example approximation:
+Example executable approximation (`screen -r work` follows the same policy):
 
 ```text
 screen2tmux: APPROX: Screen focus moves among display regions; tmux select-pane moves among PTY panes, so the object model is different.
-screen2tmux: suggestion: Closest substitute: tmux select-pane -t work:.{right-of}
+screen2tmux: suggestion: Executing the closest substitute: tmux select-pane -t work:.{right-of}
 ```
 
-Argument uncertainty uses the same non-executing exit status `3`, but is called out explicitly:
+The warning is written before tmux is invoked. With `--dry-run`, the translated tmux argv is printed after the warning instead of being executed.
+
+Argument uncertainty remains non-executing with exit status `3` and is called out explicitly:
 
 ```text
 screen2tmux: WARNING: uncertain translation of argument Screen window selector 'editor.1': tmux window/pane targets have a different selector grammar from Screen window names and numbers.
@@ -109,9 +111,9 @@ This is intentionally a stop condition rather than a best-effort rewrite.
 
 ## Important 0.3.1 correctness changes
 
-0.3.1 follows a stricter rule: when tmux does not actually implement the Screen feature, the translator does not build an emulation layer. It returns `UNSUPPORTED`/`APPROX` with a concrete explanation. When a Screen argument cannot be interpreted safely under tmux target syntax, it emits a specific `WARNING: uncertain translation of argument ...` message and does not execute tmux.
+0.3.1 established the no-emulation rule: when tmux does not actually implement the Screen feature, the translator does not build a compatibility subsystem on top of tmux. 0.4.6 keeps that rule while allowing a concrete one-command `APPROX` substitute to run after an explicit warning. When a Screen argument cannot be interpreted safely under tmux target syntax, it still emits a specific `WARNING: uncertain translation of argument ...` message and does not execute tmux.
 
-- `screen -U` is now `APPROX`, not `tmux -u` `EXACT`. Screen `-U` both declares the display UTF-8 capable and sets UTF-8 as the default encoding for new Screen windows; tmux `-u` only forces its client UTF-8 assumption. No automatic command is executed.
+- `screen -U` remains `APPROX`, not `tmux -u` `EXACT`. Screen `-U` both declares the display UTF-8 capable and sets UTF-8 as the default encoding for new Screen windows; tmux `-u` only forces its client UTF-8 assumption. Since 0.4.6 the closest one-command path executes with tmux `-u` after printing that warning.
 - Screen `-A` is treated as `APPROX` when it actually participates in an attach operation: Screen explicitly adapts all windows to the attaching terminal and tmux has no equivalent adapt-all-windows flag. On non-attach paths, where Screen does not use `adaptflag`, the option is semantically inert and does not force an approximation.
 - `screen -v`, `screen --version`, and internal `version` remain `UNSUPPORTED` because a tmux-backed binary cannot truthfully report itself as native GNU Screen. `screen --help` is now translator-owned and returns a compatibility-aware Screen 5.0.x help page instead of tmux help.
 - Attached nested `screen -m` inside tmux is now `APPROX`. tmux deliberately rejects an attached nested `new-session` while `$TMUX` is set unless the operator explicitly unsets it; the translator no longer tries to bypass that safeguard.
@@ -143,7 +145,7 @@ By default:
 screen --dry-run -S work
 ```
 
-returns `APPROX` rather than silently assuming Screen's label namespace is identical to tmux's. If your operational convention already guarantees that Screen `-S` labels are unique:
+returns `APPROX`, explains the duplicate-label mismatch, and in 0.4.6 proceeds with the closest `tmux new-session -s work` command. If your operational convention already guarantees that Screen `-S` labels are unique:
 
 ```sh
 SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1
@@ -151,7 +153,7 @@ export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES
 . ./bin/screen-function-source.sh
 ```
 
-then named creation is permitted as an `EXACT` mapping within that explicit policy.
+then the warning is unnecessary and named creation is treated as an `EXACT` mapping within that explicit policy.
 
 ## Build tmux
 
@@ -257,7 +259,7 @@ The aggregate runner executes the Screen syntax oracle, expected translator exit
 [PASS] Q004 exact          | query window number                                  | screen -S work -Q number                          -> tmux display-message -p -t work '#{window_index} (#{window_name})'
 ```
 
-For `APPROX`, `UNSUPPORTED`, `MOOT`, `EXTERNAL`, and `INVALID` cases the right side intentionally states that there is no automatically executed tmux command rather than presenting a suggestion as though it were exact. The combined matrix log records every placement's reference exit status and every interface comparison; `tests/test-screen-cli.sh` remains available separately when raw per-invocation output and argv hex are needed.
+For executable `APPROX` cases the right side shows the concrete tmux command that follows the warning. Advisory-only `APPROX` cases are shown as `<APPROX: advisory only>`; `UNSUPPORTED`, `MOOT`, `EXTERNAL`, and `INVALID` remain explicitly classified. The combined matrix log records every placement's reference exit status and every interface comparison; `tests/test-screen-cli.sh` remains available separately when raw per-invocation output and argv hex are needed.
 
 To hide only the mapping columns while keeping normal PASS/FAIL progress:
 
@@ -310,7 +312,7 @@ Current packaged verification:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-113/113 focused semantic regression tests PASS
+114/114 focused semantic regression tests PASS
 683 placement variants per selected equivalence interface
 228/228 aggregated equivalence command cases PASS (five packaged interfaces)
 0 equivalence divergences in the packaged source/script set
@@ -324,7 +326,7 @@ logs/test-regressions-<timestamp>.log
 logs/test-interface-equivalence-<timestamp>.log
 logs/test-tmux-behavior-<timestamp>.log
 logs/test-run-console-<timestamp>.log
-logs/screen-to-tmux-translator-0.4.5-test-logs-<timestamp>.zip
+logs/screen-to-tmux-translator-0.4.6-test-logs-<timestamp>.zip
 ```
 
 `test-interface-equivalence-*` is now the combined Screen/oracle/interface log; `tests/test-screen-cli.sh` remains available as a standalone diagnostic harness but is not rerun by the aggregate runner. When successful builds are discovered, every patched `screen` hardlink joins the combined matrix, patched builds receive hardlink/execution checks, and each patched tmux version receives one live-behavior log. Original tmux binaries are not rerun through that behavior suite. When `--build` is used, the concise build-run log is included in the same ZIP.
@@ -369,7 +371,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.4.5/
+screen-to-tmux-translator-0.4.6/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

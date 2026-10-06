@@ -1,6 +1,6 @@
 # Source basis
 
-**0.4.5 note:** translation semantics and audited upstream source assumptions remain unchanged from 0.4.2. The 0.4.3/0.4.4 changes are build/test presentation and orchestration only. 0.4.5 changes public packaging only: `screen.sh` is self-contained, two one-line sourceable interfaces are added, and the same equivalence matrix covers them.
+**0.4.6 note:** the audited GNU Screen/tmux source assumptions are unchanged, but the execution policy changes: `APPROX` remains an explicit semantic warning, while approximations with a concrete one-command tmux substitute now execute that command after the warning. Ambiguous, multi-command, shell-redirection, or indeterminate-target approximations remain advisory and return 3. Concrete broader-scope tmux substitutes may execute after their warning makes the scope difference explicit. 0.4.5 made `screen.sh` self-contained and added the two one-line sourceable interfaces.
 
 This release was built against the source archives supplied during the project work. At 0.4.0 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
 

@@ -96,7 +96,15 @@ _s2t_test_rhs_for_class()
                 esac
             fi
             ;;
-        approx) printf '%s' '<APPROX: no automatic tmux execution>' ;;
+        approx-run)
+            _tf_last=$(printf '%s\n' "$_tf_output" | tail -n 1)
+            if _tf_pretty=$(_s2t_test_pretty_tmux_output "$_tf_last"); then
+                printf '%s' "$_tf_pretty"
+            else
+                printf '%s' '<APPROX: executable substitute; command output unavailable>'
+            fi
+            ;;
+        approx) printf '%s' '<APPROX: advisory only>' ;;
         unsupported) printf '%s' '<UNSUPPORTED>' ;;
         moot) printf '%s' '<MOOT: no tmux action>' ;;
         external) printf '%s' '<EXTERNAL program required>' ;;

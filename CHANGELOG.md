@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.6 — 2026-10-05
+
+- Changed `APPROX` from an always-advisory class into a warning-preserving execution policy. When an inexact Screen operation has a concrete useful one-command tmux substitute, the translator now prints the `APPROX` reason/suggestion and then executes that tmux command. Dry-run prints the warning followed by the translated command.
+- `screen -r [session]` now demonstrates the intended behavior directly: it warns that Screen normally refuses an already-attached session while tmux supports multiple clients, then executes the closest `tmux attach-session` mapping.
+- Enabled the same warning-then-execute behavior for other concrete approximations including session listing and named creation, named `-R/-RR` attach-or-create paths, attach preselection, `-U`, region split/focus/only, collapse, several query/inspection commands, namespaced copy-buffer operations, simple key bindings, hardstatus/caption operations, and layout inspection/selection.
+- Promoted additional concrete approximations such as quiet `-ls` via `has-session`, Screen StartAt window creation via exact-index `new-window`, `number` via non-destructive `move-window`, `lockscreen`, logging on/off via `pipe-pane`, `unbindall`, `altscreen`, ACL add/delete via `server-access`, and `dinfo`. Their warnings explicitly call out failure modes or broader tmux scope before execution. Remaining advisory cases are those that still need an indeterminate direction/client, multiple coordinated commands, shell redirection, or unavailable Screen runtime state.
+- Added an internal `approx-run` oracle expectation so executable approximations remain displayed as `approx` while tests require their successful translated-command status instead of the advisory exit status 3. The corpus now marks 80 base cases as executable approximations; the unified 5-interface matrix still covers all 683 dry-run placements per interface.
+- Added a focused normal-execution regression proving `screen -r work` emits the approximation warning and then invokes `tmux attach-session -t work`.
+- Extended built patched-tmux integration checks with a real executable-APPROX state change: the `screen` hardlink runs an approximate `hardstatus off` translation and the sibling tmux binary verifies the isolated session's `status` option became `off`.
+- Updated help and documentation so exit status 3 means advisory/uncertain approximation; executable approximations return the underlying tmux status in normal mode.
+
 ## 0.4.5 — 2026-10-05
 
 - Replaced the old `bin/screen.sh` wrapper with a genuinely self-contained executable that embeds the translator implementation and can run after being copied by itself with no sibling files.

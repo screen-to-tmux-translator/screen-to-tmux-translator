@@ -203,56 +203,83 @@ expect_not_contains "screenrc rejection never emits tmux -f" 2 "'tmux' '-f'" -c 
 expect_class_contains "Screen source is not tmux source-file" 2 "Screen 'source' reads Screen command syntax" -S work -X source /tmp/screen-extra --dry-run
 expect_class_contains "-L is approximation, never silently dropped" 3 "APPROX" --dry-run -L
 expect_class_contains "-Logfile without -L is unsupported" 2 "persistent logfile-name setting" -Logfile /tmp/screen.log --dry-run
-expect_class_contains "-p window is preserved in attach suggestion" 3 "tmux attach-session -t work:2" -p 2 -r work --dry-run
-expect_class_contains "compact -p window is preserved in attach suggestion" 3 "tmux attach-session -t work:2" -p2 -r work --dry-run
-expect_class_contains "focus right is approximation with correct target" 3 "work:.{right-of}" -S work -X focus right --dry-run
+expect_class_contains "-p window is preserved in attach execution" 0 "tmux attach-session -t work:2" -p 2 -r work --dry-run
+expect_class_contains "compact -p window is preserved in attach execution" 0 "tmux attach-session -t work:2" -p2 -r work --dry-run
+expect_class_contains "focus right is approximation with correct target" 0 "work:.{right-of}" -S work -X focus right --dry-run
 expect_not_contains "resize +5 does not invent down direction" 3 "resize-pane -D" -S work -X resize +5 --dry-run
-expect_class_contains "Screen layout next is not claimed exact" 3 "saved display-region layouts" -S work -X layout next --dry-run
-expect_class_contains "ACL add warns about server-wide scope" 3 "server level" -S work -X acladd alice --dry-run
+expect_class_contains "Screen layout next is not claimed exact" 0 "saved display-region layouts" -S work -X layout next --dry-run
+expect_class_contains "ACL add warns about server-wide scope" 0 "server level" -S work -X acladd alice --dry-run
 expect_class_contains "direct serial mapping is external" 5 "EXTERNAL" /dev/ttyUSB0 115200 --dry-run
-expect_class_contains "plain -r is approximation because tmux allows extra clients" 3 "normally refuses an already attached session" -r work --dry-run
+expect_class_contains "plain -r warns before executing closest attach" 0 "normally refuses an already attached session" -r work --dry-run
+
+CURRENT_NAME='plain -r executes closest tmux attach after warning'
+_s2t_approx_stub=${TMPDIR:-/tmp}/screen2tmux-approx-exec-$$
+rm -rf "$_s2t_approx_stub"
+mkdir -p "$_s2t_approx_stub"
+cat > "$_s2t_approx_stub/tmux" <<'EOF_APPROX_STUB'
+#!/bin/sh
+printf 'APPROX_TMUX_EXEC'
+for a do printf ' <%s>' "$a"; done
+printf '\n'
+EOF_APPROX_STUB
+chmod 755 "$_s2t_approx_stub/tmux"
+OUT=$(PATH="$_s2t_approx_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen -r work 2>&1)
+RC=$?
+rm -rf "$_s2t_approx_stub"
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -F 'screen2tmux: APPROX:' >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'APPROX_TMUX_EXEC <attach-session> <-t> <work>' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
 expect_class_contains "hardcopy explicit file is approximation" 3 "not byte-for-byte equivalent" -S work -p 0 -X hardcopy /tmp/window.txt --dry-run
 expect_class_contains "removebuf does not delete tmux buffer" 2 "exchange file" -S work -X removebuf --dry-run
 expect_not_contains "removebuf never emits delete-buffer" 2 "delete-buffer'" -S work -X removebuf --dry-run
 expect_exact "query number reproduces Screen N (title) shape" "'tmux' 'display-message' '-p' '-t' 'work' '#{window_index} (#{window_name})'" -S work -Q number --dry-run
-expect_class_contains "displays is session scoped" 3 "tmux list-clients -t work" -S work -X displays --dry-run
-expect_class_contains "bind warns about tmux server-wide key tables" 3 "server-wide" -S work -X bind c screen --dry-run
-expect_class_contains "unbindall warns about tmux server-wide key tables" 3 "server-wide" -S work -X unbindall --dry-run
+expect_class_contains "displays is session scoped" 0 "tmux list-clients -t work" -S work -X displays --dry-run
+expect_class_contains "bind warns about tmux server-wide key tables" 0 "server-wide" -S work -X bind c screen --dry-run
+expect_class_contains "unbindall warns about tmux server-wide key tables" 0 "server-wide" -S work -X unbindall --dry-run
 expect_class_contains "redisplay requires a concrete client" 3 "particular attached Display" -S work -X redisplay --dry-run
 expect_class_contains "suspend requires a concrete client" 3 "does not uniquely identify a tmux client" -S work -X suspend --dry-run
-expect_class_contains "query info is not claimed output-compatible" 3 "fixed status summary" -S work -Q info --dry-run
-expect_class_contains "query lastmsg is not claimed output-compatible" 3 "single most recent message" -S work -Q lastmsg --dry-run
-expect_class_contains "Screen help is not claimed output-compatible" 3 "server-wide key tables" -S work -X help --dry-run
+expect_class_contains "query info is not claimed output-compatible" 0 "fixed status summary" -S work -Q info --dry-run
+expect_class_contains "query lastmsg is not claimed output-compatible" 0 "single most recent message" -S work -Q lastmsg --dry-run
+expect_class_contains "Screen help is not claimed output-compatible" 0 "server-wide key tables" -S work -X help --dry-run
 expect_exact_in_tmux "inside tmux plain screen bash creates a window" "'tmux' 'new-window' 'bash'" --dry-run bash
 expect_exact_in_tmux "inside tmux plain screen creates a window" "'tmux' 'new-window'" --dry-run
 expect_exact_in_tmux "inside tmux -t title creates titled window" "'tmux' 'new-window' '-n' 'editor' 'vim'" --dry-run -t editor vim
 expect_class_contains_in_tmux "inside tmux -m warns about tmux nesting safeguard" 3 "normally rejects an attached nested new-session" --dry-run -m bash
-expect_class_contains_in_tmux "inside tmux -S warns about duplicate Screen labels" 3 "multiple sessions whose socket names share the same -S label" --dry-run -S work bash
+expect_class_contains_in_tmux "inside tmux -S warns about duplicate Screen labels before execution" 0 "multiple sessions whose socket names share the same -S label" --dry-run -S work bash
 expect_exact_unique_in_tmux "inside tmux -S can opt into unique-name policy" "'tmux' 'new-session' '-s' 'work' 'bash'" --dry-run -S work bash
 
 # 0.3.0 hardening: state, scope, and edge-condition semantics.
-expect_class_contains "named session creation is approximate by default" 3 "tmux requires each session name to be unique" --dry-run -S work
+expect_class_contains "named session creation warns before closest execution" 0 "tmux requires each session name to be unique" --dry-run -S work
 expect_exact_unique "unique-name policy restores direct named creation" "'tmux' 'new-session' '-s' 'work'" --dry-run -S work
-expect_class_contains "session listing is not output-compatible" 3 "dead sockets" --dry-run -ls
-expect_class_contains "quiet listing preserves Screen-specific exit-status warning" 3 "status codes" --dry-run -q -ls
-expect_class_contains "Screen -R is state-sensitive approximation" 3 "only considers sockets suitable" --dry-run -R work
-expect_class_contains "Screen -RR multiple-match rules are not tmux -A" 3 "multiple-match selection" --dry-run -RR work
-expect_class_contains "detach-and-R remains state-sensitive" 3 "only considers sockets suitable" --dry-run -d -R work
-expect_class_contains "number documents occupied-destination swap" 3 "tmux swap-window" --dry-run -S work -p 2 -X number 5
-expect_class_contains "collapse documents base-index mismatch" 3 "base-index" --dry-run -S work -X collapse
+expect_class_contains "session listing is not output-compatible" 0 "dead sockets" --dry-run -ls
+expect_class_contains "quiet listing preserves Screen-specific exit-status warning" 0 "status codes" --dry-run -q -ls
+expect_class_contains "Screen -R is state-sensitive approximation" 0 "only considers sockets suitable" --dry-run -R work
+expect_class_contains "Screen -RR multiple-match rules are not tmux -A" 0 "multiple-match selection" --dry-run -RR work
+expect_class_contains "detach-and-R remains state-sensitive" 0 "only considers sockets suitable" --dry-run -d -R work
+expect_class_contains "number documents occupied-destination swap" 0 "use swap-window explicitly" --dry-run -S work -p 2 -X number 5
+expect_class_contains "collapse documents base-index mismatch" 0 "base-index" --dry-run -S work -X collapse
 expect_class_contains "internal detach is client-specific" 3 "Display only" --dry-run -S work -X detach
 expect_class_contains "internal power detach is client-specific" 3 "one concrete Display" --dry-run -S work -X pow_detach
-expect_class_contains "altscreen is backend-wide versus pane scoped" 3 "backend-wide use_altscreen" --dry-run -S work -X altscreen on
-expect_class_contains "readbuf warns about server-wide tmux buffers" 3 "shared by the entire tmux server" --dry-run -S work -X readbuf /tmp/text
-expect_class_contains "writebuf warns about server-wide tmux buffers" 3 "server-wide" --dry-run -S work -X writebuf /tmp/text
-expect_class_contains "register warns about server-wide tmux buffers" 3 "server-wide" --dry-run -S work -X register a hello
+expect_class_contains "altscreen is backend-wide versus pane scoped" 0 "backend-wide use_altscreen" --dry-run -S work -X altscreen on
+expect_class_contains "readbuf warns about server-wide tmux buffers" 0 "shared by the entire tmux server" --dry-run -S work -X readbuf /tmp/text
+expect_class_contains "writebuf warns about server-wide tmux buffers" 0 "server-wide" --dry-run -S work -X writebuf /tmp/text
+expect_class_contains "register warns about server-wide tmux buffers" 0 "server-wide" --dry-run -S work -X register a hello
 expect_class_contains "paste with no register is not tmux paste-buffer" 2 "interactive register prompt" --dry-run -S work -p 0 -X paste
 
 # 0.3.1 hardening: no invented feature emulation, literal tmux-format data, and
 # explicit uncertainty warnings for target arguments with incompatible grammars.
-expect_class_contains "-U is partial semantics, not tmux -u exact" 3 "two semantics" --dry-run -U
-expect_not_contains "-U never auto-emits tmux -u" 3 "'tmux' '-u'" --dry-run -U
-expect_class_contains "-A attach semantics do not silently disappear" 3 "no equivalent adapt-all-windows flag" --dry-run -A -x work
+expect_class_contains "-U is partial semantics, not tmux -u exact" 0 "two semantics" --dry-run -U
+expect_class_contains "-U executes tmux -u after warning" 0 "'tmux' '-u' 'new-session'" --dry-run -U
+expect_class_contains "-A attach semantics do not silently disappear" 0 "no equivalent adapt-all-windows flag" --dry-run -A -x work
 expect_exact "-A on new-session path is semantically inert" "'tmux' 'new-session'" --dry-run -A
 expect_exact "-U does not block unrelated remote X command" "'tmux' 'send-keys' '-l' '-t' 'work:0' 'hello'" --dry-run -U -S work -p 0 -X stuff hello
 expect_class_contains "short Screen version is not tmux version" 2 "reports the GNU Screen version" --dry-run -v
