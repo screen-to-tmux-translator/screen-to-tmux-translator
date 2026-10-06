@@ -48,7 +48,7 @@ The zero-argument Screen invocation has first/last placements, which are equival
 
 ## Logs
 
-`logs/test-screen-cli.log` records for every concrete invocation:
+`logs/test-screen-cli-<YYYYMMDD-HHMMSS>.log` records for every concrete invocation:
 
 ```text
 CASE
@@ -66,7 +66,21 @@ RESULT
 
 Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and preserved exactly in the hex fields.
 
-`logs/test-regressions.log` records the focused semantic regressions accumulated through 0.3.1.
+`run-tests.sh` chooses one timestamp once and uses it for every artifact from that invocation:
+
+```text
+test-screen-cli-YYYYMMDD-HHMMSS.log
+test-regressions-YYYYMMDD-HHMMSS.log
+test-tmux-behavior-YYYYMMDD-HHMMSS.log
+test-run-console-YYYYMMDD-HHMMSS.log
+screen-to-tmux-translator-test-logs-YYYYMMDD-HHMMSS.zip
+```
+
+The ZIP is produced after all test layers finish and contains exactly the four `.log` files from that run. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
+
+`SCREEN2TMUX_RUN_TIMESTAMP` may be set for deterministic filenames; `SCREEN2TMUX_LOG_DIR` may be set to redirect all runtime artifacts. ZIP creation prefers the `zip` executable and falls back to Python 3 `zipfile`. Runtime log files are intentionally excluded from the static package checksum manifest.
+
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.1.
 
 ## Focused regressions
 

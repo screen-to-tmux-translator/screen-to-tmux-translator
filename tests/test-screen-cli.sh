@@ -1,5 +1,5 @@
 #!/bin/sh
-# POSIX-shell test harness for screen-to-tmux-translator 0.3.1.
+# POSIX-shell test harness for screen-to-tmux-translator 0.3.2.
 # 1. Validate base Screen syntax with an independent Screen 5.0.2 oracle.
 # 2. Exercise translator --dry-run at first/middle/last argument positions.
 # 3. Log escaped argv/output plus exact byte hex.
@@ -10,7 +10,8 @@ TEST_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT_DIR=$(CDPATH= cd -- "$TEST_DIR/.." && pwd)
 TRANSLATOR=${TRANSLATOR:-$PROJECT_DIR/bin/screen-to-tmux.sh}
 ORACLE=${ORACLE:-$TEST_DIR/screen-syntax-oracle.sh}
-LOG_FILE=${LOG_FILE:-$PROJECT_DIR/logs/test-screen-cli.log}
+RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
+LOG_FILE=${LOG_FILE:-$PROJECT_DIR/logs/test-screen-cli-$RUN_TIMESTAMP.log}
 
 [ -r "$TRANSLATOR" ] || { printf 'ERROR: cannot read translator: %s\n' "$TRANSLATOR" >&2; exit 2; }
 [ -r "$ORACLE" ] || { printf 'ERROR: cannot read oracle: %s\n' "$ORACLE" >&2; exit 2; }

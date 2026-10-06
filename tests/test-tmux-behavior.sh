@@ -6,7 +6,8 @@ set -u
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT=$(CDPATH= cd -- "$HERE/.." && pwd)
-LOG=${BEHAVIOR_LOG:-$PROJECT/logs/test-tmux-behavior.log}
+RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
+LOG=${BEHAVIOR_LOG:-$PROJECT/logs/test-tmux-behavior-$RUN_TIMESTAMP.log}
 mkdir -p "$(dirname -- "$LOG")"
 : > "$LOG"
 

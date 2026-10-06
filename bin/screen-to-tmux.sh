@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.3.1
+# screen-to-tmux-translator 0.3.2
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
@@ -24,7 +24,7 @@
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.3.1
+SCREEN2TMUX_VERSION=0.3.2
 
 _s2t_shell_quote()
 {

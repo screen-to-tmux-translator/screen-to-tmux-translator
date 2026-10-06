@@ -4,7 +4,8 @@ set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT=$(CDPATH= cd -- "$HERE/.." && pwd)
 . "$PROJECT/bin/screen-to-tmux.sh"
-REG_LOG=${REG_LOG:-$PROJECT/logs/test-regressions.log}
+RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
+REG_LOG=${REG_LOG:-$PROJECT/logs/test-regressions-$RUN_TIMESTAMP.log}
 mkdir -p "$(dirname -- "$REG_LOG")"
 : > "$REG_LOG"
 

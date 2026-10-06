@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.1
+# screen-to-tmux-translator 0.3.2
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -140,15 +140,35 @@ Current packaged results:
 live tmux behavior tests run when a tmux executable is available
 ```
 
-Logs:
+Each `sh run-tests.sh` invocation creates one timestamped run set. For example:
 
 ```text
-logs/test-screen-cli.log
-logs/test-regressions.log
-logs/test-tmux-behavior.log
+logs/test-screen-cli-20261004-211500.log
+logs/test-regressions-20261004-211500.log
+logs/test-tmux-behavior-20261004-211500.log
+logs/test-run-console-20261004-211500.log
+logs/screen-to-tmux-translator-test-logs-20261004-211500.zip
 ```
 
-`test-screen-cli.log` records the displayed input, exact argv bytes in hex, output, output bytes in hex, expected class, actual exit code, and PASS/FAIL for every invocation.
+All four `.log` files use the same timestamp and the ZIP is created automatically after the test layers finish. The ZIP contains exactly those four logs from that run.
+
+`test-screen-cli-<timestamp>.log` records the displayed input, exact argv bytes in hex, output, output bytes in hex, expected class, actual exit code, and PASS/FAIL for every invocation.
+
+## Test-run artifact naming
+
+By default the runner chooses the timestamp once at startup with `date +%Y%m%d-%H%M%S`. It will not overwrite an existing artifact with the same timestamp. For deterministic automation you can supply the timestamp explicitly:
+
+```sh
+SCREEN2TMUX_RUN_TIMESTAMP=20261004-211500 sh run-tests.sh
+```
+
+To place all logs and the ZIP elsewhere:
+
+```sh
+SCREEN2TMUX_LOG_DIR=/tmp/screen2tmux-logs sh run-tests.sh
+```
+
+The static package manifest intentionally excludes `logs/`, since those files are runtime artifacts and change on every test run.
 
 ## Source basis
 
@@ -157,7 +177,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.1/
+screen-to-tmux-translator-0.3.2/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
@@ -174,11 +194,7 @@ screen-to-tmux-translator-0.3.1/
 │   ├── test-regressions.sh
 │   ├── test-screen-cli.sh
 │   └── test-tmux-behavior.sh
-├── logs/
-│   ├── test-regressions.log
-│   ├── test-run-console.log
-│   ├── test-screen-cli.log
-│   └── test-tmux-behavior.log
+├── logs/                       # runtime timestamped logs + one ZIP per run
 └── run-tests.sh
 ```
 
