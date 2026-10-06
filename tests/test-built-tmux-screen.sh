@@ -108,20 +108,39 @@ for SCREEN_BIN do
         continue
     fi
 
+    _current_id=
+    _current_desc=
+    _current_ok=1
+    flush_matrix_case()
+    {
+        [ -n "$_current_id" ] || return 0
+        if [ "$_current_ok" -eq 1 ]; then
+            printf '%b[PASS]%b %s %s %s\n' "$G" "$Z" "$LABEL" "$_current_id" "$_current_desc"
+        fi
+    }
+
     while IFS="$TAB" read -r _base _id _place _desc; do
+        if [ "$_id" != "$_current_id" ]; then
+            flush_matrix_case
+            _current_id=$_id
+            _current_desc=$_desc
+            _current_ok=1
+        fi
+
         TOTAL=$((TOTAL + 1))
         _er=$(cat "$EXPECTED/$_base.rc")
         _ar=$(cat "$ACTUAL/$_base.rc")
         if [ "$_er" = "$_ar" ] && cmp -s "$EXPECTED/$_base.out" "$ACTUAL/$_base.out"; then
             PASS=$((PASS + 1))
-            printf '%b[PASS]%b %s %s %-6s %s\n' "$G" "$Z" "$LABEL" "$_id" "$_place" "$_desc"
             printf 'MATRIX\tPASS\t%s\t%s\t%s\t%s\n' "$LABEL" "$_id" "$_place" "$_er" >> "$LOG"
         else
             FAIL=$((FAIL + 1))
-            printf '%b[FAIL]%b %s %s %-6s %s (rc expected=%s actual=%s)\n' "$R" "$Z" "$LABEL" "$_id" "$_place" "$_desc" "$_er" "$_ar"
+            _current_ok=0
+            printf '%b[FAIL]%b %s %s placement=%s %s (rc expected=%s actual=%s)\n' "$R" "$Z" "$LABEL" "$_id" "$_place" "$_desc" "$_er" "$_ar"
             printf 'MATRIX\tFAIL\t%s\t%s\t%s\t%s\t%s\n' "$LABEL" "$_id" "$_place" "$_er" "$_ar" >> "$LOG"
         fi
     done < "$EXPECTED_META"
+    flush_matrix_case
 
     # One real execution smoke test against an isolated default tmux socket.
     # This proves the hardlink does more than print the right dry-run output.

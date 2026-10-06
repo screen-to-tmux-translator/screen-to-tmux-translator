@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.8
+# screen-to-tmux-translator 0.3.9
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -204,17 +204,17 @@ sh run-tests.sh
 The test system has four always-available layers plus an automatic built-binary layer:
 
 1. A **Screen syntax oracle**, independent from the translator, built from GNU Screen 5.0.2 `comm.c` command metadata plus a separate top-level CLI parser.
-2. Translator tests that insert `--dry-run` at first/middle/last positions and compare the resulting classification.
+2. Translator tests that insert `--dry-run` at first/middle/last positions and compare the resulting classification. `first` means immediately after `screen`, `middle` means after the first real Screen argument, and `last` means after all real Screen arguments. These placements prove the translator-only flag is accepted without changing Screen argument parsing. Successful placements are collapsed to one console PASS per case; the detailed log still records every placement, and failures name the exact placement.
 3. An **interface-equivalence suite**: canonical source versus minified source across all 683 dry-run placements, plus three-way canonical/minified/standalone comparison across all 228 base Screen command cases and a normal-execution stub test.
 4. An **optional live tmux behavioral suite** using an isolated `-L` server. It is skipped cleanly if no tmux executable is installed.
-5. When `build/tmux-3.7d` and/or `build/tmux-latest` contains a completed patched build, a **built hardlink suite** automatically runs the actual hardlink named `screen` through all 683 dry-run placements, requiring byte-for-byte output and identical exit status versus the canonical translator. It also performs an isolated real-execution smoke test and reruns the live tmux behavioral suite against each patched tmux binary.
+5. When `build/tmux-3.7d` and/or `build/tmux-latest` contains a completed patched build, a **built hardlink suite** automatically runs the actual hardlink named `screen` through all 683 dry-run placements, requiring byte-for-byte output and identical exit status versus the canonical translator. It also performs an isolated real-execution smoke test and reruns the live tmux behavioral suite against each patched tmux binary. Successful first/middle/last placements are shown as one PASS per Screen case; the underlying detailed log still contains all 683 comparisons.
 
 Current packaged results:
 
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-83/83 focused semantic regression tests PASS
+85/85 focused semantic regression tests PASS
 683/683 canonical/minified source-placement comparisons PASS
 228/228 three-way command-case comparisons PASS
 1/1 three-way normal-execution stub comparison PASS
@@ -230,7 +230,7 @@ logs/test-regressions-20261004-211500.log
 logs/test-interface-equivalence-20261004-211500.log
 logs/test-tmux-behavior-20261004-211500.log
 logs/test-run-console-20261004-211500.log
-logs/screen-to-tmux-translator-test-logs-20261004-211500.zip
+logs/screen-to-tmux-translator-0.3.9-test-logs-20261004-211500.zip
 ```
 
 With no compiled build present, all five base `.log` files use the same timestamp and the ZIP contains exactly those five logs. When a 3.7d/latest patched build is discovered, the runner adds `test-built-tmux-screen-<timestamp>.log` plus one `test-tmux-behavior-<build>-<timestamp>.log` for each discovered build, and includes those additional logs in the same ZIP.
@@ -277,7 +277,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.8/
+screen-to-tmux-translator-0.3.9/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

@@ -5,6 +5,7 @@
 set -u
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+VERSION=$(cat "$HERE/VERSION" 2>/dev/null || printf unknown)
 LOG_DIR=${SCREEN2TMUX_LOG_DIR:-$HERE/logs}
 RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
 
@@ -147,7 +148,7 @@ BUILT_SCREEN_LOG=$LOG_DIR/test-built-tmux-screen-$RUN_TIMESTAMP.log
 BUILD37_BEHAVIOR_LOG=$LOG_DIR/test-tmux-behavior-tmux-3.7d-$RUN_TIMESTAMP.log
 BUILDLATEST_BEHAVIOR_LOG=$LOG_DIR/test-tmux-behavior-tmux-latest-$RUN_TIMESTAMP.log
 CONSOLE_LOG=$LOG_DIR/test-run-console-$RUN_TIMESTAMP.log
-ARCHIVE=$LOG_DIR/screen-to-tmux-translator-test-logs-$RUN_TIMESTAMP.zip
+ARCHIVE=$LOG_DIR/screen-to-tmux-translator-$VERSION-test-logs-$RUN_TIMESTAMP.zip
 
 # Do not append to artifacts from an earlier run using the same forced timestamp.
 check_new_artifact()

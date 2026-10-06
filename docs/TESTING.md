@@ -46,6 +46,16 @@ screen <args...> --dry-run
 
 The zero-argument Screen invocation has first/last placements, which are equivalent after insertion.
 
+The three names describe only where the translator-specific dry-run flag is inserted:
+
+```text
+first:  screen --dry-run ARG1 ARG2 ...
+middle: screen ARG1 --dry-run ARG2 ...
+last:   screen ARG1 ARG2 ... --dry-run
+```
+
+The suite still executes and logs every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after every placement succeeds. If any placement fails, that failing placement is printed explicitly. The detailed `test-screen-cli-*.log` retains the complete per-placement records.
+
 ## Logs
 
 `logs/test-screen-cli-<YYYYMMDD-HHMMSS>.log` records for every concrete invocation:
@@ -74,10 +84,10 @@ test-regressions-YYYYMMDD-HHMMSS.log
 test-interface-equivalence-YYYYMMDD-HHMMSS.log
 test-tmux-behavior-YYYYMMDD-HHMMSS.log
 test-run-console-YYYYMMDD-HHMMSS.log
-screen-to-tmux-translator-test-logs-YYYYMMDD-HHMMSS.zip
+screen-to-tmux-translator-<VERSION>-test-logs-YYYYMMDD-HHMMSS.zip
 ```
 
-The ZIP is produced after all test layers finish and contains exactly the five `.log` files from that run. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
+The ZIP is produced after all test layers finish. With no compiled tmux build present it contains the five base `.log` files; when patched 3.7d/latest builds are discovered it also contains the generated built-hardlink and per-build behavior logs. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
 
 `SCREEN2TMUX_RUN_TIMESTAMP` may be set for deterministic filenames; `SCREEN2TMUX_LOG_DIR` may be set to redirect all runtime artifacts. ZIP creation prefers the `zip` executable and falls back to Python 3 `zipfile`. Runtime log files are intentionally excluded from the static package checksum manifest.
 
@@ -87,7 +97,7 @@ The runner's terminal stream is colorized only after the corresponding plain tex
 
 The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive terminal. `always` forces it and `never` disables it. `NO_COLOR` disables all color and takes precedence. Test components launched by `run-tests.sh` receive `NO_COLOR=1`; the parent runner then selectively colors its terminal copy. Standalone test scripts honor the same console color policy directly while forcing translator output captured into their detailed log to plain text.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.8.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.9.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records interface parity. The canonical and minified source files are compared byte-for-byte with identical exit status across all 683 first/middle/last dry-run placements. All 228 base Screen command cases are then compared three ways against the standalone `bin/screen.sh` executable, and one normal-execution path is compared using a private stub `tmux`.
 
@@ -142,7 +152,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       83 PASS, 0 FAIL
+focused regressions:       85 PASS, 0 FAIL
 source/minified parity:     683 PASS, 0 FAIL
 three-way base cases:       228 PASS, 0 FAIL
 three-way execution stub:     1 PASS, 0 FAIL
@@ -161,7 +171,7 @@ live tmux behavior:         optional; skipped if tmux is unavailable
 
 If tmux is not installed, this layer reports `SKIP` and exits successfully; the source-derived syntax oracle and translator regressions still run.
 
-## Built tmux hardlink layer (0.3.8)
+## Built tmux hardlink layer (0.3.9)
 
 The repository includes two build drivers:
 
@@ -182,7 +192,7 @@ The build driver creates `screen` with `ln` from the patched `tmux` binary; it i
 When `run-tests.sh` discovers one or both completed builds, it automatically adds `tests/test-built-tmux-screen.sh`. For each patched build this test:
 
 1. verifies that sibling `screen` and `tmux` have the same inode;
-2. invokes the actual hardlink whose basename is `screen` over all 683 first/middle/last dry-run placements from `tests/cases.sh`;
+2. invokes the actual hardlink whose basename is `screen` over all 683 first/middle/last dry-run placements from `tests/cases.sh`; successful placements are collapsed to one console PASS per Screen case while failures name the exact placement;
 3. compares exit status and raw output bytes with the canonical `screen-function-source.sh` translator using `cmp`;
 4. performs one non-dry-run detached-session smoke test under an isolated `TMUX_TMPDIR` and confirms that the sibling patched `tmux` can see the resulting session;
 5. leaves the user's normal tmux socket untouched.

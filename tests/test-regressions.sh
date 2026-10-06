@@ -451,6 +451,21 @@ else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
 fi
 
+CURRENT_NAME='run-test archive filename includes translator version'
+if grep -F 'screen-to-tmux-translator-$VERSION-test-logs-$RUN_TIMESTAMP.zip' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='alternate-screen live test reads effective inherited pane value'
+_A_COUNT=$(grep -F -c 'show-options -p -A -v -t altcase:' "$PROJECT/tests/test-tmux-behavior.sh" 2>/dev/null || printf '0')
+if [ "$_A_COUNT" -eq 2 ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (expected 2 inherited-value queries, found $_A_COUNT)"
+fi
+
 CR=$(printf '\r')
 CURRENT_NAME='dry-run renders carriage return safely'
 capture -S work -p 0 -X stuff "hello${CR}" --dry-run

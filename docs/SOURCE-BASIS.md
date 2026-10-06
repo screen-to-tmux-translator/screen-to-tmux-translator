@@ -1,6 +1,6 @@
 # Source basis
 
-This release was built against the source archives supplied during the project work. At 0.3.8 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
+This release was built against the source archives supplied during the project work. At 0.3.9 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
 
 ## GNU Screen
 
@@ -131,7 +131,7 @@ The source hashes identify the snapshots audited for this release. A future Scre
 
 For 0.3.0, `cmd-move-window.c` and `session.c` confirm that `move-window -r` calls `session_renumber_windows()`, which starts at the session's `base-index`. `options-table.c` declares `alternate-screen` with window/pane scope. These source facts underpin the new `APPROX` classifications.
 
-## Embedded tmux build integration (0.3.8)
+## Embedded tmux build integration (0.3.9)
 
 The compatibility integration keeps the upstream source footprint intentionally small. The packaged build workflow copies `tmux-integration/screen-to-tmux-translator` into the selected tmux source tree and applies `tmux-integration/tmux.c-screen-compat.patch` with zero fuzz. The patch changes only `tmux.c`: it includes the translator file and calls `screen_to_tmux_translate(&argc, &argv)` at the beginning of `main()`.
 

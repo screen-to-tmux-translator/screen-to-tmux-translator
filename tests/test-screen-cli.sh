@@ -1,5 +1,5 @@
 #!/bin/sh
-# POSIX-shell test harness for screen-to-tmux-translator 0.3.8.
+# POSIX-shell test harness for screen-to-tmux-translator 0.3.9.
 # 1. Validate base Screen syntax with an independent Screen 5.0.2 oracle.
 # 2. Exercise translator --dry-run at first/middle/last argument positions.
 # 3. Log escaped argv/output plus exact byte hex.
@@ -128,7 +128,8 @@ run_variant()
 
     if [ "$_rv_rc" -eq "$_rv_want" ]; then
         PASS=$((PASS + 1)); _rv_result=PASS
-        printf '%b[PASS]%b %s %b%-11s%b %-6s %s\n' "$C_GREEN" "$C_RESET" "$_rv_id" "$_rv_class_color" "$_rv_expected" "$C_RESET" "$_rv_placement" "$_rv_desc"
+        # Successful dry-run placements are intentionally silent here. case_()
+        # emits one compact PASS line after every applicable placement succeeds.
     else
         FAIL=$((FAIL + 1)); _rv_result=FAIL
         printf '%b[FAIL]%b %s expected=%b%s%b(rc=%s) got=%s placement=%s %s\n' "$C_RED" "$C_RESET" "$_rv_id" "$_rv_class_color" "$_rv_expected" "$C_RESET" "$_rv_want" "$_rv_rc" "$_rv_placement" "$_rv_desc"
@@ -160,6 +161,7 @@ case_()
 {
     _c_id=$1; _c_expected=$2; _c_desc=$3
     shift 3
+    _c_fail_before=$FAIL
 
     # Independent Screen syntax check on the base argv, before adding --dry-run.
     screen_syntax_oracle "$@" >/dev/null 2>&1
@@ -184,6 +186,21 @@ case_()
     run_variant "$_c_id" "$_c_expected" "$_c_desc" first "$@"
     if [ "$#" -gt 0 ]; then run_variant "$_c_id" "$_c_expected" "$_c_desc" middle "$@"; fi
     run_variant "$_c_id" "$_c_expected" "$_c_desc" last "$@"
+
+    # Keep the console concise: when the oracle and every applicable placement
+    # pass, print one line for the Screen case instead of first/middle/last.
+    if [ "$FAIL" -eq "$_c_fail_before" ]; then
+        case "$_c_expected" in
+            exact)       _c_class_color=$C_GREEN ;;
+            approx)      _c_class_color=$C_YELLOW ;;
+            unsupported) _c_class_color=$C_RED ;;
+            moot)        _c_class_color=$C_CYAN ;;
+            external)    _c_class_color=$C_MAGENTA ;;
+            invalid)     _c_class_color=$C_RED ;;
+            *)           _c_class_color= ;;
+        esac
+        printf '%b[PASS]%b %s %b%-11s%b %s\n' "$C_GREEN" "$C_RESET" "$_c_id" "$_c_class_color" "$_c_expected" "$C_RESET" "$_c_desc"
+    fi
 }
 
 {

@@ -167,8 +167,8 @@ fi
 if tmux_test new-session -d -s altcase -n one >/dev/null 2>&1 && \
    tmux_test new-window -d -t altcase:1 -n two >/dev/null 2>&1 && \
    tmux_test set-option -p -t altcase:0 alternate-screen off >/dev/null 2>&1; then
-    a0=$(tmux_test show-options -p -v -t altcase:0 alternate-screen 2>/dev/null || printf '?')
-    a1=$(tmux_test show-options -p -v -t altcase:1 alternate-screen 2>/dev/null || printf '?')
+    a0=$(tmux_test show-options -p -A -v -t altcase:0 alternate-screen 2>/dev/null || printf '?')
+    a1=$(tmux_test show-options -p -A -v -t altcase:1 alternate-screen 2>/dev/null || printf '?')
     case "$a0:$a1" in
         off:on|0:1) pass "tmux alternate-screen can differ between panes" ;;
         *) fail "unexpected alternate-screen pane values: $a0 / $a1" ;;

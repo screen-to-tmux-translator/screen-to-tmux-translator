@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.9 — 2026-10-05
+
+- Reduced successful test-console noise. The CLI/oracle suite still executes all 683 `--dry-run` placement variants (`first`, `middle`, and `last` where applicable), but when all placements for one Screen case pass it now prints a single `[PASS]` line for that case. If a placement fails, the failing placement is printed explicitly. Detailed per-placement records remain in the timestamped CLI log.
+- Applied the same compact-success policy to the built patched-tmux hardlink suite: all 683 hardlink variants are still compared byte-for-byte, but successful placements collapse to one console PASS per Screen case; failing placements remain individually identified.
+- Versioned the per-run log archive filename. `run-tests.sh` now writes `screen-to-tmux-translator-<VERSION>-test-logs-<YYYYMMDD-HHMMSS>.zip`, making archives self-identifying when copied away from the project directory.
+- Fixed the live tmux `alternate-screen` behavior test for tmux 3.7d. `show-options -p -v` only reports a pane-local override, so an inheriting pane legitimately produced an empty value. The test now uses `show-options -p -A -v` to ask for the effective inherited value before comparing pane scope. The two supplied 0.3.8 runs otherwise passed; their sole failure was this test-harness assumption.
+- Translator semantics are unchanged from 0.3.8.
+
 ## 0.3.8 — 2026-10-05
 
 - Build dependency handling is now interactive by default. When required commands or libevent/ncurses development files are missing, `build_tmux_3.7d.sh` and `build_tmux_latest.sh` detect a supported package manager (`apt-get`, `dnf`, `yum`, `apk`, or Homebrew), display the package set, and ask whether to install it automatically. Yes installs and rechecks dependencies before continuing; no/default cancels without modifying the system.
