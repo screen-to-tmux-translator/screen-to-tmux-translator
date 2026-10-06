@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.6 — 2026-10-04
+
+- Added `bin/screen-function-source-minified.sh`, a mechanically minified sourceable equivalent of `screen-function-source.sh`. Minification removes comments and blank lines only; executable/content lines are preserved.
+- Extended the source-file direct-execution guard to both canonical and minified filenames; either must be loaded with the POSIX dot command to leave `screen()` in the current shell.
+- Added `tests/test-interface-equivalence.sh` plus an internal worker. Canonical and minified source variants are compared byte-for-byte with identical exit statuses across all 683 dry-run placement variants.
+- Added three-way parity checks for all 228 base Screen command cases across canonical source, minified source, and standalone `screen.sh`, plus a normal-execution comparison using an isolated stub `tmux`.
+- Added bounded parallelism for standalone equivalence generation (`SCREEN2TMUX_EQUIV_JOBS`, default 8) so complete three-interface coverage does not excessively slow the suite.
+- `run-tests.sh` now runs the interface-equivalence layer, timestamps its log, reports `LOG_EQUIVALENCE`, and includes that fifth log in the per-run ZIP archive.
+- Added focused regressions for sourcing and direct-execution behavior of the minified source file, bringing the focused suite to 77 checks.
+- Translation semantics are unchanged from 0.3.5.
+
 ## 0.3.5 — 2026-10-04
 
 - Renamed the source-oriented translation engine from `bin/screen-to-tmux.sh` to `bin/screen-function-source.sh`. It remains the single implementation that defines `screen2tmux()` and, by default, the callable POSIX `screen()` shell function.

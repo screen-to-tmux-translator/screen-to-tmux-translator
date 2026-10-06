@@ -81,7 +81,7 @@ colorize_stream()
         gsub(/: note:/,        ": " C "note" Z ":", line)
 
         # Run-level labels and summaries.
-        if (line ~ /^(Summary|Regression summary|Behavior summary):/) {
+        if (line ~ /^(Summary|Regression summary|Interface equivalence summary|Behavior summary):/) {
             gsub(/ PASS/, " " G "PASS" Z, line)
             gsub(/ FAIL/, " " R "FAIL" Z, line)
         }
@@ -89,9 +89,11 @@ colorize_stream()
         sub(/^WARNING:/, Y "WARNING" Z ":", line)
         sub(/^Summary:/, C "Summary" Z ":", line)
         sub(/^Regression summary:/, C "Regression summary" Z ":", line)
+        sub(/^Interface equivalence summary:/, C "Interface equivalence summary" Z ":", line)
         sub(/^Behavior summary:/, C "Behavior summary" Z ":", line)
         sub(/^Log:/, C "Log" Z ":", line)
         sub(/^Regression log:/, C "Regression log" Z ":", line)
+        sub(/^Equivalence log:/, C "Equivalence log" Z ":", line)
         sub(/^Behavior log:/, C "Behavior log" Z ":", line)
         sub(/^Log archive:/, C "Log archive" Z ":", line)
         sub(/^RUN_TIMESTAMP:/, C "RUN_TIMESTAMP" Z ":", line)
@@ -100,6 +102,7 @@ colorize_stream()
         sub(/^PROJECT:/, C "PROJECT" Z ":", line)
         sub(/^LOG_SCREEN_CLI:/, C "LOG_SCREEN_CLI" Z ":", line)
         sub(/^LOG_REGRESSIONS:/, C "LOG_REGRESSIONS" Z ":", line)
+        sub(/^LOG_EQUIVALENCE:/, C "LOG_EQUIVALENCE" Z ":", line)
         sub(/^LOG_TMUX_BEHAVIOR:/, C "LOG_TMUX_BEHAVIOR" Z ":", line)
         sub(/^LOG_CONSOLE:/, C "LOG_CONSOLE" Z ":", line)
         sub(/^LOG_ARCHIVE:/, C "LOG_ARCHIVE" Z ":", line)
@@ -121,12 +124,13 @@ LOG_DIR=$(CDPATH= cd -- "$LOG_DIR" && pwd)
 
 CLI_LOG=$LOG_DIR/test-screen-cli-$RUN_TIMESTAMP.log
 REG_LOG=$LOG_DIR/test-regressions-$RUN_TIMESTAMP.log
+EQUIV_LOG=$LOG_DIR/test-interface-equivalence-$RUN_TIMESTAMP.log
 BEHAVIOR_LOG=$LOG_DIR/test-tmux-behavior-$RUN_TIMESTAMP.log
 CONSOLE_LOG=$LOG_DIR/test-run-console-$RUN_TIMESTAMP.log
 ARCHIVE=$LOG_DIR/screen-to-tmux-translator-test-logs-$RUN_TIMESTAMP.zip
 
 # Do not append to artifacts from an earlier run using the same forced timestamp.
-for _f in "$CLI_LOG" "$REG_LOG" "$BEHAVIOR_LOG" "$CONSOLE_LOG" "$ARCHIVE"; do
+for _f in "$CLI_LOG" "$REG_LOG" "$EQUIV_LOG" "$BEHAVIOR_LOG" "$CONSOLE_LOG" "$ARCHIVE"; do
     [ ! -e "$_f" ] || {
         printf 'ERROR: test-run artifact already exists: %s\n' "$_f" >&2
         printf 'Use a new timestamp or remove the existing artifact.\n' >&2
@@ -136,6 +140,7 @@ done
 
 : > "$CLI_LOG"
 : > "$REG_LOG"
+: > "$EQUIV_LOG"
 : > "$BEHAVIOR_LOG"
 : > "$CONSOLE_LOG"
 
@@ -179,6 +184,7 @@ suite_rc=0
 
 if run_component 'screen CLI/oracle tests' env LOG_FILE="$CLI_LOG" "$HERE/tests/test-screen-cli.sh" "$@"; then :; else suite_rc=1; fi
 if run_component 'focused regressions' env REG_LOG="$REG_LOG" "$HERE/tests/test-regressions.sh" "$@"; then :; else suite_rc=1; fi
+if run_component 'interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" "$HERE/tests/test-interface-equivalence.sh" "$@"; then :; else suite_rc=1; fi
 if run_component 'live tmux behavior tests' env BEHAVIOR_LOG="$BEHAVIOR_LOG" "$HERE/tests/test-tmux-behavior.sh" "$@"; then :; else suite_rc=1; fi
 
 {
@@ -187,6 +193,7 @@ if run_component 'live tmux behavior tests' env BEHAVIOR_LOG="$BEHAVIOR_LOG" "$H
     printf 'RUN_STATUS: %s\n' "$(if [ "$suite_rc" -eq 0 ]; then printf PASS; else printf FAIL; fi)"
     printf 'LOG_SCREEN_CLI: %s\n' "$CLI_LOG"
     printf 'LOG_REGRESSIONS: %s\n' "$REG_LOG"
+    printf 'LOG_EQUIVALENCE: %s\n' "$EQUIV_LOG"
     printf 'LOG_TMUX_BEHAVIOR: %s\n' "$BEHAVIOR_LOG"
     printf 'LOG_CONSOLE: %s\n' "$CONSOLE_LOG"
     printf 'LOG_ARCHIVE: %s\n' "$ARCHIVE"
@@ -226,6 +233,7 @@ PY
 set -- \
     "$(basename -- "$CLI_LOG")" \
     "$(basename -- "$REG_LOG")" \
+    "$(basename -- "$EQUIV_LOG")" \
     "$(basename -- "$BEHAVIOR_LOG")" \
     "$(basename -- "$CONSOLE_LOG")"
 

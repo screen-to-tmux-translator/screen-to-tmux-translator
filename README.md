@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.5
+# screen-to-tmux-translator 0.3.6
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -17,12 +17,21 @@ For a standalone command that behaves like `screen`, use:
 ./bin/screen.sh [Screen arguments ...]
 ```
 
-For shell-function use, source the function file with the POSIX dot command:
+For shell-function use, source either function file with the POSIX dot command:
 
 ```sh
 . ./bin/screen-function-source.sh
 screen -r
 ```
+
+A mechanically minified equivalent is also shipped:
+
+```sh
+. ./bin/screen-function-source-minified.sh
+screen -r
+```
+
+The minified file removes comments and blank lines only; it is verified against the canonical source across the complete 683-placement dry-run matrix.
 
 This defines a shell function named `screen` in the **current shell**, shadowing an installed GNU Screen executable there. Use `command screen ...` to invoke the native executable.
 
@@ -136,18 +145,22 @@ Run everything:
 sh run-tests.sh
 ```
 
-The test system has three layers:
+The test system has four layers:
 
 1. A **Screen syntax oracle**, independent from the translator, built from GNU Screen 5.0.2 `comm.c` command metadata plus a separate top-level CLI parser.
 2. Translator tests that insert `--dry-run` at first/middle/last positions and compare the resulting classification.
-3. An **optional live tmux behavioral suite** using an isolated `-L` server. It is skipped cleanly if no tmux executable is installed.
+3. An **interface-equivalence suite**: canonical source versus minified source across all 683 dry-run placements, plus three-way canonical/minified/standalone comparison across all 228 base Screen command cases and a normal-execution stub test.
+4. An **optional live tmux behavioral suite** using an isolated `-L` server. It is skipped cleanly if no tmux executable is installed.
 
 Current packaged results:
 
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-75/75 focused semantic regression tests PASS
+77/77 focused semantic regression tests PASS
+683/683 canonical/minified source-placement comparisons PASS
+228/228 three-way command-case comparisons PASS
+1/1 three-way normal-execution stub comparison PASS
 live tmux behavior tests run when a tmux executable is available
 ```
 
@@ -156,12 +169,13 @@ Each `sh run-tests.sh` invocation creates one timestamped run set. For example:
 ```text
 logs/test-screen-cli-20261004-211500.log
 logs/test-regressions-20261004-211500.log
+logs/test-interface-equivalence-20261004-211500.log
 logs/test-tmux-behavior-20261004-211500.log
 logs/test-run-console-20261004-211500.log
 logs/screen-to-tmux-translator-test-logs-20261004-211500.zip
 ```
 
-All four `.log` files use the same timestamp and the ZIP is created automatically after the test layers finish. The ZIP contains exactly those four logs from that run.
+All five `.log` files use the same timestamp and the ZIP is created automatically after the test layers finish. The ZIP contains exactly those five logs from that run.
 
 `test-screen-cli-<timestamp>.log` records the displayed input, exact argv bytes in hex, output, output bytes in hex, expected class, actual exit code, and PASS/FAIL for every invocation.
 
@@ -205,7 +219,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.5/
+screen-to-tmux-translator-0.3.6/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

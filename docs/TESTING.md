@@ -71,12 +71,13 @@ Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and pr
 ```text
 test-screen-cli-YYYYMMDD-HHMMSS.log
 test-regressions-YYYYMMDD-HHMMSS.log
+test-interface-equivalence-YYYYMMDD-HHMMSS.log
 test-tmux-behavior-YYYYMMDD-HHMMSS.log
 test-run-console-YYYYMMDD-HHMMSS.log
 screen-to-tmux-translator-test-logs-YYYYMMDD-HHMMSS.zip
 ```
 
-The ZIP is produced after all test layers finish and contains exactly the four `.log` files from that run. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
+The ZIP is produced after all test layers finish and contains exactly the five `.log` files from that run. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
 
 `SCREEN2TMUX_RUN_TIMESTAMP` may be set for deterministic filenames; `SCREEN2TMUX_LOG_DIR` may be set to redirect all runtime artifacts. ZIP creation prefers the `zip` executable and falls back to Python 3 `zipfile`. Runtime log files are intentionally excluded from the static package checksum manifest.
 
@@ -86,7 +87,9 @@ The runner's terminal stream is colorized only after the corresponding plain tex
 
 The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive terminal. `always` forces it and `never` disables it. `NO_COLOR` disables all color and takes precedence. Test components launched by `run-tests.sh` receive `NO_COLOR=1`; the parent runner then selectively colors its terminal copy. Standalone test scripts honor the same console color policy directly while forcing translator output captured into their detailed log to plain text.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.5.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.6.
+
+`logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records interface parity. The canonical and minified source files are compared byte-for-byte with identical exit status across all 683 first/middle/last dry-run placements. All 228 base Screen command cases are then compared three ways against the standalone `bin/screen.sh` executable, and one normal-execution path is compared using a private stub `tmux`.
 
 ## Focused regressions
 
@@ -129,14 +132,18 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 - literal tmux-format escaping in names/titles and literal `-Q echo`;
 - Screen `screen N` StartAt semantics;
 - explicit uncertain-argument warnings for incompatible target syntax;
-- selective diagnostic color tokens and `NO_COLOR` precedence.
+- selective diagnostic color tokens and `NO_COLOR` precedence;
+- sourceability/direct-execution behavior of both canonical and minified function-source files.
 
 ## Current packaged result
 
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       75 PASS, 0 FAIL
+focused regressions:       77 PASS, 0 FAIL
+source/minified parity:     683 PASS, 0 FAIL
+three-way base cases:       228 PASS, 0 FAIL
+three-way execution stub:     1 PASS, 0 FAIL
 live tmux behavior:         optional; skipped if tmux is unavailable
 ```
 

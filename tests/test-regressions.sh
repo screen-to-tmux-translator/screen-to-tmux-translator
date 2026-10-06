@@ -321,6 +321,36 @@ else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
 fi
 
+CURRENT_NAME='screen-function-source-minified.sh defines callable screen function when sourced'
+OUT=$(NO_COLOR=1 sh -c '. "$1"; screen --dryrun -d -m bash' sh "$PROJECT/bin/screen-function-source-minified.sh" 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='direct sh execution of minified source explains POSIX sourcing requirement'
+OUT=$(NO_COLOR=1 sh "$PROJECT/bin/screen-function-source-minified.sh" 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -F '. ./bin/screen-function-source-minified.sh' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
 CURRENT_NAME='standalone screen.sh executes tmux by default'
 _s2t_stub_dir=${TMPDIR:-/tmp}/screen2tmux-wrapper-$$
 rm -rf "$_s2t_stub_dir"
