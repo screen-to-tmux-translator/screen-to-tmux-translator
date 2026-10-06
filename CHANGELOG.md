@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-10-05
+
+- Split the old two-build drivers into four independent build scripts: `build_tmux_3.7d.sh`, `build_tmux_3.7d_patched.sh`, `build_tmux_latest.sh`, and `build_tmux_latest_patched.sh`. Each script rebuilds only its own variant from scratch.
+- Changed the default build layout to four preserved source trees plus four separate build/install trees: `source-tmux-3.7d`, `source-tmux-3.7d-patched`, `source-tmux-latest`, `source-tmux-latest-patched`, and matching `build-tmux-*` directories. Patched build installs still create `screen` as a hardlink to `tmux`.
+- Latest original/patched builds synchronize to the same Git commit whenever the counterpart source tree already exists; `TMUX_LATEST_COMMIT` can pin the exact commit explicitly.
+- Replaced the previous two-snapshot builder with `scripts/build-tmux-one.sh`, retaining dependency prompting/automatic installation, zero-fuzz patching, and the one-modified-file plus one-added-file source-footprint check.
+- Translation-oriented test rows now show one aligned `screen -> tmux` mapping per Screen case. Successful first/middle/last dry-run placements are still all executed but only one canonical mapping is displayed. Non-exact classes explicitly show that no automatic tmux command is executed.
+- Added `run-tests.sh --quiet` to hide only the mapping columns while keeping ordinary PASS/FAIL progress.
+- Added `--truncate-lines N` (plus the requested typo-compatible `--trunkate-lines N` alias). Without an explicit width, `run-tests.sh` measures the terminal width once at startup and truncates only terminal display lines to that width. Full logs and the archived console transcript are written before truncation and remain complete.
+- Updated patched-build discovery for the new `build-tmux-3.7d-patched` and `build-tmux-latest-patched` directories.
+- Added focused regressions for four-script layout selection, aligned mapping columns, quiet mapping suppression, terminal-width/truncation support, and new build discovery. Focused regressions are now 92/92.
+- Regenerated the minified translator and embedded tmux translator from the canonical 0.4.0 engine. Translation semantics are unchanged from 0.3.9.
+
 ## 0.3.9 — 2026-10-05
 
 - Reduced successful test-console noise. The CLI/oracle suite still executes all 683 `--dry-run` placement variants (`first`, `middle`, and `last` where applicable), but when all placements for one Screen case pass it now prints a single `[PASS]` line for that case. If a placement fails, the failing placement is printed explicitly. Detailed per-placement records remain in the timestamped CLI log.

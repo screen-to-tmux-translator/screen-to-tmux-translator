@@ -451,6 +451,62 @@ else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
 fi
 
+
+CURRENT_NAME='four independent tmux build front-ends are present'
+if [ -x "$PROJECT/build_tmux_3.7d.sh" ] && [ -x "$PROJECT/build_tmux_3.7d_patched.sh" ] &&    [ -x "$PROJECT/build_tmux_latest.sh" ] && [ -x "$PROJECT/build_tmux_latest_patched.sh" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='tmux build front-ends select separate original/patched layouts'
+if grep -F 'release_3.7d 3.7d 0' "$PROJECT/build_tmux_3.7d.sh" >/dev/null 2>&1 &&    grep -F 'release_3.7d 3.7d 1' "$PROJECT/build_tmux_3.7d_patched.sh" >/dev/null 2>&1 &&    grep -F 'master latest 0' "$PROJECT/build_tmux_latest.sh" >/dev/null 2>&1 &&    grep -F 'master latest 1' "$PROJECT/build_tmux_latest_patched.sh" >/dev/null 2>&1 &&    grep -F 'source-tmux-$NAME$SUFFIX' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 &&    grep -F 'build-tmux-$NAME$SUFFIX' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='mapping formatter aligns pipe columns'
+_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=36 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"; _s2t_test_print_case "[PASS] tmux-latest C001 exact" "two" "screen -d -m" "tmux new-session -d"' sh "$PROJECT/tests/output-format.sh")
+_FMT_POS=$(printf '%s
+' "$_FMT_OUT" | awk 'NR==1 {a=index($0,"|")} NR==2 {b=index($0,"|")} END {print a ":" b}')
+if [ "$_FMT_POS" = '38:38' ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (pipe columns $_FMT_POS)"
+fi
+
+CURRENT_NAME='quiet mapping formatter suppresses screen-to-tmux column'
+_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=1 SCREEN2TMUX_MAP_LEFT_WIDTH=36 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"' sh "$PROJECT/tests/output-format.sh")
+if ! printf '%s
+' "$_FMT_OUT" | grep -F ' | ' >/dev/null 2>&1 && printf '%s
+' "$_FMT_OUT" | grep -F 'one' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (output=$_FMT_OUT)"
+fi
+
+CURRENT_NAME='run-tests supports explicit and misspelled truncate-lines options'
+if grep -F -- '--truncate-lines|--trunkate-lines' "$PROJECT/run-tests.sh" >/dev/null 2>&1 &&    grep -F -- '--truncate-lines=*|--trunkate-lines=*' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='run-tests measures terminal width once before components'
+if grep -F 'stty size </dev/tty' "$PROJECT/run-tests.sh" >/dev/null 2>&1 &&    grep -F 'CONSOLE_WIDTH:' "$PROJECT/run-tests.sh" >/dev/null 2>&1 &&    grep -F 'tee -a "$CONSOLE_LOG" | terminal_stream' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='run-tests discovers new patched build directory names'
+if grep -F 'build-tmux-3.7d-patched' "$PROJECT/run-tests.sh" >/dev/null 2>&1 &&    grep -F 'build-tmux-latest-patched' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
 CURRENT_NAME='run-test archive filename includes translator version'
 if grep -F 'screen-to-tmux-translator-$VERSION-test-logs-$RUN_TIMESTAMP.zip' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"

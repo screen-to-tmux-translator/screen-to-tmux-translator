@@ -1,4 +1,4 @@
-# Source-derived Screen CLI cases for screen-to-tmux-translator 0.3.9.
+# Source-derived Screen CLI cases for screen-to-tmux-translator 0.4.0.
 # This file is sourced by test-screen-cli.sh, which defines case_.
 # Syntax: case_ ID EXPECTED "description" [screen arguments...]
 # EXPECTED: exact | approx | moot | external | unsupported | invalid

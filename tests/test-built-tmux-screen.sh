@@ -21,6 +21,10 @@ fi
 for _need in "$CANONICAL" "$CASES" "$WORKER"; do
     [ -r "$_need" ] || { printf 'ERROR: required test input missing: %s\n' "$_need" >&2; exit 2; }
 done
+# shellcheck disable=SC1090
+. "$CANONICAL"
+# shellcheck disable=SC1090
+. "$HERE/output-format.sh"
 
 mkdir -p "$(dirname -- "$LOG")"
 : > "$LOG"
@@ -46,6 +50,17 @@ EXPECTED=$TMPBASE/expected
 EXPECTED_META=$TMPBASE/expected.tsv
 "$WORKER" source-full "$CANONICAL" "$EXPECTED" "$CASES" "$EXPECTED_META"
 EXPECTED_COUNT=$(cat "$EXPECTED/count")
+CASE_MAP=$TMPBASE/case-map.tsv
+: > "$CASE_MAP"
+case_()
+{
+    _cm_id=$1; _cm_class=$2; _cm_desc=$3
+    shift 3
+    _cm_screen=$(_s2t_test_format_argv screen "$@")
+    printf '%s\t%s\t%s\t%s\n' "$_cm_id" "$_cm_class" "$_cm_desc" "$_cm_screen" >> "$CASE_MAP"
+}
+# shellcheck disable=SC1090
+. "$CASES"
 if [ "$EXPECTED_COUNT" -ne 683 ]; then
     printf 'ERROR: canonical full matrix produced %s variants, expected 683\n' "$EXPECTED_COUNT" >&2
     exit 2
@@ -74,7 +89,13 @@ for SCREEN_BIN do
     BIN_DIR=$(CDPATH= cd -- "$(dirname -- "$SCREEN_BIN")" && pwd)
     SCREEN_BIN=$BIN_DIR/screen
     TMUX_BIN=$BIN_DIR/tmux
-    LABEL=$(basename -- "$(dirname -- "$(dirname -- "$(dirname -- "$BIN_DIR")")")")
+    BUILD_DIR=$(CDPATH= cd -- "$BIN_DIR/../.." && pwd)
+    _build_base=$(basename -- "$BUILD_DIR")
+    case "$_build_base" in
+        build-tmux-3.7d-patched) LABEL=tmux-3.7d ;;
+        build-tmux-latest-patched) LABEL=tmux-latest ;;
+        *) LABEL=$_build_base ;;
+    esac
     [ -x "$TMUX_BIN" ] || {
         FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
         printf '%b[FAIL]%b sibling patched tmux missing: %s\n' "$R" "$Z" "$TMUX_BIN"
@@ -111,11 +132,19 @@ for SCREEN_BIN do
     _current_id=
     _current_desc=
     _current_ok=1
+    _current_last_base=
     flush_matrix_case()
     {
         [ -n "$_current_id" ] || return 0
         if [ "$_current_ok" -eq 1 ]; then
-            printf '%b[PASS]%b %s %s %s\n' "$G" "$Z" "$LABEL" "$_current_id" "$_current_desc"
+            _map=$(awk -F '\t' -v id="$_current_id" '$1 == id { print; exit }' "$CASE_MAP")
+            IFS="$TAB" read -r _mid _mclass _mdesc _mscreen <<EOF_MAP
+$_map
+EOF_MAP
+            _mout=$(cat "$EXPECTED/$_current_last_base.out")
+            _mtmux=$(_s2t_test_rhs_for_class "$_mclass" "$_mout")
+            _mprefix=$(printf '[PASS] %s %s %s' "$LABEL" "$_current_id" "$_mclass")
+            _s2t_test_print_case "$_mprefix" "$_current_desc" "$_mscreen" "$_mtmux"
         fi
     }
 
@@ -125,7 +154,9 @@ for SCREEN_BIN do
             _current_id=$_id
             _current_desc=$_desc
             _current_ok=1
+            _current_last_base=
         fi
+        _current_last_base=$_base
 
         TOTAL=$((TOTAL + 1))
         _er=$(cat "$EXPECTED/$_base.rc")
@@ -152,7 +183,7 @@ for SCREEN_BIN do
        "$SCREEN_BIN" -d -m >/dev/null 2>"$RUNTIME/screen.err" && \
        HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" list-sessions >/dev/null 2>"$RUNTIME/list.err"; then
         PASS=$((PASS + 1))
-        printf '%b[PASS]%b %s real screen hardlink execution created an isolated tmux session\n' "$G" "$Z" "$LABEL"
+        _s2t_test_print_case "[PASS] $LABEL EXEC" 'real screen hardlink execution created an isolated tmux session' "'screen' '-d' '-m'" "'tmux' 'new-session' '-d'"
         printf 'EXEC\tPASS\t%s\n' "$LABEL" >> "$LOG"
     else
         FAIL=$((FAIL + 1))

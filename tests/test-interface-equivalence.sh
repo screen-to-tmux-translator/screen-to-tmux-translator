@@ -17,12 +17,28 @@ for _f in "$CANONICAL" "$MINIFIED" "$STANDALONE" "$WORKER" "$CASES"; do
 done
 mkdir -p "$(dirname -- "$EQUIV_LOG")"
 : > "$EQUIV_LOG"
+# Load canonical quoting helpers for human-readable mapping rows.
+# shellcheck disable=SC1090
+. "$CANONICAL"
+# shellcheck disable=SC1090
+. "$TEST_DIR/output-format.sh"
 _tmp=${TMPDIR:-/tmp}/screen2tmux-equivalence-$$
 rm -rf "$_tmp"
 mkdir -p "$_tmp/canonical-full" "$_tmp/minified-full" "$_tmp/standalone-last" || exit 2
 trap 'rm -rf "$_tmp"' 0 1 2 3 15
 META_FULL=$_tmp/meta-full.tsv
 META_STANDALONE=$_tmp/meta-standalone.tsv
+CASE_MAP=$_tmp/case-map.tsv
+: > "$CASE_MAP"
+case_()
+{
+    _cm_id=$1; _cm_class=$2; _cm_desc=$3
+    shift 3
+    _cm_screen=$(_s2t_test_format_argv screen "$@")
+    printf '%s\t%s\t%s\t%s\n' "$_cm_id" "$_cm_class" "$_cm_desc" "$_cm_screen" >> "$CASE_MAP"
+}
+# shellcheck disable=SC1090
+. "$CASES"
 
 _color_enabled=0
 if [ -z "${NO_COLOR:-}" ]; then
@@ -77,7 +93,14 @@ while IFS="$TAB" read -r _cbase _cid _cdesc _sbase _sid _splace _sdesc; do
        cmp -s "$_tmp/canonical-full/$_cbase.out" "$_tmp/minified-full/$_cbase.out" && \
        cmp -s "$_tmp/canonical-full/$_cbase.out" "$_tmp/standalone-last/$_sbase.out"; then
         PASS=$((PASS + 1)); THREE_PASS=$((THREE_PASS + 1)); _res=PASS
-        printf '%b[PASS]%b %s three-way %s\n' "$G" "$Z" "$_cid" "$_cdesc"
+        _map=$(awk -F '\t' -v id="$_cid" '$1 == id { print; exit }' "$CASE_MAP")
+        IFS="$TAB" read -r _mid _mclass _mdesc _mscreen <<EOF_MAP
+$_map
+EOF_MAP
+        _mout=$(cat "$_tmp/canonical-full/$_cbase.out")
+        _mtmux=$(_s2t_test_rhs_for_class "$_mclass" "$_mout")
+        _mprefix=$(printf '[PASS] %s three-way' "$_cid")
+        _s2t_test_print_case "$_mprefix" "$_cdesc" "$_mscreen" "$_mtmux"
     else
         FAIL=$((FAIL + 1)); THREE_FAIL=$((THREE_FAIL + 1)); _res=FAIL
         printf '%b[FAIL]%b %s three-way %s (rc canonical=%s minified=%s standalone=%s)\n' "$R" "$Z" "$_cid" "$_cdesc" "$_ra" "$_rb" "$_rc"
@@ -101,7 +124,8 @@ exec_source "$MINIFIED" "$_tmp/exec.minified"; _rb=$?
 PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never "$STANDALONE" -d -m bash >"$_tmp/exec.standalone" 2>&1; _rc=$?
 TOTAL=$((TOTAL + 1))
 if [ "$_ra" -eq "$_rb" ] && [ "$_ra" -eq "$_rc" ] && cmp -s "$_tmp/exec.canonical" "$_tmp/exec.minified" && cmp -s "$_tmp/exec.canonical" "$_tmp/exec.standalone"; then
-    PASS=$((PASS + 1)); printf '%b[PASS]%b EXEC normal execution path with tmux stub\n' "$G" "$Z"; _exec=PASS
+    PASS=$((PASS + 1)); _exec=PASS
+    _s2t_test_print_case '[PASS] EXEC three-way' 'normal execution path with tmux stub' "'screen' '-d' '-m' 'bash'" "'tmux' 'new-session' '-d' 'bash'"
 else
     FAIL=$((FAIL + 1)); printf '%b[FAIL]%b EXEC normal execution path with tmux stub\n' "$R" "$Z"; _exec=FAIL
 fi

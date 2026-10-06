@@ -54,7 +54,7 @@ middle: screen ARG1 --dry-run ARG2 ...
 last:   screen ARG1 ARG2 ... --dry-run
 ```
 
-The suite still executes and logs every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after every placement succeeds. If any placement fails, that failing placement is printed explicitly. The detailed `test-screen-cli-*.log` retains the complete per-placement records.
+The suite still executes and logs every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after every placement succeeds, together with one canonical `screen -> tmux` mapping for that Screen case. If any placement fails, that failing placement is printed explicitly. The detailed `test-screen-cli-*.log` retains the complete per-placement records. `run-tests.sh --quiet` hides the mapping columns without suppressing ordinary PASS/FAIL progress.
 
 ## Logs
 
@@ -97,7 +97,9 @@ The runner's terminal stream is colorized only after the corresponding plain tex
 
 The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive terminal. `always` forces it and `never` disables it. `NO_COLOR` disables all color and takes precedence. Test components launched by `run-tests.sh` receive `NO_COLOR=1`; the parent runner then selectively colors its terminal copy. Standalone test scripts honor the same console color policy directly while forcing translator output captured into their detailed log to plain text.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.9.
+Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
+
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.0.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records interface parity. The canonical and minified source files are compared byte-for-byte with identical exit status across all 683 first/middle/last dry-run placements. All 228 base Screen command cases are then compared three ways against the standalone `bin/screen.sh` executable, and one normal-execution path is compared using a private stub `tmux`.
 
@@ -152,7 +154,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       85 PASS, 0 FAIL
+focused regressions:       92 PASS, 0 FAIL
 source/minified parity:     683 PASS, 0 FAIL
 three-way base cases:       228 PASS, 0 FAIL
 three-way execution stub:     1 PASS, 0 FAIL
@@ -171,43 +173,50 @@ live tmux behavior:         optional; skipped if tmux is unavailable
 
 If tmux is not installed, this layer reports `SKIP` and exits successfully; the source-derived syntax oracle and translator regressions still run.
 
-## Built tmux hardlink layer (0.3.9)
+## Built tmux hardlink layer (0.4.0)
 
-The repository includes two build drivers:
+The repository includes four independent build drivers:
 
 ```sh
 sh build_tmux_3.7d.sh
+sh build_tmux_3.7d_patched.sh
 sh build_tmux_latest.sh
+sh build_tmux_latest_patched.sh
 ```
 
-A completed build is recognized from either of these standard paths:
+They leave four full source trees and four separate build/install trees at the project root:
 
 ```text
-build/tmux-3.7d/patched/install/bin/screen
-build/tmux-latest/patched/install/bin/screen
+source-tmux-3.7d/
+build-tmux-3.7d/
+source-tmux-3.7d-patched/
+build-tmux-3.7d-patched/
+source-tmux-latest/
+build-tmux-latest/
+source-tmux-latest-patched/
+build-tmux-latest-patched/
 ```
 
-The build driver creates `screen` with `ln` from the patched `tmux` binary; it is a hardlink, not a wrapper or copied executable.
+Completed patched builds are recognized at:
 
-When `run-tests.sh` discovers one or both completed builds, it automatically adds `tests/test-built-tmux-screen.sh`. For each patched build this test:
+```text
+build-tmux-3.7d-patched/install/bin/screen
+build-tmux-latest-patched/install/bin/screen
+```
+
+Each `screen` is created with `ln` from its patched `tmux` binary; it is a hardlink, not a wrapper or copied executable.
+
+When `run-tests.sh` discovers one or both completed patched builds, it automatically adds `tests/test-built-tmux-screen.sh`. For each patched build this test:
 
 1. verifies that sibling `screen` and `tmux` have the same inode;
-2. invokes the actual hardlink whose basename is `screen` over all 683 first/middle/last dry-run placements from `tests/cases.sh`; successful placements are collapsed to one console PASS per Screen case while failures name the exact placement;
+2. invokes the actual hardlink whose basename is `screen` over all 683 first/middle/last dry-run placements from `tests/cases.sh`; successful placements collapse to one aligned console row with a canonical `screen -> tmux` mapping, while failures name the exact placement;
 3. compares exit status and raw output bytes with the canonical `screen-function-source.sh` translator using `cmp`;
-4. performs one non-dry-run detached-session smoke test under an isolated `TMUX_TMPDIR` and confirms that the sibling patched `tmux` can see the resulting session;
+4. performs one non-dry-run detached-session smoke test under an isolated `TMUX_TMPDIR`;
 5. leaves the user's normal tmux socket untouched.
 
-The existing live behavior suite is then rerun with `TMUX_BIN` set to each patched tmux binary. This means the same duplicate-session, occupied-index, `base-index`, buffer-scope, format-literal, StartAt, and alternate-screen checks are exercised against the actual build rather than only a system-installed tmux.
+The live behavior suite is then rerun with `TMUX_BIN` set to each patched tmux binary. Additional timestamped logs are added to the same per-run ZIP.
 
-Additional timestamped logs are created only when builds are discovered:
-
-```text
-test-built-tmux-screen-YYYYMMDD-HHMMSS.log
-test-tmux-behavior-tmux-3.7d-YYYYMMDD-HHMMSS.log
-test-tmux-behavior-tmux-latest-YYYYMMDD-HHMMSS.log
-```
-
-Every additional log is added to the same per-run ZIP as the five base logs.
+The latest original/patched scripts synchronize to one exact master commit whenever the counterpart source tree already exists, so direct original-versus-patched comparisons do not accidentally span different moving-master commits.
 
 ## Build dependency and patch-safety checks
 

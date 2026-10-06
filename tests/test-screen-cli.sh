@@ -1,5 +1,5 @@
 #!/bin/sh
-# POSIX-shell test harness for screen-to-tmux-translator 0.3.9.
+# POSIX-shell test harness for screen-to-tmux-translator 0.4.0.
 # 1. Validate base Screen syntax with an independent Screen 5.0.2 oracle.
 # 2. Exercise translator --dry-run at first/middle/last argument positions.
 # 3. Log escaped argv/output plus exact byte hex.
@@ -20,6 +20,8 @@ LOG_FILE=${LOG_FILE:-$PROJECT_DIR/logs/test-screen-cli-$RUN_TIMESTAMP.log}
 . "$TRANSLATOR"
 # shellcheck disable=SC1090
 . "$ORACLE"
+# shellcheck disable=SC1090
+. "$TEST_DIR/output-format.sh"
 
 mkdir -p "$(dirname -- "$LOG_FILE")"
 : > "$LOG_FILE"
@@ -188,18 +190,13 @@ case_()
     run_variant "$_c_id" "$_c_expected" "$_c_desc" last "$@"
 
     # Keep the console concise: when the oracle and every applicable placement
-    # pass, print one line for the Screen case instead of first/middle/last.
+    # pass, print one line for the Screen case. Show one canonical mapping only;
+    # first/middle/last are still all executed and preserved in the detailed log.
     if [ "$FAIL" -eq "$_c_fail_before" ]; then
-        case "$_c_expected" in
-            exact)       _c_class_color=$C_GREEN ;;
-            approx)      _c_class_color=$C_YELLOW ;;
-            unsupported) _c_class_color=$C_RED ;;
-            moot)        _c_class_color=$C_CYAN ;;
-            external)    _c_class_color=$C_MAGENTA ;;
-            invalid)     _c_class_color=$C_RED ;;
-            *)           _c_class_color= ;;
-        esac
-        printf '%b[PASS]%b %s %b%-11s%b %s\n' "$C_GREEN" "$C_RESET" "$_c_id" "$_c_class_color" "$_c_expected" "$C_RESET" "$_c_desc"
+        _c_screen=$(_s2t_test_format_argv screen "$@")
+        _c_tmux=$(_s2t_test_rhs_for_class "$_c_expected" "$_rv_output")
+        _c_prefix=$(printf '[PASS] %s %-11s' "$_c_id" "$_c_expected")
+        _s2t_test_print_case "$_c_prefix" "$_c_desc" "$_c_screen" "$_c_tmux"
     fi
 }
 
