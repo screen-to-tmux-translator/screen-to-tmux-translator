@@ -1,7 +1,7 @@
 #!/bin/sh
 # Independent syntax oracle for the test corpus, derived from GNU Screen 5.0.2
 # screen.c option parsing and comm.c command metadata.  It performs no tmux
-# translation and is intentionally separate from bin/screen-to-tmux.sh.
+# translation and is intentionally separate from bin/screen-function-source.sh.
 
 _ORACLE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/../docs" && pwd)
 SCREEN_COMMAND_MANIFEST=${SCREEN_COMMAND_MANIFEST:-$_ORACLE_DIR/screen-5.0.2-command-manifest.tsv}

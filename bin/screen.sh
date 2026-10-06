@@ -1,6 +1,6 @@
 #!/bin/sh
 # Standalone GNU Screen-compatible command front-end for screen-to-tmux-translator.
-# The translation engine lives in screen-to-tmux.sh; this wrapper executes it.
+# The translation engine lives in screen-function-source.sh; this wrapper executes it.
 
 case $0 in
     */*) _s2t_front_dir=${0%/*} ;;
@@ -20,6 +20,6 @@ _s2t_front_dir=$(CDPATH= cd -- "$_s2t_front_dir" 2>/dev/null && pwd) || {
 
 SCREEN2TMUX_NO_SCREEN_FUNCTION=1
 export SCREEN2TMUX_NO_SCREEN_FUNCTION
-. "$_s2t_front_dir/screen-to-tmux.sh" || exit $?
+. "$_s2t_front_dir/screen-function-source.sh" || exit $?
 
 screen2tmux "$@"

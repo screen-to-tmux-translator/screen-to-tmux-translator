@@ -86,7 +86,7 @@ The runner's terminal stream is colorized only after the corresponding plain tex
 
 The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive terminal. `always` forces it and `never` disables it. `NO_COLOR` disables all color and takes precedence. Test components launched by `run-tests.sh` receive `NO_COLOR=1`; the parent runner then selectively colors its terminal copy. Standalone test scripts honor the same console color policy directly while forcing translator output captured into their detailed log to plain text.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.4.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.5.
 
 ## Focused regressions
 
@@ -136,7 +136,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       73 PASS, 0 FAIL
+focused regressions:       75 PASS, 0 FAIL
 live tmux behavior:         optional; skipped if tmux is unavailable
 ```
 

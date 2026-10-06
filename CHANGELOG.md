@@ -1,10 +1,18 @@
 # Changelog
 
+## 0.3.5 — 2026-10-04
+
+- Renamed the source-oriented translation engine from `bin/screen-to-tmux.sh` to `bin/screen-function-source.sh`. It remains the single implementation that defines `screen2tmux()` and, by default, the callable POSIX `screen()` shell function.
+- Updated `bin/screen.sh`, the CLI/oracle harness, regression suite, documentation, and source comments to use the new canonical source filename.
+- Added an explicit direct-execution guard: `sh bin/screen-function-source.sh` exits `2` with the portable instruction `. ./bin/screen-function-source.sh`, because a child POSIX shell cannot install a function into its parent.
+- Added focused regressions proving that sourcing the file defines a working `screen()` function and that direct `sh` execution is rejected with the sourcing instruction, bringing the focused suite to 75 checks.
+- Translation semantics are unchanged from 0.3.4.
+
 ## 0.3.4 — 2026-10-04
 
-- Added `bin/screen.sh` as a standalone executable front-end that behaves like the `screen` command and delegates all translation semantics to `screen-to-tmux.sh`.
+- Added `bin/screen.sh` as a standalone executable front-end that behaves like the `screen` command and delegates all translation semantics to the sourceable translation engine.
 - Added `--dryrun` as an alias for `--dry-run`; either spelling may appear anywhere in the Screen argument vector and prints the translated tmux command instead of executing it.
-- Kept `screen-to-tmux.sh` as the sourceable translation engine rather than duplicating its implementation in the command front-end.
+- Kept one sourceable translation engine rather than duplicating its implementation in the command front-end.
 - Added regressions proving `screen.sh --dryrun` prints the expected command and that `screen.sh` executes `tmux` by default when the translation is `EXACT`.
 - Translation semantics are otherwise unchanged from 0.3.3.
 

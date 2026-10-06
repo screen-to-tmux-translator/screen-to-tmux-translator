@@ -3,7 +3,7 @@
 set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT=$(CDPATH= cd -- "$HERE/.." && pwd)
-. "$PROJECT/bin/screen-to-tmux.sh"
+. "$PROJECT/bin/screen-function-source.sh"
 RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
 REG_LOG=${REG_LOG:-$PROJECT/logs/test-regressions-$RUN_TIMESTAMP.log}
 mkdir -p "$(dirname -- "$REG_LOG")"
@@ -286,6 +286,36 @@ RC=$?
     printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
 } >> "$REG_LOG"
 if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='screen-function-source.sh defines callable screen function when sourced'
+OUT=$(NO_COLOR=1 sh -c '. "$1"; screen --dryrun -d -m bash' sh "$PROJECT/bin/screen-function-source.sh" 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='direct sh execution of screen-function-source.sh explains POSIX sourcing requirement'
+OUT=$(NO_COLOR=1 sh "$PROJECT/bin/screen-function-source.sh" 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -F '. ./bin/screen-function-source.sh' >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"

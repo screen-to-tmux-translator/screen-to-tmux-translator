@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.4
+# screen-to-tmux-translator 0.3.5
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -17,20 +17,23 @@ For a standalone command that behaves like `screen`, use:
 ./bin/screen.sh [Screen arguments ...]
 ```
 
-For shell-function use, source the translation engine:
+For shell-function use, source the function file with the POSIX dot command:
 
 ```sh
-. ./bin/screen-to-tmux.sh
+. ./bin/screen-function-source.sh
+screen -r
 ```
 
-This defines a shell function named `screen`, shadowing an installed GNU Screen executable in that shell. Use `command screen ...` to invoke the native executable.
+This defines a shell function named `screen` in the **current shell**, shadowing an installed GNU Screen executable there. Use `command screen ...` to invoke the native executable.
+
+Do **not** use `sh ./bin/screen-function-source.sh` when you want the function to remain available afterward. POSIX `sh FILE` runs the file in a child shell, and a child cannot install a function into its parent. Direct execution of the source file therefore exits with status `2` and prints the correct `. ./bin/screen-function-source.sh` instruction.
 
 To define only `screen2tmux`:
 
 ```sh
 SCREEN2TMUX_NO_SCREEN_FUNCTION=1
 export SCREEN2TMUX_NO_SCREEN_FUNCTION
-. ./bin/screen-to-tmux.sh
+. ./bin/screen-function-source.sh
 ```
 
 ## Dry run
@@ -120,7 +123,7 @@ returns `APPROX` rather than silently assuming Screen's label namespace is ident
 ```sh
 SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1
 export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES
-. ./bin/screen-to-tmux.sh
+. ./bin/screen-function-source.sh
 ```
 
 then named creation is permitted as an `EXACT` mapping within that explicit policy.
@@ -144,7 +147,7 @@ Current packaged results:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-73/73 focused semantic regression tests PASS
+75/75 focused semantic regression tests PASS
 live tmux behavior tests run when a tmux executable is available
 ```
 
@@ -202,13 +205,13 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.4/
+screen-to-tmux-translator-0.3.5/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
 ├── MANIFEST.sha256
 ├── bin/
-│   ├── screen-to-tmux.sh
+│   ├── screen-function-source.sh
 │   └── screen.sh
 ├── docs/
 │   ├── SOURCE-BASIS.md
