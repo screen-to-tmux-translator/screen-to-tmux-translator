@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.2 — 2026-10-05
+
+- Added `build_tmux.sh`, a generic POSIX front end that accepts one or more tmux versions/refs (comma- or space-separated), defaults to 3.7d, and builds both original and patched variants for every requested version. `latest` resolves upstream master/main; other values accept exact refs and the historical `release_VERSION` branch convention.
+- Moved generated source trees under `src/tmux-*` and generated build/install trees under `build/tmux-*`. The four legacy one-variant build entry points remain available and use the new layout.
+- Added `--verbosity quiet|normal|verbose` to the generic builder and `run-tests.sh`, with `normal` as the default. Normal build output replaces huge repeated compiler command lines with concise, selectively colorized stage output and `Compiling file.c ... [OK]` rows while retaining the detailed raw build transcript in each build directory.
+- Added `run-tests.sh --build [VERSION ...]`. `--build` with no version builds 3.7d; comma- and space-separated lists are supported. The runner continues into testing after build failures so every successfully completed build can still be exercised.
+- Generalized build discovery and interface equivalence. Every successful patched build under `build/` is automatically added as a compiled `screen` equivalence interface, rather than hardcoding only 3.7d/latest. Every successful original or patched tmux binary also receives the isolated live behavior suite.
+- Added focused regressions for the generic builder default pair, comma-separated version lists, new `src/`/`build/` layout, concise normal build output, `run-tests --build`, dynamic build discovery, and default normal verbosity. Focused regressions are now 102 PASS.
+- Translation semantics are unchanged from 0.4.1.
+
 ## 0.4.1 — 2026-10-05
 
 - Reworked translation-oriented test rows to `result | description | screen command -> tmux command`, with both pipe columns aligned.

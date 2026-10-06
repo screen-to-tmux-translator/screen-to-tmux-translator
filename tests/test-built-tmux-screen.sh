@@ -68,8 +68,8 @@ for SCREEN_BIN do
     BUILD_DIR=$(CDPATH= cd -- "$BIN_DIR/../.." && pwd)
     _build_base=$(basename -- "$BUILD_DIR")
     case "$_build_base" in
-        build-tmux-3.7d-patched) LABEL=tmux-3.7d ;;
-        build-tmux-latest-patched) LABEL=tmux-latest ;;
+        tmux-*-patched) LABEL=${_build_base%-patched} ;;
+        build-tmux-*-patched) LABEL=${_build_base#build-}; LABEL=${LABEL%-patched} ;;
         *) LABEL=$_build_base ;;
     esac
 

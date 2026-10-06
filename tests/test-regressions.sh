@@ -452,15 +452,78 @@ else
 fi
 
 
-CURRENT_NAME='four independent tmux build front-ends are present'
-if [ -x "$PROJECT/build_tmux_3.7d.sh" ] && [ -x "$PROJECT/build_tmux_3.7d_patched.sh" ] &&    [ -x "$PROJECT/build_tmux_latest.sh" ] && [ -x "$PROJECT/build_tmux_latest_patched.sh" ]; then
+CURRENT_NAME='generic tmux builder and legacy front-ends are present'
+if [ -x "$PROJECT/build_tmux.sh" ] && [ -x "$PROJECT/build_tmux_3.7d.sh" ] && [ -x "$PROJECT/build_tmux_3.7d_patched.sh" ] && \
+   [ -x "$PROJECT/build_tmux_latest.sh" ] && [ -x "$PROJECT/build_tmux_latest_patched.sh" ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='tmux build front-ends select separate original/patched layouts'
-if grep -F 'release_3.7d 3.7d 0' "$PROJECT/build_tmux_3.7d.sh" >/dev/null 2>&1 &&    grep -F 'release_3.7d 3.7d 1' "$PROJECT/build_tmux_3.7d_patched.sh" >/dev/null 2>&1 &&    grep -F 'master latest 0' "$PROJECT/build_tmux_latest.sh" >/dev/null 2>&1 &&    grep -F 'master latest 1' "$PROJECT/build_tmux_latest_patched.sh" >/dev/null 2>&1 &&    grep -F 'source-tmux-$NAME$SUFFIX' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 &&    grep -F 'build-tmux-$NAME$SUFFIX' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+CURRENT_NAME='tmux build layout uses src and build roots'
+if grep -F 'SCREEN2TMUX_SOURCE_ROOT:-$PROJECT/src' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'SCREEN2TMUX_BUILD_ROOT:-$PROJECT/build' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'SOURCE_DIR=$SOURCE_PARENT/tmux-$NAME$SUFFIX' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'BUILD_DIR=$BUILD_PARENT/tmux-$NAME$SUFFIX' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='generic tmux builder defaults to both 3.7d variants'
+_BTMP=${TMPDIR:-/tmp}/screen2tmux-build-driver-$$
+rm -rf "$_BTMP"; mkdir -p "$_BTMP"
+cat > "$_BTMP/driver" <<'EOF_BUILD_STUB'
+#!/bin/sh
+printf '%s %s %s\n' "$1" "$2" "$3" >> "$SCREEN2TMUX_BUILD_STUB_LOG"
+exit 0
+EOF_BUILD_STUB
+chmod 755 "$_BTMP/driver"
+: > "$_BTMP/calls"
+SCREEN2TMUX_BUILD_ONE="$_BTMP/driver" SCREEN2TMUX_BUILD_STUB_LOG="$_BTMP/calls" NO_COLOR=1 sh "$PROJECT/build_tmux.sh" --verbosity quiet >/dev/null 2>&1
+_RC=$?
+_BCALLS=$(cat "$_BTMP/calls")
+if [ "$_RC" -eq 0 ] && [ "$_BCALLS" = "3.7d 3.7d 0
+3.7d 3.7d 1" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$_RC calls=$_BCALLS)"
+fi
+
+CURRENT_NAME='generic tmux builder accepts comma-separated versions'
+: > "$_BTMP/calls"
+SCREEN2TMUX_BUILD_ONE="$_BTMP/driver" SCREEN2TMUX_BUILD_STUB_LOG="$_BTMP/calls" NO_COLOR=1 sh "$PROJECT/build_tmux.sh" --verbosity quiet 3.7d,latest >/dev/null 2>&1
+_RC=$?
+_BCOUNT=$(wc -l < "$_BTMP/calls" | tr -d ' ')
+if [ "$_RC" -eq 0 ] && [ "$_BCOUNT" -eq 4 ] && grep -F 'latest latest 0' "$_BTMP/calls" >/dev/null 2>&1 && grep -F 'latest latest 1' "$_BTMP/calls" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$_RC calls=$_BCALLS)"
+fi
+rm -rf "$_BTMP"
+
+CURRENT_NAME='normal build verbosity renders concise compile progress'
+if grep -F 'Compiling " $0 " ... [OK]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'SCREEN2TMUX_CC_PROGRESS=1 make -j"$JOBS"' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'quiet|normal|verbose' "$PROJECT/build_tmux.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='run-tests build option defaults to 3.7d and accepts version lists'
+if grep -F -- '--build [VERSION ...]' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'BUILD_VERSIONS=3.7d' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'append_build_versions "$1"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='run-tests discovers arbitrary successful builds dynamically'
+if grep -F 'for _dir in "$BUILD_ROOT"/tmux-*' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'SCREEN2TMUX_EQUIV_BUILT_REGISTRY="$EQUIV_BUILT_REGISTRY"' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'while IFS="$TAB" read -r _bn _bp _bl' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
@@ -537,8 +600,10 @@ else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='run-tests discovers new patched build directory names'
-if grep -F 'build-tmux-3.7d-patched' "$PROJECT/run-tests.sh" >/dev/null 2>&1 &&    grep -F 'build-tmux-latest-patched' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+CURRENT_NAME='run-tests exposes normal build verbosity by default'
+if grep -F 'VERBOSITY=normal' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F -- '--verbosity LEVEL' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'sh "$HERE/build_tmux.sh"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
