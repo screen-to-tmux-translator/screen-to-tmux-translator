@@ -20,7 +20,7 @@ case "$MODE" in
         # shellcheck disable=SC1090
         . "$INTERFACE" || exit $?
         ;;
-    standalone-last) : ;;
+    standalone-last|standalone-full) : ;;
     *) printf 'unknown worker mode: %s\n' "$MODE" >&2; exit 2 ;;
 esac
 
@@ -30,7 +30,7 @@ invoke()
     shift
     case "$MODE" in
         source-full|source-last) NO_COLOR=1 SCREEN2TMUX_COLOR=never screen "$@" >"$_iw_out" 2>&1 ;;
-        standalone-last) NO_COLOR=1 SCREEN2TMUX_COLOR=never "$INTERFACE" "$@" >"$_iw_out" 2>&1 ;;
+        standalone-last|standalone-full) NO_COLOR=1 SCREEN2TMUX_COLOR=never "$INTERFACE" "$@" >"$_iw_out" 2>&1 ;;
     esac
 }
 
@@ -40,7 +40,7 @@ emit()
     shift 3
     SEQ=$((SEQ + 1))
     _iw_base=$(printf '%04d' "$SEQ")
-    if [ "$MODE" = standalone-last ]; then
+    if [ "$MODE" = standalone-last ] || [ "$MODE" = standalone-full ]; then
         (
             invoke "$OUTDIR/$_iw_base.out" "$@"
             printf '%s\n' "$?" > "$OUTDIR/$_iw_base.rc"
@@ -65,7 +65,7 @@ case_()
     _iw_id=$1; _iw_expected=$2; _iw_desc=$3
     shift 3
     case "$MODE" in
-        source-full)
+        source-full|standalone-full)
             emit "$_iw_id" "$_iw_desc" first --dry-run "$@"
             if [ "$#" -gt 0 ]; then
                 _iw_first=$1; shift
@@ -83,5 +83,5 @@ case_()
 [ -z "$META" ] || : > "$META"
 # shellcheck disable=SC1090
 . "$CASES"
-if [ "$MODE" = standalone-last ]; then wait; fi
+if [ "$MODE" = standalone-last ] || [ "$MODE" = standalone-full ]; then wait; fi
 printf '%s\n' "$SEQ" > "$OUTDIR/count"

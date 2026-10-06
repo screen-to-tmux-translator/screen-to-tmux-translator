@@ -128,3 +128,11 @@ f808fad0506fb6ca16193118891590a6eb8c854a4ffbbedf9313de21cf025bd5
 The source hashes identify the snapshots audited for this release. A future Screen or tmux release may add, remove, or alter syntax or semantics; rerun and update the source-derived manifests before treating this translator as authoritative for a different version.
 
 For 0.3.0, `cmd-move-window.c` and `session.c` confirm that `move-window -r` calls `session_renumber_windows()`, which starts at the session's `base-index`. `options-table.c` declares `alternate-screen` with window/pane scope. These source facts underpin the new `APPROX` classifications.
+
+## Embedded tmux build integration (0.3.7)
+
+The compatibility integration keeps the upstream source footprint intentionally small. The packaged build workflow copies `tmux-integration/screen-to-tmux-translator` into the selected tmux source tree and applies `tmux-integration/tmux.c-screen-compat.patch` with zero fuzz. The patch changes only `tmux.c`: it includes the translator file and calls `screen_to_tmux_translate(&argc, &argv)` at the beginning of `main()`.
+
+The same minimal tmux.c patch was checked locally against the supplied `release_3.7d` source tree and the available newer development tmux source snapshot. For `build_tmux_latest.sh`, the source is downloaded from the official `master` branch when the script runs and the exact commit is recorded. If those known integration anchors stop matching, the script fails explicitly rather than inferring a new location.
+
+`tmux-integration/screen-to-tmux-translator` embeds the canonical POSIX translator source. For this package, the embedded shell payload was verified byte-for-byte against `bin/screen-function-source.sh`, and a strict C harness produced identical dry-run status/output for all 683 test placements.

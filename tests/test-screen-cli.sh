@@ -1,5 +1,5 @@
 #!/bin/sh
-# POSIX-shell test harness for screen-to-tmux-translator 0.3.6.
+# POSIX-shell test harness for screen-to-tmux-translator 0.3.7.
 # 1. Validate base Screen syntax with an independent Screen 5.0.2 oracle.
 # 2. Exercise translator --dry-run at first/middle/last argument positions.
 # 3. Log escaped argv/output plus exact byte hex.

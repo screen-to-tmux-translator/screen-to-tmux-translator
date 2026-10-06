@@ -23,7 +23,11 @@ if [ "$_color_enabled" -eq 1 ]; then
     G='\033[32m'; R='\033[31m'; Y='\033[33m'; C='\033[36m'; Z='\033[0m'
 else G=; R=; Y=; C=; Z=; fi
 
-if ! command -v tmux >/dev/null 2>&1; then
+TMUX_BIN=${TMUX_BIN:-}
+if [ -z "$TMUX_BIN" ]; then
+    TMUX_BIN=$(command -v tmux 2>/dev/null || :)
+fi
+if [ -z "$TMUX_BIN" ] || [ ! -x "$TMUX_BIN" ]; then
     printf '%b[SKIP]%b live tmux behavior tests: tmux executable not installed\n' "$Y" "$Z"
     printf 'SKIP: tmux executable not installed\n' >> "$LOG"
     exit 0
@@ -35,12 +39,12 @@ F=0
 
 tmux_test()
 {
-    command tmux -L "$SOCK" -f /dev/null "$@"
+    "$TMUX_BIN" -L "$SOCK" -f /dev/null "$@"
 }
 
 cleanup()
 {
-    command tmux -L "$SOCK" kill-server >/dev/null 2>&1 || :
+    "$TMUX_BIN" -L "$SOCK" kill-server >/dev/null 2>&1 || :
 }
 trap cleanup EXIT HUP INT TERM
 
@@ -58,7 +62,7 @@ fail()
     printf 'FAIL: %s\n' "$1" >> "$LOG"
 }
 
-printf 'tmux behavior test run\nTMUX_VERSION: %s\nSOCKET_NAME: %s\n' "$(tmux -V 2>/dev/null || printf unknown)" "$SOCK" >> "$LOG"
+printf 'tmux behavior test run\nTMUX_VERSION: %s\nSOCKET_NAME: %s\n' "$($TMUX_BIN -V 2>/dev/null || printf unknown)" "$SOCK" >> "$LOG"
 
 # GNU Screen may have PID.work and another PID.work. tmux cannot have two
 # sessions both literally named work.

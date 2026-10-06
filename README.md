@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.6
+# screen-to-tmux-translator 0.3.7
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -137,6 +137,55 @@ export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES
 
 then named creation is permitted as an `EXACT` mapping within that explicit policy.
 
+## Build original and patched tmux
+
+Two reproducible build drivers are included:
+
+```sh
+sh build_tmux_3.7d.sh
+sh build_tmux_latest.sh
+```
+
+`build_tmux_3.7d.sh` downloads the official `release_3.7d` branch. `build_tmux_latest.sh` downloads the official `master` branch at the commit current when the script is run. Both scripts record the exact source commit in `BUILD-INFO`.
+
+Before downloading, the shared builder checks for the normal tmux-from-Git prerequisites: a C compiler and make, Git, Autoconf/Automake, yacc or bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities. If something is missing it stops before the build and prints common Debian/Ubuntu, Fedora/RHEL, Alpine, and Homebrew package suggestions.
+
+Each driver downloads one source commit, creates two independent clean snapshots, then performs two complete Autotools/configure/make/install builds:
+
+```text
+build/tmux-3.7d/
+├── original/
+│   ├── source/
+│   └── install/bin/tmux
+└── patched/
+    ├── source/
+    └── install/bin/
+        ├── tmux
+        └── screen   # hardlink to tmux
+
+build/tmux-latest/
+└── ... same layout ...
+```
+
+The patch contract is deliberately narrow. Before `autogen.sh` runs, the builder verifies that the patched source differs from pristine upstream in exactly two filesystem entries:
+
+```text
+modified: tmux.c
+added:    screen-to-tmux-translator
+```
+
+All compatibility code lives in `tmux-integration/screen-to-tmux-translator`. `tmux-integration/tmux.c-screen-compat.patch` only includes that file and calls `screen_to_tmux_translate(&argc, &argv)` at the start of tmux's `main()`. Patch application uses zero fuzz; if a future `master` moves those locations, the latest builder stops instead of guessing.
+
+The build scripts accept a few useful overrides:
+
+```sh
+TMUX_BUILD_JOBS=8 sh build_tmux_3.7d.sh
+SCREEN2TMUX_BUILD_ROOT=/var/tmp/screen2tmux-builds sh build_tmux_latest.sh
+TMUX_GIT_URL=https://github.com/tmux/tmux.git sh build_tmux_latest.sh
+```
+
+`TMUX_SOURCE_DIR=/path/to/an/existing/tmux/tree` is also available as an offline/test override; normal use downloads from GitHub.
+
 ## Tests
 
 Run everything:
@@ -145,12 +194,13 @@ Run everything:
 sh run-tests.sh
 ```
 
-The test system has four layers:
+The test system has four always-available layers plus an automatic built-binary layer:
 
 1. A **Screen syntax oracle**, independent from the translator, built from GNU Screen 5.0.2 `comm.c` command metadata plus a separate top-level CLI parser.
 2. Translator tests that insert `--dry-run` at first/middle/last positions and compare the resulting classification.
 3. An **interface-equivalence suite**: canonical source versus minified source across all 683 dry-run placements, plus three-way canonical/minified/standalone comparison across all 228 base Screen command cases and a normal-execution stub test.
 4. An **optional live tmux behavioral suite** using an isolated `-L` server. It is skipped cleanly if no tmux executable is installed.
+5. When `build/tmux-3.7d` and/or `build/tmux-latest` contains a completed patched build, a **built hardlink suite** automatically runs the actual hardlink named `screen` through all 683 dry-run placements, requiring byte-for-byte output and identical exit status versus the canonical translator. It also performs an isolated real-execution smoke test and reruns the live tmux behavioral suite against each patched tmux binary.
 
 Current packaged results:
 
@@ -162,6 +212,7 @@ Current packaged results:
 228/228 three-way command-case comparisons PASS
 1/1 three-way normal-execution stub comparison PASS
 live tmux behavior tests run when a tmux executable is available
+built hardlink matrix: automatically 683/683 per discovered patched build
 ```
 
 Each `sh run-tests.sh` invocation creates one timestamped run set. For example:
@@ -175,7 +226,7 @@ logs/test-run-console-20261004-211500.log
 logs/screen-to-tmux-translator-test-logs-20261004-211500.zip
 ```
 
-All five `.log` files use the same timestamp and the ZIP is created automatically after the test layers finish. The ZIP contains exactly those five logs from that run.
+With no compiled build present, all five base `.log` files use the same timestamp and the ZIP contains exactly those five logs. When a 3.7d/latest patched build is discovered, the runner adds `test-built-tmux-screen-<timestamp>.log` plus one `test-tmux-behavior-<build>-<timestamp>.log` for each discovered build, and includes those additional logs in the same ZIP.
 
 `test-screen-cli-<timestamp>.log` records the displayed input, exact argv bytes in hex, output, output bytes in hex, expected class, actual exit code, and PASS/FAIL for every invocation.
 
@@ -219,21 +270,32 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.6/
+screen-to-tmux-translator-0.3.7/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
 ├── MANIFEST.sha256
+├── build_tmux_3.7d.sh
+├── build_tmux_latest.sh
 ├── bin/
 │   ├── screen-function-source.sh
+│   ├── screen-function-source-minified.sh
 │   └── screen.sh
+├── scripts/
+│   └── build-tmux-variant.sh
+├── tmux-integration/
+│   ├── screen-to-tmux-translator
+│   └── tmux.c-screen-compat.patch
 ├── docs/
 │   ├── SOURCE-BASIS.md
 │   ├── TESTING.md
 │   └── screen-5.0.2-command-manifest.tsv
 ├── tests/
 │   ├── cases.sh
+│   ├── interface-equivalence-worker.sh
 │   ├── screen-syntax-oracle.sh
+│   ├── test-built-tmux-screen.sh
+│   ├── test-interface-equivalence.sh
 │   ├── test-regressions.sh
 │   ├── test-screen-cli.sh
 │   └── test-tmux-behavior.sh

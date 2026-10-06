@@ -87,7 +87,7 @@ The runner's terminal stream is colorized only after the corresponding plain tex
 
 The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive terminal. `always` forces it and `never` disables it. `NO_COLOR` disables all color and takes precedence. Test components launched by `run-tests.sh` receive `NO_COLOR=1`; the parent runner then selectively colors its terminal copy. Standalone test scripts honor the same console color policy directly while forcing translator output captured into their detailed log to plain text.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.6.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.7.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records interface parity. The canonical and minified source files are compared byte-for-byte with identical exit status across all 683 first/middle/last dry-run placements. All 228 base Screen command cases are then compared three ways against the standalone `bin/screen.sh` executable, and one normal-execution path is compared using a private stub `tmux`.
 
@@ -158,3 +158,49 @@ live tmux behavior:         optional; skipped if tmux is unavailable
 - `alternate-screen` can differ between panes.
 
 If tmux is not installed, this layer reports `SKIP` and exits successfully; the source-derived syntax oracle and translator regressions still run.
+
+## Built tmux hardlink layer (0.3.7)
+
+The repository includes two build drivers:
+
+```sh
+sh build_tmux_3.7d.sh
+sh build_tmux_latest.sh
+```
+
+A completed build is recognized from either of these standard paths:
+
+```text
+build/tmux-3.7d/patched/install/bin/screen
+build/tmux-latest/patched/install/bin/screen
+```
+
+The build driver creates `screen` with `ln` from the patched `tmux` binary; it is a hardlink, not a wrapper or copied executable.
+
+When `run-tests.sh` discovers one or both completed builds, it automatically adds `tests/test-built-tmux-screen.sh`. For each patched build this test:
+
+1. verifies that sibling `screen` and `tmux` have the same inode;
+2. invokes the actual hardlink whose basename is `screen` over all 683 first/middle/last dry-run placements from `tests/cases.sh`;
+3. compares exit status and raw output bytes with the canonical `screen-function-source.sh` translator using `cmp`;
+4. performs one non-dry-run detached-session smoke test under an isolated `TMUX_TMPDIR` and confirms that the sibling patched `tmux` can see the resulting session;
+5. leaves the user's normal tmux socket untouched.
+
+The existing live behavior suite is then rerun with `TMUX_BIN` set to each patched tmux binary. This means the same duplicate-session, occupied-index, `base-index`, buffer-scope, format-literal, StartAt, and alternate-screen checks are exercised against the actual build rather than only a system-installed tmux.
+
+Additional timestamped logs are created only when builds are discovered:
+
+```text
+test-built-tmux-screen-YYYYMMDD-HHMMSS.log
+test-tmux-behavior-tmux-3.7d-YYYYMMDD-HHMMSS.log
+test-tmux-behavior-tmux-latest-YYYYMMDD-HHMMSS.log
+```
+
+Every additional log is added to the same per-run ZIP as the five base logs.
+
+## Build dependency and patch-safety checks
+
+The shared build driver performs dependency checks before downloading source. It requires the normal tmux-from-Git toolchain and mandatory libraries: compiler, make, Git, Autoconf/Automake, yacc/bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities.
+
+The patch is intentionally non-adaptive. `patch --fuzz=0` must find the two known `tmux.c` integration locations. If a future master changes enough that this no longer applies, the build stops and reports the branch/commit rather than inserting code heuristically.
+
+Before `autogen.sh`, the pristine and patched snapshots are compared recursively. A build is rejected unless there are exactly two source differences: modified `tmux.c` and added `screen-to-tmux-translator`.

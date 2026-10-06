@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.7 — 2026-10-05
+
+- Added `build_tmux_3.7d.sh`. It downloads the `release_3.7d` branch from the official tmux Git repository, verifies required build tools/libraries, snapshots one exact commit twice, builds an untouched original tree from scratch, then independently builds a Screen-compat patched tree from scratch.
+- Added `build_tmux_latest.sh`, using the same process against the current `master` branch each time it is run. The exact Git commit is recorded in `build/<name>/BUILD-INFO`.
+- Added `scripts/build-tmux-variant.sh` as the shared POSIX build implementation. It checks Autotools, compiler/make, yacc/bison, `pkg-config`, libevent 2.x, ncurses/terminfo, `patch`, and related utilities before downloading/building and prints distro-specific package hints on failure.
+- Added `tmux-integration/screen-to-tmux-translator`, containing the full embedded compatibility layer, plus a minimal `tmux.c` patch. The build enforces the source-footprint contract before Autotools runs: exactly one existing upstream file (`tmux.c`) differs and exactly one new upstream file (`screen-to-tmux-translator`) is added.
+- Patch application uses `patch --fuzz=0`. If current `master` no longer has the two known integration points, the latest-build script stops with a specific error rather than guessing where to inject compatibility code.
+- Patched installs create `bin/screen` as a hardlink to the patched `bin/tmux`; original and patched `tmux -V` output must match before a build is accepted.
+- Standard build locations are `build/tmux-3.7d/{original,patched}` and `build/tmux-latest/{original,patched}`. Each build records source URL, branch, commit, version, binary paths, and hardlink inode metadata.
+- Added `tests/test-built-tmux-screen.sh`. When a completed patched build is discovered, it verifies hardlink identity, compares the actual hardlink named `screen` byte-for-byte and exit-status-for-exit-status against the canonical translator across all 683 dry-run placement variants, then performs an isolated real-execution smoke test.
+- Extended `tests/interface-equivalence-worker.sh` with `standalone-full` mode so compiled/hardlinked Screen entry points can run the complete 683-placement corpus with bounded parallelism.
+- `tests/test-tmux-behavior.sh` now accepts `TMUX_BIN=/path/to/tmux`, allowing the same isolated behavioral checks to run against each patched build instead of only a system tmux.
+- `run-tests.sh` auto-detects completed 3.7d/latest builds, adds the full hardlink `screen` matrix, reruns live tmux behavior tests against each patched tmux, timestamps the extra logs, and includes every generated test log in the per-run ZIP.
+- Verified the minimal tmux.c patch with zero fuzz against the supplied 3.7d tree and the available newer development tmux tree. The embedded translator source is byte-for-byte identical to `bin/screen-function-source.sh`; a strict C harness matched all 683 canonical dry-run outputs.
+- Core translator semantics remain unchanged from 0.3.6.
+
 ## 0.3.6 — 2026-10-04
 
 - Added `bin/screen-function-source-minified.sh`, a mechanically minified sourceable equivalent of `screen-function-source.sh`. Minification removes comments and blank lines only; executable/content lines are preserved.
