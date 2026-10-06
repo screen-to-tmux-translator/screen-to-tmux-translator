@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.7 — 2026-10-06
+
+- Added translator-owned `--strict`, accepted anywhere in the argument vector like `--dry-run`. `EXACT` mappings retain normal behavior; every `APPROX` mapping becomes advisory, returns status 3, and never invokes tmux. `--strict --dry-run` still prints the closest tmux argv for inspection without executing it.
+- Added focused and compiled-hardlink regressions proving strict mode blocks executable approximations while preserving exact mappings.
+- Made the default tmux 3.7d build reproducible by pinning it to `e9634d40749a5ae330aabf5aa46a81505b094a6b`, the commit recorded in the supplied `release_3.7d` GitHub ZIP, instead of following the moving `release_3.7d` branch. `latest` remains intentionally moving and explicit pin overrides remain available.
+- Corrected tmux master source provenance to the supplied archive SHA-256 `e4deec4f6914e3f50047d5cf1d6f50a435f1da18635f925545301b46fb96a4d8` and GitHub ZIP commit comment `8f25579c5aef8d93924a20681f394e2a582fd3ad`; updated audited file hashes that changed with that snapshot.
+- Documented the supplied 3.7d archive hash and key file hashes in `docs/SOURCE-BASIS.md`.
+- Changed internal `.sh` child invocations to explicit `sh SCRIPT ...`, including build wrappers, aggregate test components, and standalone script equivalence calls. This avoids `Permission denied` failures when executable bits are lost in GitHub ZIP extraction. `sh run-tests.sh --build latest` remains the supported entry point.
+- Documented the POSIX-shell runtime dependency, including the compiled `screen` hardlink's use of `/bin/sh` for translation.
+- Repositioned the README around creating a Screen-compatible command-line identity for tmux and embedded the exact contents of `bin/screen-function-source-minified.oneliner.sh` as a paste-to-run function.
+
 ## 0.4.6 — 2026-10-05
 
 - Changed `APPROX` from an always-advisory class into a warning-preserving execution policy. When an inexact Screen operation has a concrete useful one-command tmux substitute, the translator now prints the `APPROX` reason/suggestion and then executes that tmux command. Dry-run prints the warning followed by the translated command.

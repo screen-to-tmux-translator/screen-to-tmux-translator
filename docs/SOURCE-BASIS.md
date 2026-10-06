@@ -1,6 +1,7 @@
 # Source basis
 
-**0.4.6 note:** the audited GNU Screen/tmux source assumptions are unchanged, but the execution policy changes: `APPROX` remains an explicit semantic warning, while approximations with a concrete one-command tmux substitute now execute that command after the warning. Ambiguous, multi-command, shell-redirection, or indeterminate-target approximations remain advisory and return 3. Concrete broader-scope tmux substitutes may execute after their warning makes the scope difference explicit. 0.4.5 made `screen.sh` self-contained and added the two one-line sourceable interfaces.
+**0.4.7 note:** source provenance is now explicit and reproducible. The supplied tmux master ZIP is identified by both its archive SHA-256 and GitHub archive commit comment, and the default tmux 3.7d build no longer follows the moving `release_3.7d` branch. It is pinned to the exact commit recorded by the supplied 3.7d GitHub ZIP. This release also adds translator-owned `--strict`, which keeps every `APPROX` mapping advisory instead of executing the closest tmux command.
+
 
 This release was built against the source archives supplied during the project work. At 0.4.0 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
 
@@ -49,10 +50,11 @@ The supplied tmux source identifies itself in `configure.ac` as the development 
 
 ```text
 tmux source archive: tmux-master.zip
-SHA-256: df78c6897052eaf158945ce98007a4ce5fa68790b7c43fa3b2ce8fe6a66da1e6
+SHA-256: e4deec4f6914e3f50047d5cf1d6f50a435f1da18635f925545301b46fb96a4d8
+GitHub ZIP commit comment: 8f25579c5aef8d93924a20681f394e2a582fd3ad
 
 cmd-attach-session.c SHA-256:
-40c4868f3a643d9e19105bda8d30a08e718072cfa7bbe92a7eb7add7ccf6aae2
+7c28ca17a8cca8415b5f16295557276def29c88289b001b68a1bcc419537691c
 
 cmd-list-clients.c SHA-256:
 cecd7547017c11420e540e9102b1556ebecd6c63ec1d279a3d741814f25d7fd9
@@ -73,7 +75,7 @@ session.c SHA-256:
 3eaabb33457777239d24557a02606d58376bd6e1a45e07aca9c3a48bc21245b3
 
 options-table.c SHA-256:
-0cdb22361799e36e90e451f1b3c8ad57d31dd0ab18fd878559aa3f8f5bd62c90
+c920ff9819f90403b2268244f78e1ec5ea3875d83419aae065addc2cc6f5d631
 ```
 
 `cmd-list-clients.c` confirms that `list-clients -t session` scopes results to clients attached to the selected session. tmux key bindings, by contrast, live in server key tables, so a Screen-session-local `bind` cannot safely be executed as an unconditional `tmux bind-key` without broadening scope.
@@ -81,6 +83,35 @@ options-table.c SHA-256:
 `refresh-client` and `suspend-client` are target-client commands. A Screen session selector (`-S`) does not uniquely identify a tmux client when multiple clients are attached, so these translations are classified as `APPROX` instead of being executed automatically.
 
 For plain Screen `-r`, tmux's `attach-session` is only an approximation: Screen resume semantics distinguish detached from already attached sessions, while tmux normally permits multiple clients. The wrapper preserves a Screen `-p` window in the suggested tmux `session:window` target, but no longer labels the overall `-r` behavior exact.
+
+### Pinned tmux 3.7d build baseline
+
+The supplied `release_3.7d` GitHub ZIP records commit `e9634d40749a5ae330aabf5aa46a81505b094a6b` in its ZIP comment. Its archive SHA-256 is `5b9110765232103b128ec87081085d3ccfbba8eda6a31a8aced935f3bf9edecc`. `configure.ac` identifies that snapshot as tmux `3.7d`.
+
+```text
+tmux release_3.7d archive SHA-256:
+5b9110765232103b128ec87081085d3ccfbba8eda6a31a8aced935f3bf9edecc
+
+GitHub ZIP commit comment:
+e9634d40749a5ae330aabf5aa46a81505b094a6b
+
+tmux.c SHA-256:
+e0e0b5d551e9eb7685c8f9e24692eb847744067a51c0c8ba67955ec0e492ba00
+
+cmd-attach-session.c SHA-256:
+44a0bee2aa44c2c38654bfc0706e3d203801c63a5af6fc89c439c3f4efe9a093
+
+options-table.c SHA-256:
+c1245a284d540f4c5160617c2f762718b9bc264236c5cf1524b34f51621b56c2
+
+cmd-display-message.c SHA-256:
+f656827bb3679bcba2e4ba1a1adef0d36c88f11354c3b005b94f998e418bae05
+
+configure.ac SHA-256:
+4d852d89bc9e9cbcb67b793d8d82fbd27cc267c5989c5bf20469118c3dbcad6a
+```
+
+`build_tmux.sh`, `build_tmux_patched.sh`, and the legacy 3.7d front ends therefore resolve the default `3.7d` request to that immutable commit rather than to the current head of `origin/release_3.7d`. `TMUX_PIN_COMMIT` remains the explicit per-run override, and `SCREEN2TMUX_TMUX_3_7D_PIN` can intentionally replace the project baseline for an audit. `latest` remains intentionally moving.
 
 ## 0.3.1 source checks
 
@@ -118,7 +149,7 @@ tmux cmd-rename-window.c SHA-256:
 165a8d71e719a4fd1cee2a21b52417a39c81e31284e301232fed66ad291d2839
 
 tmux cmd-display-message.c SHA-256:
-e528b10d8d128f265eb1fcb4f8fd6a362ce96adb3969b8216f244196e8676766
+3a8849f7535d1b8a7691dd9ceefac9875354ec9fe63e53462b8b6d4b8858cda1
 
 tmux cmd-find.c SHA-256:
 decb4d8aeecea0d86ace095be76a40449013fba579706b35580acefa275fcef6
@@ -137,7 +168,7 @@ For 0.3.0, `cmd-move-window.c` and `session.c` confirm that `move-window -r` cal
 
 The compatibility integration keeps the upstream source footprint intentionally small. The packaged build workflow copies `tmux-integration/screen-to-tmux-translator` into the selected tmux source tree and applies `tmux-integration/tmux.c-screen-compat.patch` with zero fuzz. The patch changes only `tmux.c`: it includes the translator file and calls `screen_to_tmux_translate(&argc, &argv)` at the beginning of `main()`.
 
-The same minimal tmux.c patch was checked locally against the supplied `release_3.7d` source tree and the available newer development tmux source snapshot. The generic `build_tmux.sh` can resolve arbitrary tmux versions/refs, including `latest` from upstream master/main. Every exact source commit is recorded in `BUILD-INFO`. If the known integration anchors stop matching on a requested version, only that patched variant fails explicitly rather than inferring a new location.
+The same minimal tmux.c patch was checked locally against the supplied pinned `release_3.7d` source tree and the supplied development tmux source snapshot. The generic `build_tmux.sh` can resolve arbitrary tmux versions/refs, including intentionally moving `latest` from upstream master/main. The default `3.7d` request is pinned to `e9634d40749a5ae330aabf5aa46a81505b094a6b`, and every resolved source commit is recorded in `BUILD-INFO`. If the known integration anchors stop matching on a requested version, only that patched variant fails explicitly rather than inferring a new location.
 
 `tmux-integration/screen-to-tmux-translator` embeds the canonical POSIX translator source. For this package, the embedded shell payload is regenerated directly from `bin/screen-function-source.sh`. The canonical/minified/two-one-line/standalone interfaces remain byte-identical across the existing equivalence corpus, and the help path is part of that corpus. The embedded help identifies itself as compatibility help rather than native GNU Screen output.
 

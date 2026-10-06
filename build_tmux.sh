@@ -24,9 +24,9 @@ comma-separated, for example:
   sh build_tmux.sh 3.7d,3.8,latest
   sh build_tmux.sh 3.7d 3.8 latest
 
-With no VERSION, 3.7d is built. "latest" resolves the current tmux master/main
-commit. Other values are accepted as exact tags/branches/commits and also tried
-as release_VERSION branches.
+With no VERSION, the project-pinned tmux 3.7d baseline is built. "latest"
+resolves the current tmux master/main commit. Other values are accepted as exact
+tags/branches/commits and also tried as release_VERSION branches.
 
 Verbosity:
   quiet    stage results and errors only

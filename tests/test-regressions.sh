@@ -211,6 +211,10 @@ expect_class_contains "Screen layout next is not claimed exact" 0 "saved display
 expect_class_contains "ACL add warns about server-wide scope" 0 "server level" -S work -X acladd alice --dry-run
 expect_class_contains "direct serial mapping is external" 5 "EXTERNAL" /dev/ttyUSB0 115200 --dry-run
 expect_class_contains "plain -r warns before executing closest attach" 0 "normally refuses an already attached session" -r work --dry-run
+expect_exact "--strict leaves EXACT mappings available" "'tmux' 'new-session' '-d' 'bash'" --strict --dry-run -d -m bash
+expect_class_contains "--strict makes executable APPROX advisory" 3 "--strict keeps APPROX mappings advisory" --strict --dry-run -r work
+expect_class_contains "--strict dry-run still shows closest APPROX command" 3 "'tmux' 'attach-session' '-t' 'work'" -r work --strict --dry-run
+expect_class_contains "--strict blocks notice-then-run approximations" 3 "'tmux' 'new-session' '-s' 'work'" --dry-run -S work --strict
 
 CURRENT_NAME='plain -r executes closest tmux attach after warning'
 _s2t_approx_stub=${TMPDIR:-/tmp}/screen2tmux-approx-exec-$$
@@ -238,6 +242,26 @@ if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -F 'screen2tmux: APPROX:' >/de
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
 fi
+
+CURRENT_NAME='--strict never executes executable APPROX mapping'
+_s2t_strict_stub=${TMPDIR:-/tmp}/screen2tmux-strict-exec-$$
+rm -rf "$_s2t_strict_stub"
+mkdir -p "$_s2t_strict_stub"
+cat > "$_s2t_strict_stub/tmux" <<'EOF_STRICT_STUB'
+#!/bin/sh
+printf 'executed\n' > "${SCREEN2TMUX_STRICT_SENTINEL:?}"
+exit 0
+EOF_STRICT_STUB
+chmod 755 "$_s2t_strict_stub/tmux"
+_s2t_strict_sentinel=$_s2t_strict_stub/executed
+OUT=$(PATH="$_s2t_strict_stub:$PATH" SCREEN2TMUX_STRICT_SENTINEL="$_s2t_strict_sentinel" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen --strict -r work 2>&1)
+RC=$?
+if [ "$RC" -eq 3 ] && [ ! -e "$_s2t_strict_sentinel" ] && printf '%s\n' "$OUT" | grep -F -- '--strict keeps APPROX mappings advisory' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC sentinel=$([ -e "$_s2t_strict_sentinel" ] && printf yes || printf no) output=$OUT)"
+fi
+rm -rf "$_s2t_strict_stub"
 expect_class_contains "hardcopy explicit file is approximation" 3 "not byte-for-byte equivalent" -S work -p 0 -X hardcopy /tmp/window.txt --dry-run
 expect_class_contains "removebuf does not delete tmux buffer" 2 "exchange file" -S work -X removebuf --dry-run
 expect_not_contains "removebuf never emits delete-buffer" 2 "delete-buffer'" -S work -X removebuf --dry-run
@@ -288,6 +312,7 @@ expect_class_contains "compatibility help is available" 0 "screen-to-tmux compat
 expect_class_contains "compatibility help identifies Screen 5.0.x syntax" 0 "GNU Screen 5.0.x-style command-line syntax" --dry-run --help
 expect_class_contains "compatibility help explains tmux differences" 0 "Important tmux-underneath differences" --dry-run --help
 expect_class_contains "compatibility help documents dryrun alias" 0 "--dry-run / --dryrun" --dry-run --help
+expect_class_contains "compatibility help documents strict mode" 0 "Never execute APPROX mappings" --dry-run --help
 expect_class_contains "internal Screen version is not tmux version" 2 "reports Screen's version/status text" --dry-run -S work -X version
 expect_exact "query echo uses tmux literal mode" "'tmux' 'display-message' '-pl' '#{session_name}'" --dry-run -S work -Q echo '#{session_name}'
 expect_class_contains "query echo -p refuses Screen format reinterpretation" 2 "Screen echo -p expands Screen's own % status-format language" --dry-run -S work -Q echo -p '%n %t'
@@ -378,7 +403,7 @@ fi
 rm -rf "$_DEP_TMP"
 
 CURRENT_NAME='standalone screen.sh accepts --dryrun alias'
-OUT=$(NO_COLOR=1 "$PROJECT/bin/screen.sh" --dryrun -d -m bash 2>&1)
+OUT=$(NO_COLOR=1 sh "$PROJECT/bin/screen.sh" --dryrun -d -m bash 2>&1)
 RC=$?
 {
     printf '%s\n' '=============================================================================='
@@ -397,8 +422,8 @@ _s2t_solo_dir=${TMPDIR:-/tmp}/screen2tmux-standalone-$$
 rm -rf "$_s2t_solo_dir"
 mkdir -p "$_s2t_solo_dir"
 cp "$PROJECT/bin/screen.sh" "$_s2t_solo_dir/screen.sh"
-chmod 755 "$_s2t_solo_dir/screen.sh"
-OUT=$(NO_COLOR=1 "$_s2t_solo_dir/screen.sh" --dryrun -d -m bash 2>&1)
+chmod 644 "$_s2t_solo_dir/screen.sh"
+OUT=$(NO_COLOR=1 sh "$_s2t_solo_dir/screen.sh" --dryrun -d -m bash 2>&1)
 RC=$?
 cat > "$_s2t_solo_dir/tmux" <<'EOF_SOLO_TMUX'
 #!/bin/sh
@@ -407,7 +432,7 @@ for a do printf ' <%s>' "$a"; done
 printf '\n'
 EOF_SOLO_TMUX
 chmod 755 "$_s2t_solo_dir/tmux"
-_EXEC_OUT=$(PATH="$_s2t_solo_dir:$PATH" NO_COLOR=1 "$_s2t_solo_dir/screen.sh" -d -m bash 2>&1)
+_EXEC_OUT=$(PATH="$_s2t_solo_dir:$PATH" NO_COLOR=1 sh "$_s2t_solo_dir/screen.sh" -d -m bash 2>&1)
 _EXEC_RC=$?
 rm -rf "$_s2t_solo_dir"
 {
@@ -533,7 +558,7 @@ for a do printf ' <%s>' "$a"; done
 printf '\n'
 EOF_STUB
 chmod 755 "$_s2t_stub_dir/tmux"
-OUT=$(PATH="$_s2t_stub_dir:$PATH" NO_COLOR=1 "$PROJECT/bin/screen.sh" -d -m bash 2>&1)
+OUT=$(PATH="$_s2t_stub_dir:$PATH" NO_COLOR=1 sh "$PROJECT/bin/screen.sh" -d -m bash 2>&1)
 RC=$?
 rm -rf "$_s2t_stub_dir"
 {
@@ -549,9 +574,30 @@ else
 fi
 
 
-CURRENT_NAME='generic tmux builders and legacy front-ends are present'
-if [ -x "$PROJECT/build_tmux.sh" ] && [ -x "$PROJECT/build_tmux_patched.sh" ] && [ -x "$PROJECT/build_tmux_3.7d.sh" ] && [ -x "$PROJECT/build_tmux_3.7d_patched.sh" ] && \
-   [ -x "$PROJECT/build_tmux_latest.sh" ] && [ -x "$PROJECT/build_tmux_latest_patched.sh" ]; then
+CURRENT_NAME='generic tmux builders and legacy front-ends are readable shell scripts'
+if [ -r "$PROJECT/build_tmux.sh" ] && [ -r "$PROJECT/build_tmux_patched.sh" ] && [ -r "$PROJECT/build_tmux_3.7d.sh" ] && [ -r "$PROJECT/build_tmux_3.7d_patched.sh" ] && \
+   [ -r "$PROJECT/build_tmux_latest.sh" ] && [ -r "$PROJECT/build_tmux_latest_patched.sh" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='internal shell-script calls use explicit sh'
+if grep -F 'exec sh "$HERE/build_tmux.sh" "$@"' "$PROJECT/build_tmux_patched.sh" >/dev/null 2>&1 && \
+   grep -F 'exec sh "$HERE/scripts/build-tmux-one.sh" 3.7d 3.7d 1' "$PROJECT/build_tmux_3.7d_patched.sh" >/dev/null 2>&1 && \
+   grep -F 'sh "$HERE/tests/test-interface-equivalence.sh"' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'sh "$HERE/tests/test-regressions.sh"' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F '*.sh) NO_COLOR=1 SCREEN2TMUX_COLOR=never sh "$INTERFACE"' "$PROJECT/tests/interface-equivalence-worker.sh" >/dev/null 2>&1 && \
+   grep -F 'screen-script) _exec_count=$((_exec_count + 1)); PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never sh "$_path"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='3.7d builder uses immutable project pin'
+if grep -F 'e9634d40749a5ae330aabf5aa46a81505b094a6b' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F '3.7d|release_3.7d)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'exec sh "$HERE/scripts/build-tmux-one.sh" 3.7d 3.7d 0' "$PROJECT/build_tmux_3.7d.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"

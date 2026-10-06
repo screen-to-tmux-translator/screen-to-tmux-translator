@@ -150,6 +150,50 @@ for SCREEN_BIN do
         [ ! -s "$RUNTIME/approx.err" ] || sed 's/^/  approx stderr: /' "$RUNTIME/approx.err"
         [ ! -s "$RUNTIME/approx-show.err" ] || sed 's/^/  show stderr: /' "$RUNTIME/approx-show.err"
     fi
+
+    # Strict mode must preserve the warning but refuse the same APPROX state
+    # change inside the compiled screen hardlink.
+    TOTAL=$((TOTAL + 1))
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" set-option -t "$_approx_session" status on >/dev/null 2>&1 || :
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" NO_COLOR=1 SCREEN2TMUX_COLOR=never \
+       "$SCREEN_BIN" --strict -S "$_approx_session" -X hardstatus off >"$RUNTIME/strict.out" 2>"$RUNTIME/strict.err"
+    _strict_rc=$?
+    _strict_status=$(HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" show-options -t "$_approx_session" -v status 2>"$RUNTIME/strict-show.err" || :)
+    if [ "$_strict_rc" -eq 3 ] && [ "$_strict_status" = on ] && \
+       grep -F 'screen2tmux: APPROX:' "$RUNTIME/strict.err" >/dev/null 2>&1 && \
+       grep -F -- '--strict keeps APPROX mappings advisory' "$RUNTIME/strict.err" >/dev/null 2>&1; then
+        PASS=$((PASS + 1))
+        _s2t_test_print_case "[PASS] $LABEL STRICT" 'compiled strict mode blocks APPROX tmux execution' \
+            "$(_s2t_test_format_argv screen --strict -S "$_approx_session" -X hardstatus off)" '<APPROX: advisory only>'
+        printf 'STRICT_APPROX\tPASS\t%s\n' "$LABEL" >> "$LOG"
+    else
+        FAIL=$((FAIL + 1))
+        printf '%b[FAIL]%b %s compiled strict-APPROX integration check failed (rc=%s status=%s)\n' "$R" "$Z" "$LABEL" "$_strict_rc" "$_strict_status"
+        printf 'STRICT_APPROX\tFAIL\t%s\trc=%s\tstatus=%s\n' "$LABEL" "$_strict_rc" "$_strict_status" >> "$LOG"
+    fi
+
+    # Also cover APPROX modifiers whose final command is assembled later. The
+    # embedded argv serializer must honor the strict-blocked state too.
+    TOTAL=$((TOTAL + 1))
+    _strict_named=screen2tmux_strict_named_$$
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-session -t "$_strict_named" >/dev/null 2>&1 || :
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" NO_COLOR=1 SCREEN2TMUX_COLOR=never \
+       "$SCREEN_BIN" --strict -d -m -S "$_strict_named" >"$RUNTIME/strict-named.out" 2>"$RUNTIME/strict-named.err"
+    _strict_named_rc=$?
+    HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" has-session -t "$_strict_named" >/dev/null 2>&1
+    _strict_named_exists=$?
+    if [ "$_strict_named_rc" -eq 3 ] && [ "$_strict_named_exists" -ne 0 ] && \
+       grep -F -- '--strict keeps APPROX mappings advisory' "$RUNTIME/strict-named.err" >/dev/null 2>&1; then
+        PASS=$((PASS + 1))
+        _s2t_test_print_case "[PASS] $LABEL STRICT-NOTICE" 'compiled strict mode blocks delayed APPROX execution' \
+            "$(_s2t_test_format_argv screen --strict -d -m -S "$_strict_named")" '<APPROX: advisory only>'
+        printf 'STRICT_NOTICE\tPASS\t%s\n' "$LABEL" >> "$LOG"
+    else
+        FAIL=$((FAIL + 1))
+        printf '%b[FAIL]%b %s compiled strict delayed-APPROX check failed (rc=%s exists_rc=%s)\n' "$R" "$Z" "$LABEL" "$_strict_named_rc" "$_strict_named_exists"
+        printf 'STRICT_NOTICE\tFAIL\t%s\trc=%s\texists_rc=%s\n' "$LABEL" "$_strict_named_rc" "$_strict_named_exists" >> "$LOG"
+    fi
+
     HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-server >/dev/null 2>&1 || :
 done
 

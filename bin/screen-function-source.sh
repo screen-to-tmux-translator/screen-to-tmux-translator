@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.4.6
+# screen-to-tmux-translator 0.4.7
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
@@ -9,22 +9,24 @@
 # --dry-run or --dryrun may appear anywhere after the function name. They are
 # removed before Screen parsing and cause the equivalent tmux command (or
 # unsupported message) to be printed instead of executed.
+# --strict is also translator-owned. It keeps APPROX mappings advisory: exact
+# mappings may execute, but approximate mappings never invoke tmux.
 #
 # Exit status:
-#   0   EXACT, or executable APPROX whose translated command succeeds
+#   0   EXACT, or executable APPROX whose translated command succeeds outside strict mode
 #   2   UNSUPPORTED: valid Screen operation with no safe tmux translation
-#   3   APPROX advisory: semantics differ and no sufficiently definite one-command mapping is auto-executed
+#   3   APPROX advisory, including every APPROX mapping under --strict
 #   4   MOOT: Screen operation is unnecessary under tmux architecture; not executed
 #   5   EXTERNAL: closest substitute requires a non-tmux program; not executed
 #   64  INVALID: invalid/unknown Screen syntax for this translator
-#   other status may be returned by tmux for EXACT or executable APPROX mappings outside dry-run mode.
+#   other status may be returned by tmux for EXACT or executable APPROX mappings outside dry-run/strict mode.
 #
 # By default, creation with -S NAME is classified APPROX because GNU Screen may
 # have multiple sessions with the same user label while tmux session names are
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.4.6
+SCREEN2TMUX_VERSION=0.4.7
 
 # This file is intentionally a shell-function source file, not a standalone
 # command. POSIX shells execute `sh FILE` in a child shell, so functions defined
@@ -87,6 +89,10 @@ _s2t_print_command()
 
 _s2t_run()
 {
+    if [ "${_s2t_strict_blocked:-0}" -eq 1 ]; then
+        if [ "${_s2t_dry_run:-0}" -eq 1 ]; then _s2t_print_command "$@"; fi
+        return 3
+    fi
     if [ "${_s2t_dry_run:-0}" -eq 1 ]; then
         _s2t_print_command "$@"
         return 0
@@ -194,7 +200,7 @@ _s2t_help()
     printf '%s\n' '  screen -r [session]'
     printf '%s\n' '  screen -S session -X command [args]'
     printf '%s\n' '  screen -S session -Q command [args]'
-    printf '%s\n' '  screen [--dry-run|--dryrun] ...'
+    printf '%s\n' '  screen [--dry-run|--dryrun] [--strict] ...'
 
     _s2t_help_heading 'Translation classes'
     _s2t_help_row EXACT       'EXACT'       'Safe mapping; executes tmux automatically (or prints it in dry-run mode).'
@@ -240,6 +246,7 @@ _s2t_help()
 
     _s2t_help_heading 'Translator extensions'
     _s2t_help_row EXTENSION   '--dry-run / --dryrun'  'Print the translated tmux argv or diagnostic instead of executing it.'
+    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX mappings; they remain advisory and return status 3.'
     _s2t_help_row EXTENSION   '--help'                'Show this compatibility-aware help page.'
 
     _s2t_help_heading 'Common -X / -Q command coverage'
@@ -273,8 +280,8 @@ _s2t_help()
     printf '%s\n' '  NO_COLOR=1                                  disable ANSI color unconditionally.'
 
     _s2t_help_heading 'Exit status'
-    printf '%s\n' '  0 exact/help success or successful executable approximation; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 external; 64 invalid syntax.'
-    printf '%s\n' '  Executed EXACT/APPROX mappings return the underlying tmux command status in normal mode.'
+    printf '%s\n' '  0 exact/help success or successful executable approximation; 2 unsupported; 3 advisory approximate/uncertain (and all APPROX under --strict); 4 moot; 5 external; 64 invalid syntax.'
+    printf '%s\n' '  Executed EXACT/APPROX mappings return the underlying tmux command status in normal mode; --strict never executes APPROX.'
 }
 
 _s2t_invalid()
@@ -309,23 +316,40 @@ _s2t_approx()
     _s2t_report APPROX 3 "$1" "${2-}"
 }
 
+_s2t_strict_refusal()
+{
+    _s2t_strict_label=$(_s2t_color_token yellow STRICT)
+    printf 'screen2tmux: %s: --strict keeps APPROX mappings advisory; tmux was not executed.\n' "$_s2t_strict_label" >&2
+}
+
 _s2t_approx_exec()
 {
     # Preserve APPROX classification visibly, but execute a concrete tmux
     # substitute when we can express the useful inexact mapping as one tmux
-    # command. In dry-run mode _s2t_tmux prints that command instead.
+    # command. --strict turns every such mapping back into an advisory result.
     _s2t_ae_reason=$1
     _s2t_ae_suggestion=$2
     shift 2
     _s2t_report APPROX 0 "$_s2t_ae_reason" "$_s2t_ae_suggestion" || return $?
+    if [ "${_s2t_strict:-0}" -eq 1 ]; then
+        _s2t_strict_refusal
+        if [ "${_s2t_dry_run:-0}" -eq 1 ]; then _s2t_print_command tmux "$@"; fi
+        return 3
+    fi
     _s2t_tmux "$@"
 }
 
 _s2t_approx_notice()
 {
     # Warning-only helper for an approximate semantic modifier whose closest
-    # command is assembled later in the current translation path.
+    # command is assembled later in the current translation path. In strict
+    # mode the central command runner refuses that later command.
     _s2t_report APPROX 0 "$1" "${2-}"
+    if [ "${_s2t_strict:-0}" -eq 1 ]; then
+        _s2t_strict_blocked=1
+        _s2t_strict_refusal
+    fi
+    return 0
 }
 
 _s2t_moot()
@@ -808,10 +832,13 @@ _s2t_xcommand()
 screen2tmux()
 {
     _s2t_dry_run=0
+    _s2t_strict=0
+    _s2t_strict_blocked=0
     _s2t_rebuilt=
     for _s2t_a do
         case "$_s2t_a" in
             --dry-run|--dryrun) _s2t_dry_run=1 ;;
+            --strict) _s2t_strict=1 ;;
             *)
                 _s2t_rebuilt="$_s2t_rebuilt $(_s2t_shell_quote "$_s2t_a")"
                 ;;

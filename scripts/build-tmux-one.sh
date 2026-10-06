@@ -25,6 +25,7 @@ SOURCE_DIR=$SOURCE_PARENT/tmux-$NAME$SUFFIX
 BUILD_DIR=$BUILD_PARENT/tmux-$NAME$SUFFIX
 INSTALL_DIR=$BUILD_DIR/install
 GIT_URL=${TMUX_GIT_URL:-https://github.com/tmux/tmux.git}
+TMUX_3_7D_PIN=${SCREEN2TMUX_TMUX_3_7D_PIN:-e9634d40749a5ae330aabf5aa46a81505b094a6b}
 INTEGRATION=$PROJECT/tmux-integration/screen-to-tmux-translator
 TMUX_C_PATCH=$PROJECT/tmux-integration/tmux.c-screen-compat.patch
 CC_BIN=${CC:-cc}
@@ -188,18 +189,30 @@ say_label VERBOSITY "$VERBOSITY"
 say_label SOURCE_DIR "$SOURCE_DIR"
 say_label BUILD_DIR "$BUILD_DIR"
 say_label JOBS "$JOBS"
+case "$REQUESTED_REF" in 3.7d|release_3.7d) [ -n "${TMUX_PIN_COMMIT:-}" ] || say_label SOURCE_PIN "$TMUX_3_7D_PIN (project 3.7d baseline)" ;; esac
 
 resolve_checkout()
 {
     _rr=$1
     if [ -n "${TMUX_PIN_COMMIT:-}" ]; then printf '%s\n' "$TMUX_PIN_COMMIT"; return 0; fi
+
+    # 3.7d is a release baseline for this project, so its default build is
+    # deliberately immutable. The supplied release_3.7d GitHub archive records
+    # this exact commit in its ZIP comment. Operators can still override it with
+    # TMUX_PIN_COMMIT or SCREEN2TMUX_TMUX_3_7D_PIN when intentionally auditing a
+    # different snapshot.
+    case "$_rr" in
+        3.7d|release_3.7d) printf '%s\n' "$TMUX_3_7D_PIN"; return 0 ;;
+    esac
+
     if [ "$_rr" = latest ]; then
         for _c in origin/master origin/main master main; do git -C "$SOURCE_DIR" rev-parse --verify "$_c^{commit}" 2>/dev/null && return 0; done
         return 1
     fi
-    # Accept an exact tag/branch/commit first, then the historical tmux
-    # release_VERSION branch convention used by development branches.
-    for _c in "origin/release_$_rr" "refs/tags/$_rr" "origin/$_rr" "$_rr" "refs/tags/tmux-$_rr" "refs/tags/v$_rr"; do
+
+    # For other requests prefer immutable-looking exact tags/commits before
+    # mutable branch names, then try tmux's historical release_VERSION branch.
+    for _c in "refs/tags/$_rr" "refs/tags/tmux-$_rr" "refs/tags/v$_rr" "$_rr" "origin/$_rr" "origin/release_$_rr"; do
         git -C "$SOURCE_DIR" rev-parse --verify "$_c^{commit}" 2>/dev/null && return 0
     done
     return 1
@@ -217,7 +230,11 @@ else
     if ! git clone --quiet "$GIT_URL" "$SOURCE_DIR"; then printf 'ERROR: failed to download tmux from %s\n' "$GIT_URL" >&2; exit 69; fi
     if ! COMMIT=$(resolve_checkout "$REQUESTED_REF"); then
         printf 'ERROR: could not resolve tmux version/ref %s.\n' "$REQUESTED_REF" >&2
-        printf 'Tried exact tag/branch/commit plus release_%s.\n' "$REQUESTED_REF" >&2
+        case "$REQUESTED_REF" in
+            3.7d|release_3.7d) printf 'Tried pinned tmux 3.7d commit %s.\n' "$TMUX_3_7D_PIN" >&2 ;;
+            latest) printf 'Tried upstream master/main refs.\n' >&2 ;;
+            *) printf 'Tried exact tag/commit/branch refs plus release_%s.\n' "$REQUESTED_REF" >&2 ;;
+        esac
         exit 69
     fi
     if ! git -C "$SOURCE_DIR" checkout --quiet --detach "$COMMIT"; then printf 'ERROR: failed to check out tmux commit %s\n' "$COMMIT" >&2; exit 69; fi
@@ -511,6 +528,7 @@ REQUESTED_VERSION=$REQUESTED_REF
 RESOLVED_REF=$RESOLVED_REF
 SOURCE_URL=$GIT_URL
 SOURCE_COMMIT=$COMMIT
+TMUX_3_7D_DEFAULT_PIN=$TMUX_3_7D_PIN
 SOURCE_DIR=$SOURCE_DIR
 BUILD_DIR=$BUILD_DIR
 PATCHED=$PATCHED

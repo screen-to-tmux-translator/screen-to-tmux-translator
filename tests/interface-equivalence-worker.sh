@@ -30,7 +30,12 @@ invoke()
     shift
     case "$MODE" in
         source-full|source-last) NO_COLOR=1 SCREEN2TMUX_COLOR=never screen "$@" >"$_iw_out" 2>&1 ;;
-        standalone-last|standalone-full) NO_COLOR=1 SCREEN2TMUX_COLOR=never "$INTERFACE" "$@" >"$_iw_out" 2>&1 ;;
+        standalone-last|standalone-full)
+            case "$INTERFACE" in
+                *.sh) NO_COLOR=1 SCREEN2TMUX_COLOR=never sh "$INTERFACE" "$@" >"$_iw_out" 2>&1 ;;
+                *) NO_COLOR=1 SCREEN2TMUX_COLOR=never "$INTERFACE" "$@" >"$_iw_out" 2>&1 ;;
+            esac
+            ;;
     esac
 }
 

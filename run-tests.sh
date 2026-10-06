@@ -317,8 +317,8 @@ if [ "$LIST_EQUIV" -eq 1 ]; then
     exit 0
 fi
 
-if run_component 'Screen CLI/oracle + interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" SCREEN2TMUX_EQUIV_INTERFACES="$EQUIV_REQUEST" SCREEN2TMUX_EQUIV_BUILT_REGISTRY="$EQUIV_BUILT_REGISTRY" "$HERE/tests/test-interface-equivalence.sh"; then :; else suite_rc=1; fi
-if run_component 'focused regressions' env REG_LOG="$REG_LOG" "$HERE/tests/test-regressions.sh"; then :; else suite_rc=1; fi
+if run_component 'Screen CLI/oracle + interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" SCREEN2TMUX_EQUIV_INTERFACES="$EQUIV_REQUEST" SCREEN2TMUX_EQUIV_BUILT_REGISTRY="$EQUIV_BUILT_REGISTRY" sh "$HERE/tests/test-interface-equivalence.sh"; then :; else suite_rc=1; fi
+if run_component 'focused regressions' env REG_LOG="$REG_LOG" sh "$HERE/tests/test-regressions.sh"; then :; else suite_rc=1; fi
 
 # With built patched tmux binaries available, test behavior once per requested
 # version against the patched binary. The pristine originals are build baselines,
@@ -326,14 +326,14 @@ if run_component 'focused regressions' env REG_LOG="$REG_LOG" "$HERE/tests/test-
 # no patched build to exercise.
 if [ "$PATCHED_COUNT" -eq 0 ]; then
     check_new_artifact "$SYSTEM_BEHAVIOR_LOG"; : > "$SYSTEM_BEHAVIOR_LOG"
-    if run_component 'live tmux behavior tests' env BEHAVIOR_LOG="$SYSTEM_BEHAVIOR_LOG" "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
+    if run_component 'live tmux behavior tests' env BEHAVIOR_LOG="$SYSTEM_BEHAVIOR_LOG" sh "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
 fi
 
 if [ "$PATCHED_COUNT" -gt 0 ]; then
     check_new_artifact "$BUILT_SCREEN_LOG"; : > "$BUILT_SCREEN_LOG"
     set --
     while IFS="$TAB" read -r _en _ep _elabel; do set -- "$@" "$_ep"; done < "$EQUIV_BUILT_REGISTRY"
-    if run_component 'built patched tmux integration checks' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" "$HERE/tests/test-built-tmux-screen.sh" "$@"; then :; else suite_rc=1; fi
+    if run_component 'built patched tmux integration checks' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" sh "$HERE/tests/test-built-tmux-screen.sh" "$@"; then :; else suite_rc=1; fi
 fi
 
 # One live behavior pass per successfully built version, using its patched tmux.
@@ -343,7 +343,7 @@ while IFS="$TAB" read -r _name _variant _tmux _screen _dir; do
     _safe=$(printf '%s-patched' "$_name" | sed 's/[^A-Za-z0-9._-]/_/g')
     _blog=$LOG_DIR/test-tmux-behavior-tmux-$_safe-$RUN_TIMESTAMP.log
     check_new_artifact "$_blog"; : > "$_blog"
-    if run_component "tmux $_name patched behavior tests" env TMUX_BIN="$_tmux" BEHAVIOR_LOG="$_blog" "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
+    if run_component "tmux $_name patched behavior tests" env TMUX_BIN="$_tmux" BEHAVIOR_LOG="$_blog" sh "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
     DYNAMIC_LOGS="$DYNAMIC_LOGS $_blog"
 done < "$BUILD_REGISTRY"
 

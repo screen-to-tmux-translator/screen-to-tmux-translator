@@ -1,5 +1,5 @@
 #!/bin/sh
-SCREEN2TMUX_VERSION=0.4.6
+SCREEN2TMUX_VERSION=0.4.7
 case ${0##*/} in
     screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)
         _s2t_source_name=${0##*/}
@@ -49,6 +49,10 @@ _s2t_print_command()
 }
 _s2t_run()
 {
+    if [ "${_s2t_strict_blocked:-0}" -eq 1 ]; then
+        if [ "${_s2t_dry_run:-0}" -eq 1 ]; then _s2t_print_command "$@"; fi
+        return 3
+    fi
     if [ "${_s2t_dry_run:-0}" -eq 1 ]; then
         _s2t_print_command "$@"
         return 0
@@ -146,7 +150,7 @@ _s2t_help()
     printf '%s\n' '  screen -r [session]'
     printf '%s\n' '  screen -S session -X command [args]'
     printf '%s\n' '  screen -S session -Q command [args]'
-    printf '%s\n' '  screen [--dry-run|--dryrun] ...'
+    printf '%s\n' '  screen [--dry-run|--dryrun] [--strict] ...'
     _s2t_help_heading 'Translation classes'
     _s2t_help_row EXACT       'EXACT'       'Safe mapping; executes tmux automatically (or prints it in dry-run mode).'
     _s2t_help_row APPROX      'APPROX'      'Semantics differ; concrete one-command substitutes execute after a warning, otherwise translation stays advisory.'
@@ -189,6 +193,7 @@ _s2t_help()
     _s2t_help_row VARIES      '-X command [args]'     'Screen commands are translated individually; see common command groups below.'
     _s2t_help_heading 'Translator extensions'
     _s2t_help_row EXTENSION   '--dry-run / --dryrun'  'Print the translated tmux argv or diagnostic instead of executing it.'
+    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX mappings; they remain advisory and return status 3.'
     _s2t_help_row EXTENSION   '--help'                'Show this compatibility-aware help page.'
     _s2t_help_heading 'Common -X / -Q command coverage'
     _s2t_help_row EXACT       'stuff/select/title/kill' 'Direct pane/window operations for safe targets; literal data is protected from tmux format expansion.'
@@ -218,8 +223,8 @@ _s2t_help()
     printf '%s\n' '  SCREEN2TMUX_COLOR=auto|always|never          control selective diagnostic/help color.'
     printf '%s\n' '  NO_COLOR=1                                  disable ANSI color unconditionally.'
     _s2t_help_heading 'Exit status'
-    printf '%s\n' '  0 exact/help success or successful executable approximation; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 external; 64 invalid syntax.'
-    printf '%s\n' '  Executed EXACT/APPROX mappings return the underlying tmux command status in normal mode.'
+    printf '%s\n' '  0 exact/help success or successful executable approximation; 2 unsupported; 3 advisory approximate/uncertain (and all APPROX under --strict); 4 moot; 5 external; 64 invalid syntax.'
+    printf '%s\n' '  Executed EXACT/APPROX mappings return the underlying tmux command status in normal mode; --strict never executes APPROX.'
 }
 _s2t_invalid()
 {
@@ -249,17 +254,32 @@ _s2t_approx()
 {
     _s2t_report APPROX 3 "$1" "${2-}"
 }
+_s2t_strict_refusal()
+{
+    _s2t_strict_label=$(_s2t_color_token yellow STRICT)
+    printf 'screen2tmux: %s: --strict keeps APPROX mappings advisory; tmux was not executed.\n' "$_s2t_strict_label" >&2
+}
 _s2t_approx_exec()
 {
     _s2t_ae_reason=$1
     _s2t_ae_suggestion=$2
     shift 2
     _s2t_report APPROX 0 "$_s2t_ae_reason" "$_s2t_ae_suggestion" || return $?
+    if [ "${_s2t_strict:-0}" -eq 1 ]; then
+        _s2t_strict_refusal
+        if [ "${_s2t_dry_run:-0}" -eq 1 ]; then _s2t_print_command tmux "$@"; fi
+        return 3
+    fi
     _s2t_tmux "$@"
 }
 _s2t_approx_notice()
 {
     _s2t_report APPROX 0 "$1" "${2-}"
+    if [ "${_s2t_strict:-0}" -eq 1 ]; then
+        _s2t_strict_blocked=1
+        _s2t_strict_refusal
+    fi
+    return 0
 }
 _s2t_moot()
 {
@@ -714,10 +734,13 @@ _s2t_xcommand()
 screen2tmux()
 {
     _s2t_dry_run=0
+    _s2t_strict=0
+    _s2t_strict_blocked=0
     _s2t_rebuilt=
     for _s2t_a do
         case "$_s2t_a" in
             --dry-run|--dryrun) _s2t_dry_run=1 ;;
+            --strict) _s2t_strict=1 ;;
             *)
                 _s2t_rebuilt="$_s2t_rebuilt $(_s2t_shell_quote "$_s2t_a")"
                 ;;

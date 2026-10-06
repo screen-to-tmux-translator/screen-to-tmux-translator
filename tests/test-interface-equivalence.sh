@@ -150,7 +150,7 @@ add_selected()
     [ "$_as_name" = screen-function-source ] && return 0
     case "$_as_mode" in
         source-full) [ -r "$_as_path" ] ;;
-        standalone-full) [ -x "$_as_path" ] ;;
+        standalone-full) case "$_as_path" in *.sh) [ -r "$_as_path" ] ;; *) [ -x "$_as_path" ] ;; esac ;;
         *) return 2 ;;
     esac || { printf 'ERROR: requested equivalence interface is unavailable: %s (%s)\n' "$_as_name" "$_as_path" >&2; return 2; }
     printf '%s\t%s\t%s\t%s\n' "$_as_name" "$_as_mode" "$_as_path" "$_as_label" >> "$REGISTRY"
@@ -301,7 +301,7 @@ while IFS="$TAB" read -r _name _mode _path _label; do
     [ "$_name" = screen-function-source ] && continue
     case "$_name" in
         tmux-*) continue ;;
-        screen-script) _exec_count=$((_exec_count + 1)); PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never "$_path" -d -m bash >"$_tmp/exec.$_name" 2>&1; _er=$? ;;
+        screen-script) _exec_count=$((_exec_count + 1)); PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never sh "$_path" -d -m bash >"$_tmp/exec.$_name" 2>&1; _er=$? ;;
         *)
             [ "$_mode" = source-full ] || continue
             _exec_count=$((_exec_count + 1))

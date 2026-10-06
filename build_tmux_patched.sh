@@ -9,7 +9,7 @@ Usage: sh build_tmux_patched.sh [--verbosity quiet|normal|verbose] [VERSION ...]
 
 Builds only the Screen-compat patched variant of every requested tmux version.
 VERSION may be comma-separated or supplied as separate arguments. With no
-VERSION, 3.7d is built. "latest" resolves the current tmux master/main commit.
+VERSION, the project-pinned 3.7d baseline is built. "latest" resolves the current tmux master/main commit.
 
 Examples:
   sh build_tmux_patched.sh
@@ -21,4 +21,4 @@ USAGE
 esac
 SCREEN2TMUX_PATCHED_ONLY=1
 export SCREEN2TMUX_PATCHED_ONLY
-exec "$HERE/build_tmux.sh" "$@"
+exec sh "$HERE/build_tmux.sh" "$@"
