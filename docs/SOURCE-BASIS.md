@@ -1,6 +1,6 @@
 # Source basis
 
-**0.4.4 note:** translation semantics and audited upstream source assumptions remain unchanged from 0.4.2. The 0.4.3/0.4.4 changes are build/test presentation and orchestration only: combined oracle/equivalence output, aligned mappings, normalized configure summaries, width-wrapped compile progress, patched-only default test builds, and patched-only per-version live behavior runs.
+**0.4.5 note:** translation semantics and audited upstream source assumptions remain unchanged from 0.4.2. The 0.4.3/0.4.4 changes are build/test presentation and orchestration only. 0.4.5 changes public packaging only: `screen.sh` is self-contained, two one-line sourceable interfaces are added, and the same equivalence matrix covers them.
 
 This release was built against the source archives supplied during the project work. At 0.4.0 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
 
@@ -139,7 +139,7 @@ The compatibility integration keeps the upstream source footprint intentionally 
 
 The same minimal tmux.c patch was checked locally against the supplied `release_3.7d` source tree and the available newer development tmux source snapshot. The generic `build_tmux.sh` can resolve arbitrary tmux versions/refs, including `latest` from upstream master/main. Every exact source commit is recorded in `BUILD-INFO`. If the known integration anchors stop matching on a requested version, only that patched variant fails explicitly rather than inferring a new location.
 
-`tmux-integration/screen-to-tmux-translator` embeds the canonical POSIX translator source. For this package, the embedded shell payload is regenerated directly from `bin/screen-function-source.sh`. The canonical/minified/standalone interfaces remain byte-identical across the existing equivalence corpus, and the help path is part of that corpus. The embedded help identifies itself as compatibility help rather than native GNU Screen output.
+`tmux-integration/screen-to-tmux-translator` embeds the canonical POSIX translator source. For this package, the embedded shell payload is regenerated directly from `bin/screen-function-source.sh`. The canonical/minified/two-one-line/standalone interfaces remain byte-identical across the existing equivalence corpus, and the help path is part of that corpus. The embedded help identifies itself as compatibility help rather than native GNU Screen output.
 
 
 ### 0.4.2 build layout

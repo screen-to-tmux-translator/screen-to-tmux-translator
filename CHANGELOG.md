@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.5 — 2026-10-05
+
+- Replaced the old `bin/screen.sh` wrapper with a genuinely self-contained executable that embeds the translator implementation and can run after being copied by itself with no sibling files.
+- Added `bin/screen-function-source.oneliner.sh` and `bin/screen-function-source-minified.oneliner.sh`. Each is exactly one physical line, is sourced with the POSIX dot command, and defines the same callable `screen()` and `screen2tmux()` functions as its corresponding normal source file.
+- Extended the source-file direct-execution guard to the two one-line filenames so `sh file` still explains that sourcing is required.
+- Extended the unified equivalence matrix to both one-line interfaces. With no compiled tmux hardlink present, the packaged matrix now has five interfaces and performs 2732 non-reference comparisons across 683 placement variants with zero allowed divergences.
+- Added regressions proving standalone isolation, one-line physical layout, sourceability, and direct-execution behavior. Focused regressions are now 113 PASS.
+- Translation semantics are unchanged from 0.4.4.
+
 ## 0.4.4 — 2026-10-05
 
 - Made normal configure output more coherent by normalizing and de-duplicating Autoconf probe names. Header usability/presence/final triples collapse to one header name, common `whether`/`working` boilerplate is removed, cached booleans are classified with yes/no, common tool labels are shortened, and internal `.screen2tmux-cc` paths are replaced with the actual compiler in displayed values.

@@ -105,7 +105,7 @@ if [ "$BUILD_REQUESTED" -eq 1 ] && [ -z "$BUILD_VERSIONS" ]; then BUILD_VERSIONS
 # Listing current interfaces is a read-only operation and should not create a
 # timestamped test run when no build was requested.
 if [ "$LIST_EQUIV" -eq 1 ] && [ "$BUILD_REQUESTED" -eq 0 ]; then
-    printf '%s\n' screen-function-source screen-function-source-minified screen-script
+    printf '%s\n' screen-function-source screen-function-source-minified screen-function-source-oneliner screen-function-source-minified-oneliner screen-script
     _list_root=${SCREEN2TMUX_BUILD_ROOT:-$HERE/build}
     for _screen in "$_list_root"/tmux-*-patched/install/bin/screen; do
         [ -x "$_screen" ] || continue
@@ -312,7 +312,7 @@ PATCHED_COUNT=$(wc -l < "$EQUIV_BUILT_REGISTRY" | tr -d ' ')
 } | tee -a "$CONSOLE_LOG" | terminal_stream
 
 if [ "$LIST_EQUIV" -eq 1 ]; then
-    printf '%s\n' screen-function-source screen-function-source-minified screen-script
+    printf '%s\n' screen-function-source screen-function-source-minified screen-function-source-oneliner screen-function-source-minified-oneliner screen-script
     while IFS="$TAB" read -r _en _ep _elabel; do printf '%s\n' "$_en"; done < "$EQUIV_BUILT_REGISTRY"
     exit 0
 fi

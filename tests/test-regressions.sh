@@ -365,6 +365,41 @@ else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
 fi
 
+CURRENT_NAME='standalone screen.sh has no sibling-file dependency'
+_s2t_solo_dir=${TMPDIR:-/tmp}/screen2tmux-standalone-$$
+rm -rf "$_s2t_solo_dir"
+mkdir -p "$_s2t_solo_dir"
+cp "$PROJECT/bin/screen.sh" "$_s2t_solo_dir/screen.sh"
+chmod 755 "$_s2t_solo_dir/screen.sh"
+OUT=$(NO_COLOR=1 "$_s2t_solo_dir/screen.sh" --dryrun -d -m bash 2>&1)
+RC=$?
+cat > "$_s2t_solo_dir/tmux" <<'EOF_SOLO_TMUX'
+#!/bin/sh
+printf 'SOLO_TMUX_EXEC'
+for a do printf ' <%s>' "$a"; done
+printf '\n'
+EOF_SOLO_TMUX
+chmod 755 "$_s2t_solo_dir/tmux"
+_EXEC_OUT=$(PATH="$_s2t_solo_dir:$PATH" NO_COLOR=1 "$_s2t_solo_dir/screen.sh" -d -m bash 2>&1)
+_EXEC_RC=$?
+rm -rf "$_s2t_solo_dir"
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'DRYRUN_EXIT: %s\n' "$RC"
+    printf 'DRYRUN_OUTPUT_BEGIN\n%s\nDRYRUN_OUTPUT_END\n' "$OUT"
+    printf 'EXEC_EXIT: %s\n' "$_EXEC_RC"
+    printf 'EXEC_OUTPUT_BEGIN\n%s\nEXEC_OUTPUT_END\n' "$_EXEC_OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ] && \
+   [ "$_EXEC_RC" -eq 0 ] && [ "$_EXEC_OUT" = 'SOLO_TMUX_EXEC <new-session> <-d> <bash>' ] && \
+   ! grep -F '. "$_s2t_front_dir/' "$PROJECT/bin/screen.sh" >/dev/null 2>&1 && \
+   ! grep -F 'screen-function-source.sh" || exit' "$PROJECT/bin/screen.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
 CURRENT_NAME='screen-function-source.sh defines callable screen function when sourced'
 OUT=$(NO_COLOR=1 sh -c '. "$1"; screen --dryrun -d -m bash' sh "$PROJECT/bin/screen-function-source.sh" 2>&1)
 RC=$?
@@ -424,6 +459,41 @@ if [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -F '. ./bin/screen-function-so
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
 fi
+
+for _s2t_one in screen-function-source.oneliner.sh screen-function-source-minified.oneliner.sh; do
+    CURRENT_NAME="$_s2t_one is one physical line and defines callable screen function"
+    _s2t_one_path=$PROJECT/bin/$_s2t_one
+    _s2t_lines=$(wc -l < "$_s2t_one_path" | tr -d ' ')
+    OUT=$(NO_COLOR=1 sh -c '. "$1"; screen --dryrun -d -m bash' sh "$_s2t_one_path" 2>&1)
+    RC=$?
+    {
+        printf '%s\n' '=============================================================================='
+        printf 'TEST: %s\n' "$CURRENT_NAME"
+        printf 'PHYSICAL_LINES: %s\n' "$_s2t_lines"
+        printf 'ACTUAL_EXIT: %s\n' "$RC"
+        printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+    } >> "$REG_LOG"
+    if [ "$_s2t_lines" -eq 1 ] && [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+        pass "$CURRENT_NAME"
+    else
+        fail "$CURRENT_NAME (lines=$_s2t_lines rc=$RC output=$OUT)"
+    fi
+
+    CURRENT_NAME="direct sh execution of $_s2t_one explains POSIX sourcing requirement"
+    OUT=$(NO_COLOR=1 sh "$_s2t_one_path" 2>&1)
+    RC=$?
+    {
+        printf '%s\n' '=============================================================================='
+        printf 'TEST: %s\n' "$CURRENT_NAME"
+        printf 'ACTUAL_EXIT: %s\n' "$RC"
+        printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+    } >> "$REG_LOG"
+    if [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -F ". ./bin/$_s2t_one" >/dev/null 2>&1; then
+        pass "$CURRENT_NAME"
+    else
+        fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+    fi
+done
 
 CURRENT_NAME='standalone screen.sh executes tmux by default'
 _s2t_stub_dir=${TMPDIR:-/tmp}/screen2tmux-wrapper-$$
@@ -620,6 +690,8 @@ CURRENT_NAME='equivalence harness combines oracle and all selected interfaces pe
 if grep -F 'Equivalence interfaces (' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    grep -F 'screen_syntax_oracle "$@"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    grep -F "printf '  %s\\n    %s\\n' \"\$_ilabel\" \"\$_ipath\"" "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F 'screen-function-source.oneliner.sh' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F 'screen-function-source-minified.oneliner.sh' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    grep -F '[DIVERGED]' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    ! grep -F '_way="${INTERFACE_COUNT}-way"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"

@@ -52,7 +52,7 @@ static const char screen_to_tmux_shell_source[] =
 	"# there cannot remain available in the caller. Catch the common mistake and\n"
 	"# print the portable dot-command needed to load screen() into the current shell.\n"
 	"case ${0##*/} in\n"
-	"    screen-function-source.sh|screen-function-source-minified.sh)\n"
+	"    screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)\n"
 	"        _s2t_source_name=${0##*/}\n"
 	"        printf '%s\\n' \"$_s2t_source_name: this file must be sourced into the current shell.\" >&2\n"
 	"        printf '%s\\n' \"Use: . ./bin/$_s2t_source_name\" >&2\n"

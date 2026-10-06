@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.4.4
+# screen-to-tmux-translator 0.4.5
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -17,6 +17,8 @@ For a standalone command that behaves like `screen`, use:
 ./bin/screen.sh [Screen arguments ...]
 ```
 
+`bin/screen.sh` is now completely self-contained. It embeds the translator implementation directly and can be copied by itself to another directory; it does not source or require any sibling package file.
+
 For shell-function use, source either function file with the POSIX dot command:
 
 ```sh
@@ -31,7 +33,15 @@ A mechanically minified equivalent is also shipped:
 screen -r
 ```
 
-The minified file removes comments and blank lines only; it is verified against the canonical source across the complete 683-placement dry-run matrix.
+Two literal one-physical-line source files are also included for copy/paste or compact deployment:
+
+```sh
+. ./bin/screen-function-source.oneliner.sh
+# or
+. ./bin/screen-function-source-minified.oneliner.sh
+```
+
+Both one-line files define the same callable `screen()` and `screen2tmux()` functions. The first reconstructs the canonical source and the second reconstructs the mechanically minified source. The normal minified file removes comments and blank lines only. All four sourceable forms are verified against the canonical source across the complete 683-placement dry-run matrix.
 
 This defines a shell function named `screen` in the **current shell**, shadowing an installed GNU Screen executable there. Use `command screen ...` to invoke the native executable.
 
@@ -67,7 +77,7 @@ Control bytes are escaped in dry-run output so they cannot corrupt the terminal 
 
 `screen --help` is a translator-owned help page, not tmux's help and not a byte-for-byte copy of native GNU Screen help. It follows the GNU Screen 5.0.x option surface and annotates each option/command family with `EXACT`, `APPROX`, `UNSUPPORTED`, `MOOT`, `EXTERNAL`, or `VARIES`. It also explains the important differences introduced by tmux's session/client/pane model and documents translator extensions such as `--dry-run`/`--dryrun`.
 
-Only semantic tokens and headings are colorized; descriptions remain in the normal terminal color. `SCREEN2TMUX_COLOR=never` or `NO_COLOR=1` disables color. The same help is produced by the canonical source function, minified source function, standalone `screen.sh`, and the patched tmux hardlink named `screen`.
+Only semantic tokens and headings are colorized; descriptions remain in the normal terminal color. `SCREEN2TMUX_COLOR=never` or `NO_COLOR=1` disables color. The same help is produced by the canonical source function, minified source function, both one-line source functions, standalone self-contained `screen.sh`, and the patched tmux hardlink named `screen`.
 
 ## Translation classes and exit status
 
@@ -275,7 +285,9 @@ The resolved equivalence interfaces are printed on separate lines with their ful
 ```text
 screen-function-source.sh (reference)
 screen-function-source-minified.sh
-screen.sh
+screen-function-source.oneliner.sh
+screen-function-source-minified.oneliner.sh
+screen.sh (self-contained)
 tmux-3.7d screen hardlink
 tmux-latest screen hardlink
 ```
@@ -285,6 +297,8 @@ To test one interface individually against the canonical reference:
 ```sh
 sh run-tests.sh --equivalence screen-script
 sh run-tests.sh --equivalence screen-function-source-minified
+sh run-tests.sh --equivalence screen-function-source-oneliner
+sh run-tests.sh --equivalence screen-function-source-minified-oneliner
 sh run-tests.sh --equivalence tmux-3.7d
 sh run-tests.sh --equivalence tmux-latest
 ```
@@ -296,9 +310,9 @@ Current packaged verification:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-108/108 focused semantic regression tests PASS
+113/113 focused semantic regression tests PASS
 683 placement variants per selected equivalence interface
-228/228 aggregated equivalence command cases PASS (three packaged interfaces)
+228/228 aggregated equivalence command cases PASS (five packaged interfaces)
 0 equivalence divergences in the packaged source/script set
 C integration harness: -std=c99 -Wall -Wextra -Werror PASS
 ```
@@ -310,7 +324,7 @@ logs/test-regressions-<timestamp>.log
 logs/test-interface-equivalence-<timestamp>.log
 logs/test-tmux-behavior-<timestamp>.log
 logs/test-run-console-<timestamp>.log
-logs/screen-to-tmux-translator-0.4.4-test-logs-<timestamp>.zip
+logs/screen-to-tmux-translator-0.4.5-test-logs-<timestamp>.zip
 ```
 
 `test-interface-equivalence-*` is now the combined Screen/oracle/interface log; `tests/test-screen-cli.sh` remains available as a standalone diagnostic harness but is not rerun by the aggregate runner. When successful builds are discovered, every patched `screen` hardlink joins the combined matrix, patched builds receive hardlink/execution checks, and each patched tmux version receives one live-behavior log. Original tmux binaries are not rerun through that behavior suite. When `--build` is used, the concise build-run log is included in the same ZIP.
@@ -355,7 +369,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.4.4/
+screen-to-tmux-translator-0.4.5/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
@@ -369,6 +383,8 @@ screen-to-tmux-translator-0.4.4/
 ├── bin/
 │   ├── screen-function-source.sh
 │   ├── screen-function-source-minified.sh
+│   ├── screen-function-source.oneliner.sh
+│   ├── screen-function-source-minified.oneliner.sh
 │   └── screen.sh
 ├── scripts/
 │   └── build-tmux-one.sh

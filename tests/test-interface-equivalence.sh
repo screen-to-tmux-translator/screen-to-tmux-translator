@@ -7,6 +7,8 @@ TEST_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT=$(CDPATH= cd -- "$TEST_DIR/.." && pwd)
 CANONICAL=${CANONICAL_SOURCE:-$PROJECT/bin/screen-function-source.sh}
 MINIFIED=${MINIFIED_SOURCE:-$PROJECT/bin/screen-function-source-minified.sh}
+CANONICAL_ONELINER=${CANONICAL_ONELINER_SOURCE:-$PROJECT/bin/screen-function-source.oneliner.sh}
+MINIFIED_ONELINER=${MINIFIED_ONELINER_SOURCE:-$PROJECT/bin/screen-function-source-minified.oneliner.sh}
 STANDALONE=${STANDALONE_SCREEN:-$PROJECT/bin/screen.sh}
 WORKER=$TEST_DIR/interface-equivalence-worker.sh
 CASES=$TEST_DIR/cases.sh
@@ -128,6 +130,8 @@ want_interface()
         case "$_wi_name:$_wi_item" in
             screen-function-source:canonical|screen-function-source:source) return 0 ;;
             screen-function-source-minified:minified) return 0 ;;
+            screen-function-source-oneliner:oneliner|screen-function-source-oneliner:source-oneliner) return 0 ;;
+            screen-function-source-minified-oneliner:minified-oneliner) return 0 ;;
             screen-script:script|screen-script:screen.sh) return 0 ;;
             tmux-latest:master) return 0 ;;
         esac
@@ -153,7 +157,9 @@ add_selected()
 }
 
 if [ "$REQUESTED" = all ] || want_interface screen-function-source-minified; then add_selected screen-function-source-minified source-full "$MINIFIED" 'screen-function-source-minified.sh' || exit $?; fi
-if [ "$REQUESTED" = all ] || want_interface screen-script; then add_selected screen-script standalone-full "$STANDALONE" 'screen.sh' || exit $?; fi
+if [ "$REQUESTED" = all ] || want_interface screen-function-source-oneliner; then add_selected screen-function-source-oneliner source-full "$CANONICAL_ONELINER" 'screen-function-source.oneliner.sh' || exit $?; fi
+if [ "$REQUESTED" = all ] || want_interface screen-function-source-minified-oneliner; then add_selected screen-function-source-minified-oneliner source-full "$MINIFIED_ONELINER" 'screen-function-source-minified.oneliner.sh' || exit $?; fi
+if [ "$REQUESTED" = all ] || want_interface screen-script; then add_selected screen-script standalone-full "$STANDALONE" 'screen.sh (self-contained)' || exit $?; fi
 while IFS="$TAB" read -r _bn _bp _bl; do
     [ -n "$_bn" ] || continue
     if [ "$REQUESTED" = all ] || want_interface "$_bn"; then add_selected "$_bn" standalone-full "$_bp" "$_bl" || exit $?; fi
@@ -166,7 +172,7 @@ if [ "$REQUESTED" != all ]; then
     for _req in $REQUESTED; do
         IFS=$_oldifs
         case "$_req" in
-            screen-function-source|canonical|source|screen-function-source-minified|minified|screen-script|script|screen.sh) _known=1 ;;
+            screen-function-source|canonical|source|screen-function-source-minified|minified|screen-function-source-oneliner|oneliner|source-oneliner|screen-function-source-minified-oneliner|minified-oneliner|screen-script|script|screen.sh) _known=1 ;;
             *)
                 _known=0
                 while IFS="$TAB" read -r _bn _bp _bl; do
@@ -294,9 +300,13 @@ _exec_rr=$?; _exec_ok=1; _exec_count=1; _exec_div=$_tmp/exec-div; : > "$_exec_di
 while IFS="$TAB" read -r _name _mode _path _label; do
     [ "$_name" = screen-function-source ] && continue
     case "$_name" in
-        screen-function-source-minified) _exec_count=$((_exec_count + 1)); PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never sh -c '. "$1"; screen -d -m bash' sh "$_path" >"$_tmp/exec.$_name" 2>&1; _er=$? ;;
+        tmux-*) continue ;;
         screen-script) _exec_count=$((_exec_count + 1)); PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never "$_path" -d -m bash >"$_tmp/exec.$_name" 2>&1; _er=$? ;;
-        *) continue ;;
+        *)
+            [ "$_mode" = source-full ] || continue
+            _exec_count=$((_exec_count + 1))
+            PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never sh -c '. "$1"; screen -d -m bash' sh "$_path" >"$_tmp/exec.$_name" 2>&1; _er=$?
+            ;;
     esac
     if [ "$_er" -ne "$_exec_rr" ] || ! cmp -s "$_exec_ref" "$_tmp/exec.$_name"; then _exec_ok=0; printf '    [DIVERGED] %s execution path\n' "$_label" >> "$_exec_div"; fi
 done < "$REGISTRY"

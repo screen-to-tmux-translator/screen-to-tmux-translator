@@ -1,7 +1,7 @@
 #!/bin/sh
 SCREEN2TMUX_VERSION=0.4.1
 case ${0##*/} in
-    screen-function-source.sh|screen-function-source-minified.sh)
+    screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)
         _s2t_source_name=${0##*/}
         printf '%s\n' "$_s2t_source_name: this file must be sourced into the current shell." >&2
         printf '%s\n' "Use: . ./bin/$_s2t_source_name" >&2
