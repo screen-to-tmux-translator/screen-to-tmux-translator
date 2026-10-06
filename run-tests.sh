@@ -10,16 +10,31 @@ LOG_DIR=${SCREEN2TMUX_LOG_DIR:-$HERE/logs}
 RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
 TEST_QUIET=0
 REQUESTED_WIDTH=
+EQUIV_REQUEST=all
+EQUIV_CUSTOM=0
 
 usage()
 {
     cat <<'USAGE'
-Usage: sh run-tests.sh [--quiet] [--truncate-lines N]
+Usage: sh run-tests.sh [options]
 
-  --quiet              Hide per-case "screen -> tmux" mapping columns.
-  --truncate-lines N   Limit terminal display lines to N columns. Full logs are
-                       never truncated. --trunkate-lines is accepted as an alias.
+  --quiet                    Hide per-case "screen -> tmux" mapping columns.
+  --truncate-lines N         Limit terminal display lines to N columns. Full logs
+                             are never truncated. --trunkate-lines is an alias.
+  --equivalence NAME         Run interface equivalence for NAME. Repeat to select
+                             several interfaces. Default: all available.
+  --equivalence-only NAME    Alias for --equivalence NAME.
+  --list-equivalence-interfaces
+                             Print valid equivalence interface names and exit.
 
+Equivalence NAME values:
+  screen-function-source
+  screen-function-source-minified
+  screen-script
+  tmux-3.7d
+  tmux-latest
+
+The canonical screen-function-source interface is always used as the reference.
 Without --truncate-lines, the terminal width is measured once at startup.
 USAGE
 }
@@ -27,6 +42,18 @@ USAGE
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --quiet) TEST_QUIET=1; shift ;;
+        --equivalence|--equivalence-only)
+            [ "$#" -ge 2 ] || { printf 'ERROR: %s requires an interface name.\n' "$1" >&2; exit 64; }
+            if [ "$EQUIV_CUSTOM" -eq 0 ]; then EQUIV_REQUEST=$2; EQUIV_CUSTOM=1; else EQUIV_REQUEST="$EQUIV_REQUEST,$2"; fi
+            shift 2 ;;
+        --equivalence=*|--equivalence-only=*)
+            _eq=${1#*=}
+            [ -n "$_eq" ] || { printf 'ERROR: %s requires an interface name.\n' "${1%%=*}" >&2; exit 64; }
+            if [ "$EQUIV_CUSTOM" -eq 0 ]; then EQUIV_REQUEST=$_eq; EQUIV_CUSTOM=1; else EQUIV_REQUEST="$EQUIV_REQUEST,$_eq"; fi
+            shift ;;
+        --list-equivalence-interfaces)
+            printf '%s\n' screen-function-source screen-function-source-minified screen-script tmux-3.7d tmux-latest
+            exit 0 ;;
         --truncate-lines|--trunkate-lines)
             [ "$#" -ge 2 ] || { printf 'ERROR: %s requires a positive integer.\n' "$1" >&2; exit 64; }
             REQUESTED_WIDTH=$2; shift 2 ;;
@@ -101,12 +128,12 @@ colorize_stream()
     {
         line = $0
         if (line ~ /^\[(PASS|FAIL)\].*\|/) {
-            if (line ~ / exact[ ]*\|/) line = color_token(line, "exact", G)
-            else if (line ~ / approx[ ]*\|/) line = color_token(line, "approx", Y)
-            else if (line ~ / unsupported[ ]*\|/) line = color_token(line, "unsupported", R)
-            else if (line ~ / moot[ ]*\|/) line = color_token(line, "moot", C)
-            else if (line ~ / external[ ]*\|/) line = color_token(line, "external", M)
-            else if (line ~ / invalid[ ]*\|/) line = color_token(line, "invalid", R)
+            if (line ~ / exact( |[ ]*\|)/) line = color_token(line, "exact", G)
+            else if (line ~ / approx( |[ ]*\|)/) line = color_token(line, "approx", Y)
+            else if (line ~ / unsupported( |[ ]*\|)/) line = color_token(line, "unsupported", R)
+            else if (line ~ / moot( |[ ]*\|)/) line = color_token(line, "moot", C)
+            else if (line ~ / external( |[ ]*\|)/) line = color_token(line, "external", M)
+            else if (line ~ / invalid( |[ ]*\|)/) line = color_token(line, "invalid", R)
         } else if (line ~ /^\[(PASS|FAIL)\] [A-Z][0-9][0-9][0-9] /) {
             if (line ~ / exact/) line = color_token(line, "exact", G)
             else if (line ~ / approx/) line = color_token(line, "approx", Y)
@@ -119,6 +146,7 @@ colorize_stream()
         gsub(/\[PASS\]/, G "[PASS]" Z, line)
         gsub(/\[FAIL\]/, R "[FAIL]" Z, line)
         gsub(/\[SKIP\]/, Y "[SKIP]" Z, line)
+        gsub(/\[DIVERGED\]/, R "[DIVERGED]" Z, line)
         gsub(/: EXACT:/,       ": " G "EXACT" Z ":", line)
         gsub(/: APPROX:/,      ": " Y "APPROX" Z ":", line)
         gsub(/: UNSUPPORTED:/, ": " R "UNSUPPORTED" Z ":", line)
@@ -151,6 +179,7 @@ colorize_stream()
         sub(/^PROJECT:/, C "PROJECT" Z ":", line)
         sub(/^CONSOLE_WIDTH:/, C "CONSOLE_WIDTH" Z ":", line)
         sub(/^MAPPINGS:/, C "MAPPINGS" Z ":", line)
+        sub(/^EQUIVALENCE_TESTS:/, C "EQUIVALENCE_TESTS" Z ":", line)
         if (line ~ /^LOG_[A-Z0-9_]+:/) { p = index(line, ":"); line = C substr(line,1,p-1) Z substr(line,p) }
         sub(/^RUN_STATUS: PASS$/, "RUN_STATUS: " G "PASS" Z, line)
         sub(/^RUN_STATUS: FAIL$/, "RUN_STATUS: " R "FAIL" Z, line)
@@ -177,6 +206,36 @@ HAS_BUILD37_ORIGINAL=0; HAS_BUILD37=0; HAS_BUILDLATEST_ORIGINAL=0; HAS_BUILDLATE
 [ -f "$BUILD37_PATCHED/BUILD-INFO" ] || [ -x "$BUILD37_SCREEN" ] && HAS_BUILD37=1
 [ -f "$BUILDLATEST_ORIGINAL/BUILD-INFO" ] && HAS_BUILDLATEST_ORIGINAL=1
 [ -f "$BUILDLATEST_PATCHED/BUILD-INFO" ] || [ -x "$BUILDLATEST_SCREEN" ] && HAS_BUILDLATEST=1
+
+# Human-readable list of interfaces that the equivalence component will test.
+equiv_active_list()
+{
+    if [ "$EQUIV_REQUEST" = all ]; then
+        _el='screen-function-source.sh (reference), screen-function-source-minified.sh, screen.sh'
+        [ "$HAS_BUILD37" -eq 0 ] || _el="$_el, tmux-3.7d screen hardlink"
+        [ "$HAS_BUILDLATEST" -eq 0 ] || _el="$_el, tmux-latest screen hardlink"
+        printf '%s' "$_el"
+        return
+    fi
+    _el='screen-function-source.sh (reference)'
+    _oldifs=$IFS; IFS=,
+    for _item in $EQUIV_REQUEST; do
+        IFS=$_oldifs
+        case "$_item" in
+            screen-function-source|canonical|source) : ;;
+            screen-function-source-minified|minified) _label='screen-function-source-minified.sh' ;;
+            screen-script|script|screen.sh) _label='screen.sh' ;;
+            tmux-3.7d|3.7d|tmux37) _label='tmux-3.7d screen hardlink' ;;
+            tmux-latest|latest|master) _label='tmux-latest screen hardlink' ;;
+            *) _label="UNKNOWN($_item)" ;;
+        esac
+        case "$_item" in screen-function-source|canonical|source) : ;; *) _el="$_el, $_label" ;; esac
+        IFS=,
+    done
+    IFS=$_oldifs
+    printf '%s' "$_el"
+}
+EQUIV_ACTIVE=$(equiv_active_list)
 
 CLI_LOG=$LOG_DIR/test-screen-cli-$RUN_TIMESTAMP.log
 REG_LOG=$LOG_DIR/test-regressions-$RUN_TIMESTAMP.log
@@ -210,6 +269,7 @@ if [ "$HAS_BUILD37" -eq 1 ] || [ "$HAS_BUILDLATEST" -eq 1 ]; then : > "$BUILT_SC
     printf 'PROJECT: %s\n' "$HERE"
     printf 'CONSOLE_WIDTH: %s (%s; measured once at startup)\n' "$CONSOLE_WIDTH" "$WIDTH_SOURCE"
     if [ "$TEST_QUIET" -eq 1 ]; then printf 'MAPPINGS: hidden (--quiet)\n'; else printf 'MAPPINGS: shown\n'; fi
+    printf 'EQUIVALENCE_TESTS: %s\n' "$EQUIV_ACTIVE"
     printf 'DISCOVERED_BUILD_3_7D_ORIGINAL: %s\n' "$HAS_BUILD37_ORIGINAL"
     printf 'DISCOVERED_BUILD_3_7D_PATCHED: %s\n' "$HAS_BUILD37"
     printf 'DISCOVERED_BUILD_LATEST_ORIGINAL: %s\n' "$HAS_BUILDLATEST_ORIGINAL"
@@ -224,7 +284,7 @@ run_component()
     rm -f "$_rc_file"
     printf '\n===== %s =====\n' "$_name" | tee -a "$CONSOLE_LOG" | terminal_stream
     (
-        NO_COLOR=1 SCREEN2TMUX_TEST_QUIET="$TEST_QUIET" SCREEN2TMUX_MAP_LEFT_WIDTH=36 "$@"
+        NO_COLOR=1 SCREEN2TMUX_TEST_QUIET="$TEST_QUIET" SCREEN2TMUX_MAP_LEFT_WIDTH=36 SCREEN2TMUX_MAP_DESC_WIDTH=68 "$@"
         _rc=$?
         printf '%s\n' "$_rc" > "$_rc_file"
         exit 0
@@ -236,16 +296,20 @@ run_component()
 suite_rc=0
 if run_component 'screen CLI/oracle tests' env LOG_FILE="$CLI_LOG" "$HERE/tests/test-screen-cli.sh"; then :; else suite_rc=1; fi
 if run_component 'focused regressions' env REG_LOG="$REG_LOG" "$HERE/tests/test-regressions.sh"; then :; else suite_rc=1; fi
-if run_component 'interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" "$HERE/tests/test-interface-equivalence.sh"; then :; else suite_rc=1; fi
+if run_component 'interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" \
+    SCREEN2TMUX_EQUIV_INTERFACES="$EQUIV_REQUEST" \
+    SCREEN2TMUX_EQUIV_TMUX_3_7D="$BUILD37_SCREEN" \
+    SCREEN2TMUX_EQUIV_TMUX_LATEST="$BUILDLATEST_SCREEN" \
+    "$HERE/tests/test-interface-equivalence.sh"; then :; else suite_rc=1; fi
 if run_component 'live tmux behavior tests' env BEHAVIOR_LOG="$BEHAVIOR_LOG" "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
 
 if [ "$HAS_BUILD37" -eq 1 ] || [ "$HAS_BUILDLATEST" -eq 1 ]; then
     if [ "$HAS_BUILD37" -eq 1 ] && [ "$HAS_BUILDLATEST" -eq 1 ]; then
-        if run_component 'built patched tmux screen hardlink tests' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" "$HERE/tests/test-built-tmux-screen.sh" "$BUILD37_SCREEN" "$BUILDLATEST_SCREEN"; then :; else suite_rc=1; fi
+        if run_component 'built patched tmux integration checks' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" "$HERE/tests/test-built-tmux-screen.sh" "$BUILD37_SCREEN" "$BUILDLATEST_SCREEN"; then :; else suite_rc=1; fi
     elif [ "$HAS_BUILD37" -eq 1 ]; then
-        if run_component 'built patched tmux screen hardlink tests' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" "$HERE/tests/test-built-tmux-screen.sh" "$BUILD37_SCREEN"; then :; else suite_rc=1; fi
+        if run_component 'built patched tmux integration checks' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" "$HERE/tests/test-built-tmux-screen.sh" "$BUILD37_SCREEN"; then :; else suite_rc=1; fi
     else
-        if run_component 'built patched tmux screen hardlink tests' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" "$HERE/tests/test-built-tmux-screen.sh" "$BUILDLATEST_SCREEN"; then :; else suite_rc=1; fi
+        if run_component 'built patched tmux integration checks' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" "$HERE/tests/test-built-tmux-screen.sh" "$BUILDLATEST_SCREEN"; then :; else suite_rc=1; fi
     fi
 fi
 if [ "$HAS_BUILD37" -eq 1 ]; then

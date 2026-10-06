@@ -466,14 +466,37 @@ else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='mapping formatter aligns pipe columns'
-_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=36 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"; _s2t_test_print_case "[PASS] tmux-latest C001 exact" "two" "screen -d -m" "tmux new-session -d"' sh "$PROJECT/tests/output-format.sh")
+CURRENT_NAME='mapping formatter aligns both pipe columns'
+_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=36 SCREEN2TMUX_MAP_DESC_WIDTH=68 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "one" "screen" "tmux new-session"; _s2t_test_print_case "[PASS] tmux-latest C001 exact" "a much longer description" "screen -d -m" "tmux new-session -d"' sh "$PROJECT/tests/output-format.sh")
 _FMT_POS=$(printf '%s
-' "$_FMT_OUT" | awk 'NR==1 {a=index($0,"|")} NR==2 {b=index($0,"|")} END {print a ":" b}')
-if [ "$_FMT_POS" = '38:38' ]; then
+' "$_FMT_OUT" | awk -F'|' 'NR==1 {a1=index($0,"|"); a2=a1+index(substr($0,a1+1),"|")} NR==2 {b1=index($0,"|"); b2=b1+index(substr($0,b1+1),"|")} END {print a1 ":" a2 ":" b1 ":" b2}')
+if [ "$_FMT_POS" = '38:109:38:109' ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (pipe columns $_FMT_POS)"
+fi
+
+CURRENT_NAME='mapping formatter puts description before command mapping'
+_FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=36 SCREEN2TMUX_MAP_DESC_WIDTH=68 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "start a new session" "screen" "tmux new-session"' sh "$PROJECT/tests/output-format.sh")
+case "$_FMT_OUT" in
+    *'| start a new session'*'| screen -> tmux new-session') pass "$CURRENT_NAME" ;;
+    *) fail "$CURRENT_NAME (output=$_FMT_OUT)" ;;
+esac
+
+CURRENT_NAME='command formatter omits unnecessary single quotes'
+_FMT_OUT=$(sh -c '. "$1"; _s2t_test_format_argv screen -S work -X screen top' sh "$PROJECT/tests/output-format.sh")
+if [ "$_FMT_OUT" = 'screen -S work -X screen top' ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (output=$_FMT_OUT)"
+fi
+
+CURRENT_NAME='command formatter keeps quotes only when shell protection is needed'
+_FMT_OUT=$(sh -c '. "$1"; _s2t_test_format_argv tmux display-message -p -t work "#{window_index} (#{window_name})"' sh "$PROJECT/tests/output-format.sh")
+if [ "$_FMT_OUT" = "tmux display-message -p -t work '#{window_index} (#{window_name})'" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (output=$_FMT_OUT)"
 fi
 
 CURRENT_NAME='quiet mapping formatter suppresses screen-to-tmux column'
@@ -484,6 +507,20 @@ if ! printf '%s
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (output=$_FMT_OUT)"
+fi
+
+CURRENT_NAME='run-tests exposes individual equivalence interface selection'
+if grep -F -- '--equivalence|--equivalence-only' "$PROJECT/run-tests.sh" >/dev/null 2>&1 &&    grep -F -- '--list-equivalence-interfaces' "$PROJECT/run-tests.sh" >/dev/null 2>&1 &&    grep -F 'SCREEN2TMUX_EQUIV_INTERFACES="$EQUIV_REQUEST"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='equivalence harness aggregates all selected interfaces per case'
+if grep -F 'Equivalence interfaces (' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 &&    grep -F '[DIVERGED]' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 &&    grep -F '_s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
 fi
 
 CURRENT_NAME='run-tests supports explicit and misspelled truncate-lines options'

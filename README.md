@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.4.0
+# screen-to-tmux-translator 0.4.1
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -212,12 +212,12 @@ Run everything:
 sh run-tests.sh
 ```
 
-Translation-oriented PASS rows show one canonical mapping per Screen case, even though the first/middle/last dry-run placements are all still exercised internally. The pipe column is fixed so the mappings align:
+Translation-oriented PASS rows show one canonical mapping per Screen case, even though the first/middle/last dry-run placements are all still exercised internally. Both pipe columns are fixed: result, then description, then the Screen-to-tmux mapping. Ordinary command arguments are shown without unnecessary quotes; quoting is retained only when needed to represent a shell argument safely.
 
 ```text
-[PASS] C001 exact                    | 'screen' -> 'tmux' 'new-session' | start a new session
-[PASS] C002 approx                   | 'screen' '-S' 'work' -> <APPROX: no automatic tmux execution> | start named session
-[PASS] tmux-3.7d C001 exact          | 'screen' -> 'tmux' 'new-session' | start a new session
+[PASS] C001 exact                    | start a new session                                                  | screen -> tmux new-session
+[PASS] W004 exact                    | create vim window                                                    | screen -S work -X screen vim file.txt -> tmux new-window -t work vim file.txt
+[PASS] Q004 exact                    | query window number                                                  | screen -S work -Q number -> tmux display-message -p -t work '#{window_index} (#{window_name})'
 ```
 
 For `APPROX`, `UNSUPPORTED`, `MOOT`, `EXTERNAL`, and `INVALID` cases the right side intentionally states that there is no automatically executed tmux command rather than presenting a suggestion as though it were exact. Detailed logs still contain every first/middle/last invocation and its raw output.
@@ -240,19 +240,40 @@ The test system has four always-available layers plus automatic compiled-binary 
 
 1. A **Screen syntax oracle**, independent from the translator, built from GNU Screen 5.0.2 `comm.c` command metadata plus a separate top-level CLI parser.
 2. Translator tests that insert `--dry-run` at first/middle/last positions. `first` means immediately after `screen`, `middle` means after the first real Screen argument, and `last` means after all real Screen arguments. Successful placements collapse to one console case row; a failure still names the exact placement.
-3. An **interface-equivalence suite**: canonical source versus minified source across all 683 dry-run placements, plus three-way canonical/minified/standalone comparison across all 228 base Screen command cases and a normal-execution stub test.
+3. A unified **interface-equivalence suite**. `screen-function-source.sh` is the reference. By default the suite also checks `screen-function-source-minified.sh`, `screen.sh`, and every discovered patched tmux hardlink named `screen` across the full 683-placement matrix. If every selected interface agrees for a Screen case, one PASS row is printed. On a mismatch, only the interfaces/placements that diverged are listed after that case.
 4. An **optional live tmux behavioral suite** using an isolated server. It skips cleanly when no tmux executable is available.
-5. When `build-tmux-3.7d-patched` and/or `build-tmux-latest-patched` exists, the actual hardlink named `screen` is automatically tested through all 683 dry-run placements against the canonical translator, followed by an isolated real-execution smoke test and the live tmux behavior suite for each patched binary.
+5. Discovered patched tmux builds also receive hardlink-identity, compiled dry-run smoke, real-execution smoke, and per-version live tmux behavior checks. Their 683-way translation matrix is not printed a second time because it is already part of the unified equivalence layer.
+
+The default equivalence interfaces are named at the beginning of the run. With both patched builds present they are:
+
+```text
+screen-function-source.sh (reference)
+screen-function-source-minified.sh
+screen.sh
+tmux-3.7d screen hardlink
+tmux-latest screen hardlink
+```
+
+To test one interface individually against the canonical reference:
+
+```sh
+sh run-tests.sh --equivalence screen-script
+sh run-tests.sh --equivalence screen-function-source-minified
+sh run-tests.sh --equivalence tmux-3.7d
+sh run-tests.sh --equivalence tmux-latest
+```
+
+Repeat `--equivalence NAME` to choose several interfaces, or use the default with no equivalence option to test all available interfaces. `sh run-tests.sh --list-equivalence-interfaces` prints the accepted names.
 
 Current packaged verification:
 
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-92/92 focused semantic regression tests PASS
-683/683 canonical/minified source-placement comparisons PASS
-228/228 three-way command-case comparisons PASS
-1/1 three-way normal-execution stub comparison PASS
+97/97 focused semantic regression tests PASS
+683 placement variants per selected equivalence interface
+228/228 aggregated equivalence command cases PASS (three packaged interfaces)
+0 equivalence divergences in the packaged source/script set
 C integration harness: -std=c99 -Wall -Wextra -Werror PASS
 ```
 
@@ -264,7 +285,7 @@ logs/test-regressions-<timestamp>.log
 logs/test-interface-equivalence-<timestamp>.log
 logs/test-tmux-behavior-<timestamp>.log
 logs/test-run-console-<timestamp>.log
-logs/screen-to-tmux-translator-0.4.0-test-logs-<timestamp>.zip
+logs/screen-to-tmux-translator-0.4.1-test-logs-<timestamp>.zip
 ```
 
 When patched builds are discovered, the runner adds `test-built-tmux-screen-<timestamp>.log` and one build-specific tmux behavior log for each patched build to the same ZIP.
@@ -309,7 +330,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.4.0/
+screen-to-tmux-translator-0.4.1/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

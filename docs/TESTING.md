@@ -54,7 +54,7 @@ middle: screen ARG1 --dry-run ARG2 ...
 last:   screen ARG1 ARG2 ... --dry-run
 ```
 
-The suite still executes and logs every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after every placement succeeds, together with one canonical `screen -> tmux` mapping for that Screen case. If any placement fails, that failing placement is printed explicitly. The detailed `test-screen-cli-*.log` retains the complete per-placement records. `run-tests.sh --quiet` hides the mapping columns without suppressing ordinary PASS/FAIL progress.
+The suite still executes and logs every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after every placement succeeds, together with one canonical mapping in the form `result | description | screen command -> tmux command`. Both pipe columns are fixed. Ordinary argv are shown bare; quoting is retained only where shell protection or single-line control-byte escaping is needed. If any placement fails, that failing placement is printed explicitly. The detailed `test-screen-cli-*.log` retains the complete per-placement records. `run-tests.sh --quiet` hides the mapping columns without suppressing ordinary PASS/FAIL progress.
 
 ## Logs
 
@@ -99,9 +99,9 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.0.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.1.
 
-`logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records interface parity. The canonical and minified source files are compared byte-for-byte with identical exit status across all 683 first/middle/last dry-run placements. All 228 base Screen command cases are then compared three ways against the standalone `bin/screen.sh` executable, and one normal-execution path is compared using a private stub `tmux`.
+`logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records unified interface parity. `screen-function-source.sh` is always the reference. By default the minified source, standalone `screen.sh`, and every discovered patched tmux hardlink named `screen` are each run over the complete 683 first/middle/last placement matrix. Each Screen case prints one PASS only when every selected interface agrees with the reference for every placement. On failure the console lists only the interface/placement combinations that diverged; the log retains each comparison record. `run-tests.sh --equivalence NAME` (repeatable) restricts this layer to named interfaces, and `--list-equivalence-interfaces` prints accepted names.
 
 ## Focused regressions
 
@@ -152,14 +152,17 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 ## Current packaged result
 
 ```text
-translation permutations: 683 PASS, 0 FAIL
-syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       92 PASS, 0 FAIL
-source/minified parity:     683 PASS, 0 FAIL
-three-way base cases:       228 PASS, 0 FAIL
-three-way execution stub:     1 PASS, 0 FAIL
-live tmux behavior:         optional; skipped if tmux is unavailable
+translation permutations:       683 PASS, 0 FAIL
+syntax oracle base cases:       228 PASS, 0 FAIL
+focused regressions:             97 PASS, 0 FAIL
+packaged equivalence interfaces: 3 (canonical source, minified source, screen.sh)
+equivalence variants/interface: 683
+equivalence command cases:      228 PASS, 0 FAIL
+equivalence divergences:          0
+live tmux behavior:             optional; skipped if tmux is unavailable
 ```
+
+With patched builds present, each discovered `screen` hardlink becomes an additional equivalence interface automatically; the same 683-placement matrix is not printed again in the build-integration section.
 
 ## Optional live tmux behavioral layer
 
@@ -173,7 +176,7 @@ live tmux behavior:         optional; skipped if tmux is unavailable
 
 If tmux is not installed, this layer reports `SKIP` and exits successfully; the source-derived syntax oracle and translator regressions still run.
 
-## Built tmux hardlink layer (0.4.0)
+## Built tmux hardlink layer (0.4.1)
 
 The repository includes four independent build drivers:
 
@@ -184,19 +187,6 @@ sh build_tmux_latest.sh
 sh build_tmux_latest_patched.sh
 ```
 
-They leave four full source trees and four separate build/install trees at the project root:
-
-```text
-source-tmux-3.7d/
-build-tmux-3.7d/
-source-tmux-3.7d-patched/
-build-tmux-3.7d-patched/
-source-tmux-latest/
-build-tmux-latest/
-source-tmux-latest-patched/
-build-tmux-latest-patched/
-```
-
 Completed patched builds are recognized at:
 
 ```text
@@ -204,19 +194,20 @@ build-tmux-3.7d-patched/install/bin/screen
 build-tmux-latest-patched/install/bin/screen
 ```
 
-Each `screen` is created with `ln` from its patched `tmux` binary; it is a hardlink, not a wrapper or copied executable.
+Each `screen` is a hardlink to its sibling patched `tmux`. When `run-tests.sh` discovers a patched build, that hardlink is automatically added to the unified interface-equivalence matrix. Thus, with both builds present, the default equivalence set is five interfaces: canonical sourced function, minified sourced function, standalone `screen.sh`, patched 3.7d hardlink, and patched latest hardlink.
 
-When `run-tests.sh` discovers one or both completed patched builds, it automatically adds `tests/test-built-tmux-screen.sh`. For each patched build this test:
+The separate built-tmux integration component intentionally does not rerun or reprint the full matrix. It verifies hardlink inode identity, performs one compiled dry-run smoke comparison with the canonical translator, and performs one isolated real-execution smoke test. The live behavior suite is then rerun with `TMUX_BIN` set to each patched tmux binary.
 
-1. verifies that sibling `screen` and `tmux` have the same inode;
-2. invokes the actual hardlink whose basename is `screen` over all 683 first/middle/last dry-run placements from `tests/cases.sh`; successful placements collapse to one aligned console row with a canonical `screen -> tmux` mapping, while failures name the exact placement;
-3. compares exit status and raw output bytes with the canonical `screen-function-source.sh` translator using `cmp`;
-4. performs one non-dry-run detached-session smoke test under an isolated `TMUX_TMPDIR`;
-5. leaves the user's normal tmux socket untouched.
+Individual equivalence selection examples:
 
-The live behavior suite is then rerun with `TMUX_BIN` set to each patched tmux binary. Additional timestamped logs are added to the same per-run ZIP.
+```sh
+sh run-tests.sh --equivalence screen-script
+sh run-tests.sh --equivalence tmux-3.7d
+sh run-tests.sh --equivalence tmux-latest
+sh run-tests.sh --equivalence screen-function-source-minified --equivalence screen-script
+```
 
-The latest original/patched scripts synchronize to one exact master commit whenever the counterpart source tree already exists, so direct original-versus-patched comparisons do not accidentally span different moving-master commits.
+If an explicitly requested compiled interface is absent, the equivalence component fails with a specific unavailable-interface error rather than silently skipping it.
 
 ## Build dependency and patch-safety checks
 

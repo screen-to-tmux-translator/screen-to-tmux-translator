@@ -5,21 +5,75 @@ _s2t_test_map_left_width=${SCREEN2TMUX_MAP_LEFT_WIDTH:-36}
 case "$_s2t_test_map_left_width" in ''|*[!0-9]*) _s2t_test_map_left_width=36 ;; esac
 [ "$_s2t_test_map_left_width" -ge 20 ] 2>/dev/null || _s2t_test_map_left_width=36
 
+_s2t_test_map_desc_width=${SCREEN2TMUX_MAP_DESC_WIDTH:-68}
+case "$_s2t_test_map_desc_width" in ''|*[!0-9]*) _s2t_test_map_desc_width=68 ;; esac
+[ "$_s2t_test_map_desc_width" -ge 20 ] 2>/dev/null || _s2t_test_map_desc_width=68
+
 _s2t_test_quiet=${SCREEN2TMUX_TEST_QUIET:-0}
+
+# Human-readable shell command rendering. Keep ordinary argv bare and quote only
+# arguments that actually need shell protection (spaces, #, backslashes, control
+# bytes, etc.). Control bytes keep the translator's one-line escaped form.
+_s2t_test_full_quote()
+{
+    if command -v _s2t_display_quote >/dev/null 2>&1; then
+        _s2t_display_quote "$1"
+        return
+    fi
+    printf "'"
+    printf '%s' "$1" | od -An -v -tu1 | awk '''
+        BEGIN { ORS="" }
+        {
+            for (i = 1; i <= NF; i++) {
+                n = $i + 0
+                if (n == 39) printf "%c%c%c%c", 39, 92, 39, 39
+                else if (n == 13) printf "\\r"
+                else if (n == 10) printf "\\n"
+                else if (n == 9) printf "\\t"
+                else if (n >= 32 && n <= 126) printf "%c", n
+                else printf "\\x%02x", n
+            }
+        }'''
+    printf "'"
+}
+
+_s2t_test_format_arg()
+{
+    _tf_arg=$1
+    case "$_tf_arg" in
+        '') printf "''" ;;
+        *[!A-Za-z0-9_@%+=:,./-]*) _s2t_test_full_quote "$_tf_arg" ;;
+        *) printf '%s' "$_tf_arg" ;;
+    esac
+}
 
 _s2t_test_format_argv()
 {
     _tf_sep=
     for _tf_arg do
         printf '%s' "$_tf_sep"
-        if command -v _s2t_display_quote >/dev/null 2>&1; then
-            _s2t_display_quote "$_tf_arg"
-        else
-            # Fallback for scripts that do not source the translator first.
-            printf "'%s'" "$(printf '%s' "$_tf_arg" | sed "s/'/'\\\\''/g")"
-        fi
+        _s2t_test_format_arg "$_tf_arg"
         _tf_sep=' '
     done
+}
+
+# Convert the translator's intentionally fully-quoted dry-run representation
+# into the less noisy display representation above. The input is produced by
+# this project, so evaluating it only to reconstruct argv is safe here.
+_s2t_test_pretty_tmux_output()
+{
+    _tf_output=$1
+    case "$_tf_output" in
+        *'
+'*) return 1 ;;
+        "'tmux'"*)
+            eval "set -- $_tf_output" || return 1
+            [ "${1:-}" = tmux ] || return 1
+            _s2t_test_format_argv "$@"
+            return 0
+            ;;
+    esac
+    return 1
 }
 
 _s2t_test_rhs_for_class()
@@ -28,13 +82,15 @@ _s2t_test_rhs_for_class()
     _tf_output=$2
     case "$_tf_class" in
         exact)
-            case "$_tf_output" in
-                "'tmux'"*)
-                    case "$_tf_output" in *'
-'*) printf '%s' '<translator output; no single tmux command>' ;; *) printf '%s' "$_tf_output" ;; esac
-                    ;;
-                *) printf '%s' '<translator output; no tmux command>' ;;
-            esac
+            if _tf_pretty=$(_s2t_test_pretty_tmux_output "$_tf_output"); then
+                printf '%s' "$_tf_pretty"
+            else
+                case "$_tf_output" in
+                    *'
+'*) printf '%s' '<translator output; no single tmux command>' ;;
+                    *) printf '%s' '<translator output; no tmux command>' ;;
+                esac
+            fi
             ;;
         approx) printf '%s' '<APPROX: no automatic tmux execution>' ;;
         unsupported) printf '%s' '<UNSUPPORTED>' ;;
@@ -54,6 +110,9 @@ _s2t_test_print_case()
     if [ "$_s2t_test_quiet" = 1 ]; then
         printf '%-*s %s\n' "$_s2t_test_map_left_width" "$_tf_prefix" "$_tf_desc"
     else
-        printf '%-*s | %s -> %s | %s\n' "$_s2t_test_map_left_width" "$_tf_prefix" "$_tf_screen" "$_tf_tmux" "$_tf_desc"
+        printf '%-*s | %-*s | %s -> %s\n' \
+            "$_s2t_test_map_left_width" "$_tf_prefix" \
+            "$_s2t_test_map_desc_width" "$_tf_desc" \
+            "$_tf_screen" "$_tf_tmux"
     fi
 }

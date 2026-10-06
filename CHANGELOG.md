@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 — 2026-10-05
+
+- Reworked translation-oriented test rows to `result | description | screen command -> tmux command`, with both pipe columns aligned.
+- Removed gratuitous per-argument single quotes from displayed commands. Arguments remain quoted only when shell protection is actually needed, such as spaces, `#` format strings, backslashes, or embedded quotes.
+- Unified interface equivalence around `screen-function-source.sh` as the canonical reference. By default the matrix now includes the canonical sourced function, minified sourced function, standalone `screen.sh`, and each discovered patched tmux hardlink named `screen`.
+- Every selected interface now runs the complete 683 first/middle/last placement matrix. A fully matching Screen case prints one PASS row regardless of interface count; failures print the case once and then only the interface/placement combinations that diverged.
+- Added `run-tests.sh --equivalence NAME` / `--equivalence-only NAME`, repeatable for explicit interface subsets, plus `--list-equivalence-interfaces`. The default remains all available interfaces.
+- `run-tests.sh` now names the active equivalence interfaces in the startup header and the equivalence section repeats the resolved list.
+- Reduced duplicate compiled-build output: the central equivalence suite owns the full 683-variant compiled-hardlink comparisons; the built-tmux section now performs only hardlink identity, compiled dry-run smoke, and real-execution smoke checks.
+- Added regressions for two-column alignment, description-before-command ordering, minimal command quoting, equivalence selection options, and aggregated divergence reporting. Focused regressions are now 97 PASS.
+- Translation semantics are unchanged from 0.4.0.
+
 ## 0.4.0 — 2026-10-05
 
 - Split the old two-build drivers into four independent build scripts: `build_tmux_3.7d.sh`, `build_tmux_3.7d_patched.sh`, `build_tmux_latest.sh`, and `build_tmux_latest_patched.sh`. Each script rebuilds only its own variant from scratch.

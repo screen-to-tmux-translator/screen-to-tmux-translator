@@ -1,26 +1,23 @@
 #!/bin/sh
-# Compare any built patched tmux hardlink named "screen" with the canonical
-# source translator over the full 683 dry-run placement matrix.
+# Structural/runtime smoke checks for compiled patched tmux binaries whose
+# hardlink is named screen. Full translation equivalence is handled centrally
+# by test-interface-equivalence.sh so successful cases are printed only once.
 set -u
 
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT=$(CDPATH= cd -- "$HERE/.." && pwd)
 CANONICAL=${CANONICAL:-$PROJECT/bin/screen-function-source.sh}
-CASES=${CASES:-$HERE/cases.sh}
-WORKER=${WORKER:-$HERE/interface-equivalence-worker.sh}
 RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
 LOG=${BUILT_SCREEN_LOG:-$PROJECT/logs/test-built-tmux-screen-$RUN_TIMESTAMP.log}
 
 if [ "$#" -lt 1 ]; then
-    printf '[SKIP] built tmux screen hardlink tests: no built screen binary supplied\n'
+    printf '[SKIP] built tmux screen hardlink checks: no built screen binary supplied\n'
     mkdir -p "$(dirname -- "$LOG")"
     printf 'SKIP: no built screen binary supplied\n' > "$LOG"
     exit 0
 fi
 
-for _need in "$CANONICAL" "$CASES" "$WORKER"; do
-    [ -r "$_need" ] || { printf 'ERROR: required test input missing: %s\n' "$_need" >&2; exit 2; }
-done
+[ -r "$CANONICAL" ] || { printf 'ERROR: canonical translator missing: %s\n' "$CANONICAL" >&2; exit 2; }
 # shellcheck disable=SC1090
 . "$CANONICAL"
 # shellcheck disable=SC1090
@@ -32,7 +29,6 @@ TMPBASE=${TMPDIR:-/tmp}/screen2tmux-built-screen-$$
 rm -rf "$TMPBASE"
 mkdir -p "$TMPBASE"
 trap 'rm -rf "$TMPBASE"' EXIT HUP INT TERM
-TAB=$(printf '\t')
 PASS=0
 FAIL=0
 TOTAL=0
@@ -46,28 +42,8 @@ if [ -z "${NO_COLOR:-}" ]; then
 fi
 if [ "$color" -eq 1 ]; then G='\033[32m'; R='\033[31m'; C='\033[36m'; Z='\033[0m'; else G=; R=; C=; Z=; fi
 
-EXPECTED=$TMPBASE/expected
-EXPECTED_META=$TMPBASE/expected.tsv
-"$WORKER" source-full "$CANONICAL" "$EXPECTED" "$CASES" "$EXPECTED_META"
-EXPECTED_COUNT=$(cat "$EXPECTED/count")
-CASE_MAP=$TMPBASE/case-map.tsv
-: > "$CASE_MAP"
-case_()
-{
-    _cm_id=$1; _cm_class=$2; _cm_desc=$3
-    shift 3
-    _cm_screen=$(_s2t_test_format_argv screen "$@")
-    printf '%s\t%s\t%s\t%s\n' "$_cm_id" "$_cm_class" "$_cm_desc" "$_cm_screen" >> "$CASE_MAP"
-}
-# shellcheck disable=SC1090
-. "$CASES"
-if [ "$EXPECTED_COUNT" -ne 683 ]; then
-    printf 'ERROR: canonical full matrix produced %s variants, expected 683\n' "$EXPECTED_COUNT" >&2
-    exit 2
-fi
-
-printf 'built tmux screen hardlink test\n' >> "$LOG"
-printf 'EXPECTED_VARIANTS: %s\n' "$EXPECTED_COUNT" >> "$LOG"
+printf 'built tmux screen hardlink integration checks\n' >> "$LOG"
+printf 'NOTE: full 683-variant translation comparison is performed by test-interface-equivalence.sh.\n' >> "$LOG"
 
 for SCREEN_BIN do
     if [ ! -x "$SCREEN_BIN" ]; then
@@ -96,16 +72,16 @@ for SCREEN_BIN do
         build-tmux-latest-patched) LABEL=tmux-latest ;;
         *) LABEL=$_build_base ;;
     esac
-    [ -x "$TMUX_BIN" ] || {
-        FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
-        printf '%b[FAIL]%b sibling patched tmux missing: %s\n' "$R" "$Z" "$TMUX_BIN"
-        printf 'BUILD\tFAIL\tmissing-tmux\t%s\n' "$SCREEN_BIN" >> "$LOG"
-        continue
-    }
 
+    TOTAL=$((TOTAL + 1))
+    if [ ! -x "$TMUX_BIN" ]; then
+        FAIL=$((FAIL + 1))
+        printf '%b[FAIL]%b %s sibling patched tmux missing: %s\n' "$R" "$Z" "$LABEL" "$TMUX_BIN"
+        printf 'HARDLINK\tFAIL\t%s\tmissing-tmux\n' "$LABEL" >> "$LOG"
+        continue
+    fi
     _it=$(ls -di "$TMUX_BIN" | awk '{print $1}')
     _is=$(ls -di "$SCREEN_BIN" | awk '{print $1}')
-    TOTAL=$((TOTAL + 1))
     if [ "$_it" = "$_is" ]; then
         PASS=$((PASS + 1))
         printf '%b[PASS]%b %s screen is a hardlink to patched tmux\n' "$G" "$Z" "$LABEL"
@@ -117,64 +93,22 @@ for SCREEN_BIN do
         continue
     fi
 
-    ACTUAL=$TMPBASE/actual-$LABEL
-    ACTUAL_META=$TMPBASE/actual-$LABEL.tsv
-    SCREEN2TMUX_EQUIV_JOBS=${SCREEN2TMUX_BUILT_JOBS:-${SCREEN2TMUX_EQUIV_JOBS:-8}} \
-        "$WORKER" standalone-full "$SCREEN_BIN" "$ACTUAL" "$CASES" "$ACTUAL_META"
-    ACTUAL_COUNT=$(cat "$ACTUAL/count")
-    if [ "$ACTUAL_COUNT" -ne "$EXPECTED_COUNT" ]; then
-        FAIL=$((FAIL + 1)); TOTAL=$((TOTAL + 1))
-        printf '%b[FAIL]%b %s produced %s variants, expected %s\n' "$R" "$Z" "$LABEL" "$ACTUAL_COUNT" "$EXPECTED_COUNT"
-        printf 'COUNT\tFAIL\t%s\t%s\t%s\n' "$LABEL" "$ACTUAL_COUNT" "$EXPECTED_COUNT" >> "$LOG"
-        continue
+    # A direct dry-run smoke check, independent of the central full-matrix run.
+    TOTAL=$((TOTAL + 1))
+    _dry=$($SCREEN_BIN -d -m bash --dry-run 2>&1); _dry_rc=$?
+    _ref=$(NO_COLOR=1 SCREEN2TMUX_COLOR=never sh -c '. "$1"; screen -d -m bash --dry-run' sh "$CANONICAL" 2>&1); _ref_rc=$?
+    if [ "$_dry_rc" -eq "$_ref_rc" ] && [ "$_dry" = "$_ref" ]; then
+        PASS=$((PASS + 1))
+        _s2t_test_print_case "[PASS] $LABEL DRYRUN" 'compiled screen hardlink translation smoke test' \
+            "$(_s2t_test_format_argv screen -d -m bash)" "$(_s2t_test_format_argv tmux new-session -d bash)"
+        printf 'DRYRUN\tPASS\t%s\n' "$LABEL" >> "$LOG"
+    else
+        FAIL=$((FAIL + 1))
+        printf '%b[FAIL]%b %s compiled screen hardlink dry-run differs from canonical translator\n' "$R" "$Z" "$LABEL"
+        printf 'DRYRUN\tFAIL\t%s\tref_rc=%s\tactual_rc=%s\n' "$LABEL" "$_ref_rc" "$_dry_rc" >> "$LOG"
     fi
 
-    _current_id=
-    _current_desc=
-    _current_ok=1
-    _current_last_base=
-    flush_matrix_case()
-    {
-        [ -n "$_current_id" ] || return 0
-        if [ "$_current_ok" -eq 1 ]; then
-            _map=$(awk -F '\t' -v id="$_current_id" '$1 == id { print; exit }' "$CASE_MAP")
-            IFS="$TAB" read -r _mid _mclass _mdesc _mscreen <<EOF_MAP
-$_map
-EOF_MAP
-            _mout=$(cat "$EXPECTED/$_current_last_base.out")
-            _mtmux=$(_s2t_test_rhs_for_class "$_mclass" "$_mout")
-            _mprefix=$(printf '[PASS] %s %s %s' "$LABEL" "$_current_id" "$_mclass")
-            _s2t_test_print_case "$_mprefix" "$_current_desc" "$_mscreen" "$_mtmux"
-        fi
-    }
-
-    while IFS="$TAB" read -r _base _id _place _desc; do
-        if [ "$_id" != "$_current_id" ]; then
-            flush_matrix_case
-            _current_id=$_id
-            _current_desc=$_desc
-            _current_ok=1
-            _current_last_base=
-        fi
-        _current_last_base=$_base
-
-        TOTAL=$((TOTAL + 1))
-        _er=$(cat "$EXPECTED/$_base.rc")
-        _ar=$(cat "$ACTUAL/$_base.rc")
-        if [ "$_er" = "$_ar" ] && cmp -s "$EXPECTED/$_base.out" "$ACTUAL/$_base.out"; then
-            PASS=$((PASS + 1))
-            printf 'MATRIX\tPASS\t%s\t%s\t%s\t%s\n' "$LABEL" "$_id" "$_place" "$_er" >> "$LOG"
-        else
-            FAIL=$((FAIL + 1))
-            _current_ok=0
-            printf '%b[FAIL]%b %s %s placement=%s %s (rc expected=%s actual=%s)\n' "$R" "$Z" "$LABEL" "$_id" "$_place" "$_desc" "$_er" "$_ar"
-            printf 'MATRIX\tFAIL\t%s\t%s\t%s\t%s\t%s\n' "$LABEL" "$_id" "$_place" "$_er" "$_ar" >> "$LOG"
-        fi
-    done < "$EXPECTED_META"
-    flush_matrix_case
-
-    # One real execution smoke test against an isolated default tmux socket.
-    # This proves the hardlink does more than print the right dry-run output.
+    # One real execution smoke test against an isolated tmux socket.
     RUNTIME=$TMPBASE/runtime-$LABEL
     mkdir -p "$RUNTIME/home" "$RUNTIME/tmux"
     chmod 700 "$RUNTIME/tmux"
@@ -183,7 +117,8 @@ EOF_MAP
        "$SCREEN_BIN" -d -m >/dev/null 2>"$RUNTIME/screen.err" && \
        HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" list-sessions >/dev/null 2>"$RUNTIME/list.err"; then
         PASS=$((PASS + 1))
-        _s2t_test_print_case "[PASS] $LABEL EXEC" 'real screen hardlink execution created an isolated tmux session' "'screen' '-d' '-m'" "'tmux' 'new-session' '-d'"
+        _s2t_test_print_case "[PASS] $LABEL EXEC" 'real screen hardlink created an isolated tmux session' \
+            "$(_s2t_test_format_argv screen -d -m)" "$(_s2t_test_format_argv tmux new-session -d)"
         printf 'EXEC\tPASS\t%s\n' "$LABEL" >> "$LOG"
     else
         FAIL=$((FAIL + 1))
@@ -193,7 +128,7 @@ EOF_MAP
     HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-server >/dev/null 2>&1 || :
 done
 
-printf 'SUMMARY: pass=%s fail=%s total=%s expected_variants=%s\n' "$PASS" "$FAIL" "$TOTAL" "$EXPECTED_COUNT" >> "$LOG"
-printf '\n%bBuilt screen summary:%b %s %bPASS%b, %s %bFAIL%b, %s comparisons/checks\n' "$C" "$Z" "$PASS" "$G" "$Z" "$FAIL" "$R" "$Z" "$TOTAL"
+printf 'SUMMARY: pass=%s fail=%s total=%s\n' "$PASS" "$FAIL" "$TOTAL" >> "$LOG"
+printf '\n%bBuilt screen summary:%b %s %bPASS%b, %s %bFAIL%b, %s integration checks\n' "$C" "$Z" "$PASS" "$G" "$Z" "$FAIL" "$R" "$Z" "$TOTAL"
 printf '%bBuilt screen log:%b %s\n' "$C" "$Z" "$LOG"
 [ "$FAIL" -eq 0 ]
