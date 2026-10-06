@@ -257,7 +257,10 @@ expect_exact "-A on new-session path is semantically inert" "'tmux' 'new-session
 expect_exact "-U does not block unrelated remote X command" "'tmux' 'send-keys' '-l' '-t' 'work:0' 'hello'" --dry-run -U -S work -p 0 -X stuff hello
 expect_class_contains "short Screen version is not tmux version" 2 "reports the GNU Screen version" --dry-run -v
 expect_class_contains "long Screen version is not tmux version" 2 "reports the GNU Screen version" --dry-run --version
-expect_class_contains "Screen help is not tmux help" 2 "describes Screen's CLI" --dry-run --help
+expect_class_contains "compatibility help is available" 0 "screen-to-tmux compatibility help" --dry-run --help
+expect_class_contains "compatibility help identifies Screen 5.0.x syntax" 0 "GNU Screen 5.0.x-style command-line syntax" --dry-run --help
+expect_class_contains "compatibility help explains tmux differences" 0 "Important tmux-underneath differences" --dry-run --help
+expect_class_contains "compatibility help documents dryrun alias" 0 "--dry-run / --dryrun" --dry-run --help
 expect_class_contains "internal Screen version is not tmux version" 2 "reports Screen's version/status text" --dry-run -S work -X version
 expect_exact "query echo uses tmux literal mode" "'tmux' 'display-message' '-pl' '#{session_name}'" --dry-run -S work -Q echo '#{session_name}'
 expect_class_contains "query echo -p refuses Screen format reinterpretation" 2 "Screen echo -p expands Screen's own % status-format language" --dry-run -S work -Q echo -p '%n %t'
@@ -275,6 +278,77 @@ RED_UNSUPPORTED="${ESC}[31mUNSUPPORTED${ESC}[0m"
 expect_selective_color "APPROX diagnostic colorizes only its class token" 3 "$YELLOW_APPROX" "screen2tmux: " --dry-run -L
 expect_selective_color "UNSUPPORTED diagnostic colorizes only its class token" 2 "$RED_UNSUPPORTED" "screen2tmux: " --dry-run -c /tmp/my-screenrc
 expect_no_color_override "NO_COLOR overrides forced color without changing semantics" 3 --dry-run -L
+
+CURRENT_NAME='help colorizes status tokens without coloring whole rows'
+OUT=$(NO_COLOR= SCREEN2TMUX_COLOR=always screen --help 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf '%s\n' 'OUTPUT_DISPLAY_BEGIN'
+    printf '%s\n' "$OUT"
+    printf '%s\n' 'OUTPUT_DISPLAY_END'
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -F "${ESC}[32m[EXACT]${ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s' "$OUT" | grep -F 'Safe mapping; executes tmux automatically' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC)"
+fi
+
+CURRENT_NAME='build dependency decline exits without installing'
+OUT=$(CC=definitely-missing-screen2tmux-cc SCREEN2TMUX_AUTO_INSTALL=no SCREEN2TMUX_DEPENDENCY_CHECK_ONLY=1 sh "$PROJECT/build_tmux_3.7d.sh" 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf '%s\n' 'OUTPUT_DISPLAY_BEGIN'
+    printf '%s\n' "$OUT"
+    printf '%s\n' 'OUTPUT_DISPLAY_END'
+} >> "$REG_LOG"
+if [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -F 'Dependency installation declined; build cancelled.' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='build dependency yes path invokes installer and rechecks'
+_DEP_TMP="$PROJECT/logs/.dep-install-test-$$"
+rm -rf "$_DEP_TMP"
+mkdir -p "$_DEP_TMP/bin"
+cat > "$_DEP_TMP/bin/apt-get" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "${SCREEN2TMUX_FAKE_APT_LOG:?}"
+exit 0
+EOF
+chmod +x "$_DEP_TMP/bin/apt-get"
+: > "$_DEP_TMP/apt.log"
+OUT=$(PATH="$_DEP_TMP/bin:$PATH" SCREEN2TMUX_FAKE_APT_LOG="$_DEP_TMP/apt.log" \
+    CC=definitely-missing-screen2tmux-cc SCREEN2TMUX_PACKAGE_MANAGER=apt-get \
+    SCREEN2TMUX_AUTO_INSTALL=yes SCREEN2TMUX_DEPENDENCY_CHECK_ONLY=1 \
+    sh "$PROJECT/build_tmux_3.7d.sh" 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf '%s\n' 'OUTPUT_DISPLAY_BEGIN'
+    printf '%s\n' "$OUT"
+    printf '%s\n' 'OUTPUT_DISPLAY_END'
+    printf '%s\n' 'FAKE_APT_BEGIN'
+    cat "$_DEP_TMP/apt.log"
+    printf '%s\n' 'FAKE_APT_END'
+} >> "$REG_LOG"
+if [ "$RC" -eq 2 ] && grep -F 'update' "$_DEP_TMP/apt.log" >/dev/null 2>&1 && \
+   grep -F 'install -y' "$_DEP_TMP/apt.log" >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'Rechecking build dependencies after installation' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+rm -rf "$_DEP_TMP"
 
 CURRENT_NAME='standalone screen.sh accepts --dryrun alias'
 OUT=$(NO_COLOR=1 "$PROJECT/bin/screen.sh" --dryrun -d -m bash 2>&1)

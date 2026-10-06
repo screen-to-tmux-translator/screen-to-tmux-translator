@@ -1,5 +1,5 @@
 #!/bin/sh
-SCREEN2TMUX_VERSION=0.3.7
+SCREEN2TMUX_VERSION=0.3.8
 case ${0##*/} in
     screen-function-source.sh|screen-function-source-minified.sh)
         _s2t_source_name=${0##*/}
@@ -98,6 +98,120 @@ _s2t_class_color()
         INVALID)     printf red ;;
         *)           printf cyan ;;
     esac
+}
+_s2t_help_heading()
+{
+    printf '\n'
+    _s2t_color_token cyan "$1"
+    printf '\n'
+}
+_s2t_help_status_color()
+{
+    case "$1" in
+        EXACT)       printf green ;;
+        APPROX)      printf yellow ;;
+        UNSUPPORTED) printf red ;;
+        MOOT)        printf cyan ;;
+        EXTERNAL)    printf magenta ;;
+        VARIES)      printf cyan ;;
+        EXTENSION)   printf cyan ;;
+        *)           printf cyan ;;
+    esac
+}
+_s2t_help_row()
+{
+    _s2t_hr_status=$1
+    _s2t_hr_syntax=$2
+    _s2t_hr_text=$3
+    printf '  %-24s ' "$_s2t_hr_syntax"
+    _s2t_color_token "$(_s2t_help_status_color "$_s2t_hr_status")" "[$_s2t_hr_status]"
+    printf ' %s\n' "$_s2t_hr_text"
+}
+_s2t_help()
+{
+    _s2t_color_token cyan "screen-to-tmux compatibility help"
+    printf ' (translator %s)\n' "$SCREEN2TMUX_VERSION"
+    printf '%s\n' 'GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe mapping exists.'
+    printf '%s\n' 'This is compatibility help, not byte-for-byte native GNU Screen help.'
+    _s2t_help_heading 'Usage'
+    printf '%s\n' '  screen [options] [command [args]]'
+    printf '%s\n' '  screen -r [session]'
+    printf '%s\n' '  screen -S session -X command [args]'
+    printf '%s\n' '  screen -S session -Q command [args]'
+    printf '%s\n' '  screen [--dry-run|--dryrun] ...'
+    _s2t_help_heading 'Translation classes'
+    _s2t_help_row EXACT       'EXACT'       'Safe mapping; executes tmux automatically (or prints it in dry-run mode).'
+    _s2t_help_row APPROX      'APPROX'      'Useful tmux substitute exists, but semantics differ; not auto-executed.'
+    _s2t_help_row UNSUPPORTED 'UNSUPPORTED' 'Valid Screen behavior has no safe tmux equivalent; no emulation is invented.'
+    _s2t_help_row MOOT        'MOOT'        'Screen-only maintenance/architecture is unnecessary under tmux.'
+    _s2t_help_row EXTERNAL    'EXTERNAL'    'Closest substitute needs another program such as picocom/telnet/ssh.'
+    _s2t_help_row VARIES      'VARIES'      'Depends on subcommand, selector, runtime state, or invocation context.'
+    _s2t_help_heading 'Top-level Screen options'
+    _s2t_help_row VARIES      '-4 / -6'              'Only meaningful for Screen built-in network forms; external-client substitution may be required.'
+    _s2t_help_row UNSUPPORTED '-a'                   'Screen termcap capability forcing has no matching tmux CLI operation.'
+    _s2t_help_row VARIES      '-A'                   'Inert for a fresh tmux session; Screen attach-time resize semantics are different.'
+    _s2t_help_row UNSUPPORTED '-c file'              'screenrc syntax is not tmux.conf syntax; the same file is never passed to tmux -f.'
+    _s2t_help_row EXACT       '-d [session]'          'Detach the selected session clients for supported unambiguous targets.'
+    _s2t_help_row EXACT       '-D [session]'          'Power-detach style top-level operation for supported unambiguous targets.'
+    _s2t_help_row APPROX      '-dmS name'             'Detached named tmux session is close, but tmux names are unique while Screen labels need not be.'
+    _s2t_help_row UNSUPPORTED '-e xy'                 'Screen command-character pair is not silently rewritten into tmux prefix configuration.'
+    _s2t_help_row UNSUPPORTED '-f / -fn / -fa'        'Screen flow-control policy has no direct tmux equivalent.'
+    _s2t_help_row UNSUPPORTED '-h lines'              'Screen per-invocation initial history semantics do not map safely to tmux history-limit.'
+    _s2t_help_row UNSUPPORTED '-i'                    'Screen XON/XOFF interrupt policy has no tmux equivalent.'
+    _s2t_help_row UNSUPPORTED '-l / -ln'              'Screen utmp login accounting is not a tmux pane feature.'
+    _s2t_help_row APPROX      '-ls / -list [match]'   'tmux list-sessions is useful, but output/state/exit-code semantics differ.'
+    _s2t_help_row APPROX      '-L'                    'tmux pipe-pane can log panes, but Screen startup/future-window logging policy differs.'
+    _s2t_help_row VARIES      '-Logfile file'         'Unsupported alone; with -L, pipe-pane is only an approximation.'
+    _s2t_help_row VARIES      '-m'                    'Forces a new session; inside tmux, the tmux nesting safeguard can make this non-equivalent.'
+    _s2t_help_row UNSUPPORTED '-O'                    'Legacy Screen VT-output mode is not mapped to tmux terminal-features automatically.'
+    _s2t_help_row VARIES      '-p window'             'Safe simple selectors are preserved; ambiguous/tmux-significant selectors produce a warning.'
+    _s2t_help_row UNSUPPORTED '-P'                    'Screen-managed authentication differs from tmux socket/server-access security.'
+    _s2t_help_row VARIES      '-q'                    'Quiet behavior is command-specific; Screen quiet-list exit codes are not tmux-compatible.'
+    _s2t_help_row VARIES      '-Q command'            'Queries are translated per command; some output is exact and some only approximate.'
+    _s2t_help_row APPROX      '-r [session]'          'Screen requires a detached session; tmux normally permits another client.'
+    _s2t_help_row APPROX      '-R / -RR [session]'    'Screen attach-or-create matching/state rules differ from tmux new-session -A.'
+    _s2t_help_row UNSUPPORTED '-s shell'              'Screen default-shell override is not applied as a tmux-global side effect.'
+    _s2t_help_row APPROX      '-S sockname'           'Screen allows duplicate PID.label sockets; tmux session names are unique.'
+    _s2t_help_row EXACT       '-t title'              'Initial window title is preserved; tmux format metacharacters are escaped literally.'
+    _s2t_help_row UNSUPPORTED '-T term'               'Screen virtual TERM selection is not silently converted into tmux terminal configuration.'
+    _s2t_help_row APPROX      '-U'                    'Screen changes client/output and new-window encoding semantics; tmux -u is not equivalent.'
+    _s2t_help_row UNSUPPORTED '-v / --version'        'A tmux-backed binary cannot truthfully report itself as native GNU Screen.'
+    _s2t_help_row MOOT        '-wipe [match]'         'tmux does not leave one stale filesystem socket per session.'
+    _s2t_help_row EXACT       '-x [session]'          'tmux natively supports multiple clients; safe unambiguous targets attach directly.'
+    _s2t_help_row VARIES      '-X command [args]'     'Screen commands are translated individually; see common command groups below.'
+    _s2t_help_heading 'Translator extensions'
+    _s2t_help_row EXTENSION   '--dry-run / --dryrun'  'Print the translated tmux argv or diagnostic instead of executing it.'
+    _s2t_help_row EXTENSION   '--help'                'Show this compatibility-aware help page.'
+    _s2t_help_heading 'Common -X / -Q command coverage'
+    _s2t_help_row EXACT       'stuff/select/title/kill' 'Direct pane/window operations for safe targets; literal data is protected from tmux format expansion.'
+    _s2t_help_row EXACT       'next/prev/other/quit'    'Straightforward tmux window/session operations for supported targets.'
+    _s2t_help_row EXACT       'setenv/unsetenv'         'Mapped to tmux environment operations in the selected session context.'
+    _s2t_help_row EXACT       'monitor/silence/vbell'   'Mapped to the corresponding tmux window/session monitoring options.'
+    _s2t_help_row EXACT       'copy/xon/xoff/reset'     'Mapped to tmux copy/input/reset operations where source semantics align.'
+    _s2t_help_row APPROX      'split/focus/resize'      'Screen display regions and tmux panes are different object models.'
+    _s2t_help_row APPROX      'hardcopy FILE / log'     'capture-pane/pipe-pane are useful substitutes but output/log policy differs.'
+    _s2t_help_row APPROX      'truecolor/altscreen'     'tmux has related capabilities/options, but scope and terminal model differ.'
+    _s2t_help_row APPROX      'layout/displays/info'    'Useful tmux inspection/layout commands exist; Screen object/output formats differ.'
+    _s2t_help_row APPROX      'bind/unbindall/ACL'       'tmux key tables and server access have broader server-wide scope.'
+    _s2t_help_row UNSUPPORTED 'source/chdir/auth'        'No unsafe config-language/backend/security emulation is attempted.'
+    _s2t_help_row UNSUPPORTED 'multiuser/writelock'      'Screen per-session/per-window security model is not recreated on top of tmux.'
+    _s2t_help_row UNSUPPORTED 'encoding/charset'         'Screen character-set machinery is not reprogrammed in the translator.'
+    _s2t_help_row UNSUPPORTED 'paste/removebuf'          'Screen register/exchange-file semantics differ from tmux server-wide buffers.'
+    _s2t_help_row EXTERNAL    '/dev/tty*, //telnet'      'Use a real serial/network client inside a tmux pane; tmux itself is not a serial/telnet engine.'
+    _s2t_help_heading 'Important tmux-underneath differences'
+    printf '%s\n' '  * tmux multi-client attachment is native and often simpler, but that makes Screen -r semantics only approximate.'
+    printf '%s\n' '  * tmux uses unique session names; Screen socket labels can repeat because the PID is part of the socket name.'
+    printf '%s\n' '  * tmux panes are PTYs; Screen display regions can show layers/windows without creating another PTY.'
+    printf '%s\n' '  * tmux paste buffers and key tables are server-wide, so the translator refuses to pretend they are Screen-session-local.'
+    printf '%s\n' '  * tmux has one server socket rather than one staleable socket per session, so Screen -wipe is unnecessary.'
+    printf '%s\n' '  * When an argument can be interpreted differently by Screen and tmux, translation stops with a specific WARNING.'
+    _s2t_help_heading 'Environment controls'
+    printf '%s\n' '  SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1  allow direct -S NAME creation when your deployment guarantees uniqueness.'
+    printf '%s\n' '  SCREEN2TMUX_COLOR=auto|always|never          control selective diagnostic/help color.'
+    printf '%s\n' '  NO_COLOR=1                                  disable ANSI color unconditionally.'
+    _s2t_help_heading 'Exit status'
+    printf '%s\n' '  0 exact/help success; 2 unsupported; 3 approximate/uncertain; 4 moot; 5 external; 64 invalid syntax.'
+    printf '%s\n' '  Exact non-dry-run mappings may return the underlying tmux command status.'
 }
 _s2t_invalid()
 {
@@ -556,7 +670,7 @@ screen2tmux()
     while [ "$#" -gt 0 ]; do
         case "$1" in
             --) shift; break ;;
-            --help) _s2t_unsupported "Screen --help describes Screen's CLI and command model; tmux -h describes a different program and is not output-compatible." "Run the native Screen help when Screen documentation is required, or run tmux -h explicitly for tmux help."; return $? ;;
+            --help) _s2t_help; return 0 ;;
             --version) _s2t_unsupported "Screen --version reports the GNU Screen version; tmux -V reports a different program and cannot preserve that result." "Run the native Screen binary for Screen's version, or tmux -V explicitly for tmux's version."; return $? ;;
             -list) _s2t_list=1; shift; if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then _s2t_session=$1; shift; fi; continue ;;
             -ls) _s2t_list=1; shift; if [ "$#" -gt 0 ] && [ "${1#-}" = "$1" ]; then _s2t_session=$1; shift; fi; continue ;;

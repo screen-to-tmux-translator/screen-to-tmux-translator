@@ -1,6 +1,6 @@
 # Source basis
 
-This release was built against the source archives supplied during the project work.
+This release was built against the source archives supplied during the project work. At 0.3.8 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
 
 ## GNU Screen
 
@@ -28,6 +28,8 @@ socket.c SHA-256:
 ```
 
 `docs/screen-5.0.2-command-manifest.tsv` was generated from the 189-entry `comm.c` command table. It records each command's flag/arity expression and whether it has `CAN_QUERY`.
+
+The top-level compatibility help option list is cross-checked against `screen.c:exit_with_usage()` from the supplied 5.0.2 snapshot. That usage table includes `-P` authentication as well as the standard `-4/-6`, `-A`, logging, attach/resume, UTF-8, wipe, and command-execution options. Translator-specific status annotations are added by this project and are not copied native Screen output.
 
 The nested-invocation behavior follows `screen.c`: when there is no `SocketMatch` (`-S` selector), `-m` is not set, and `$STY` is present, Screen sends `SendCreateMsg` to the existing Screen backend instead of starting another Screen session. The compatibility wrapper mirrors that rule using `$TMUX` and `tmux new-window`.
 
@@ -129,10 +131,10 @@ The source hashes identify the snapshots audited for this release. A future Scre
 
 For 0.3.0, `cmd-move-window.c` and `session.c` confirm that `move-window -r` calls `session_renumber_windows()`, which starts at the session's `base-index`. `options-table.c` declares `alternate-screen` with window/pane scope. These source facts underpin the new `APPROX` classifications.
 
-## Embedded tmux build integration (0.3.7)
+## Embedded tmux build integration (0.3.8)
 
 The compatibility integration keeps the upstream source footprint intentionally small. The packaged build workflow copies `tmux-integration/screen-to-tmux-translator` into the selected tmux source tree and applies `tmux-integration/tmux.c-screen-compat.patch` with zero fuzz. The patch changes only `tmux.c`: it includes the translator file and calls `screen_to_tmux_translate(&argc, &argv)` at the beginning of `main()`.
 
 The same minimal tmux.c patch was checked locally against the supplied `release_3.7d` source tree and the available newer development tmux source snapshot. For `build_tmux_latest.sh`, the source is downloaded from the official `master` branch when the script runs and the exact commit is recorded. If those known integration anchors stop matching, the script fails explicitly rather than inferring a new location.
 
-`tmux-integration/screen-to-tmux-translator` embeds the canonical POSIX translator source. For this package, the embedded shell payload was verified byte-for-byte against `bin/screen-function-source.sh`, and a strict C harness produced identical dry-run status/output for all 683 test placements.
+`tmux-integration/screen-to-tmux-translator` embeds the canonical POSIX translator source. For this package, the embedded shell payload is regenerated directly from `bin/screen-function-source.sh`. The canonical/minified/standalone interfaces remain byte-identical across the existing equivalence corpus, and the help path is part of that corpus. The embedded help identifies itself as compatibility help rather than native GNU Screen output.

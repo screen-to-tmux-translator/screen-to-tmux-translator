@@ -41,68 +41,236 @@ case "$JOBS" in ''|*[!0-9]*) printf 'ERROR: TMUX_BUILD_JOBS must be a positive i
 print_dependency_help()
 {
     cat >&2 <<'HELP'
-Install the normal tmux-from-Git build dependencies, then rerun this script.
-Common package sets:
-  Debian/Ubuntu: apt-get install build-essential git autoconf automake pkg-config bison libevent-dev libncurses-dev patch
-  Fedora/RHEL:   dnf install gcc make git autoconf automake pkgconf-pkg-config bison libevent-devel ncurses-devel patch
-  Alpine:        apk add build-base git autoconf automake pkgconf bison libevent-dev ncurses-dev patch
-  macOS/Homebrew: brew install autoconf automake pkg-config bison libevent ncurses
+Normal tmux-from-Git build dependency sets:
+  Debian/Ubuntu: build-essential git autoconf automake pkg-config bison libevent-dev libncurses-dev patch diffutils gawk sed grep tar coreutils
+  Fedora/RHEL:   gcc make git autoconf automake pkgconf-pkg-config bison libevent-devel ncurses-devel patch diffutils gawk sed grep tar coreutils
+  Alpine:        build-base git autoconf automake pkgconf bison libevent-dev ncurses-dev patch diffutils gawk sed grep tar coreutils
+  macOS/Homebrew: git autoconf automake pkg-config bison libevent ncurses diffutils gawk gnu-sed grep gnu-tar coreutils
 HELP
 }
 
-missing=
+MISSING_CMDS=
+MISSING_LIBS=
 need_cmd()
 {
     if ! command -v "$1" >/dev/null 2>&1; then
-        missing="$missing $1"
+        MISSING_CMDS="$MISSING_CMDS $1"
     fi
 }
 
-need_cmd sh
-need_cmd make
-need_cmd "$CC_BIN"
-need_cmd pkg-config
-need_cmd autoconf
-need_cmd automake
-need_cmd aclocal
-need_cmd autoreconf
-need_cmd patch
-need_cmd tar
-need_cmd awk
-need_cmd sed
-need_cmd grep
-need_cmd diff
-need_cmd cmp
-need_cmd ln
-if [ -z "${TMUX_SOURCE_DIR:-}" ]; then
-    need_cmd git
-fi
-if ! command -v yacc >/dev/null 2>&1 && ! command -v bison >/dev/null 2>&1; then
-    missing="$missing yacc-or-bison"
+check_dependencies()
+{
+    MISSING_CMDS=
+    MISSING_LIBS=
+    need_cmd sh
+    need_cmd make
+    need_cmd "$CC_BIN"
+    need_cmd pkg-config
+    need_cmd autoconf
+    need_cmd automake
+    need_cmd aclocal
+    need_cmd autoreconf
+    need_cmd patch
+    need_cmd tar
+    need_cmd awk
+    need_cmd sed
+    need_cmd grep
+    need_cmd diff
+    need_cmd cmp
+    need_cmd ln
+    if [ -z "${TMUX_SOURCE_DIR:-}" ]; then
+        need_cmd git
+    fi
+    if ! command -v yacc >/dev/null 2>&1 && ! command -v bison >/dev/null 2>&1; then
+        MISSING_CMDS="$MISSING_CMDS yacc-or-bison"
+    fi
+
+    if command -v pkg-config >/dev/null 2>&1; then
+        if pkg-config --exists 'libevent_core >= 2' 2>/dev/null || pkg-config --exists 'libevent >= 2' 2>/dev/null; then
+            :
+        else
+            MISSING_LIBS="$MISSING_LIBS libevent-2.x-development"
+        fi
+        if pkg-config --exists tinfow 2>/dev/null || pkg-config --exists tinfo 2>/dev/null || \
+           pkg-config --exists ncursesw 2>/dev/null || pkg-config --exists ncurses 2>/dev/null; then
+            :
+        else
+            MISSING_LIBS="$MISSING_LIBS ncurses/terminfo-development"
+        fi
+    else
+        # pkg-config itself is missing, so the development-library probes cannot
+        # be trusted. Include both normal tmux library dependencies in the
+        # installation request and verify them after package installation.
+        MISSING_LIBS="$MISSING_LIBS libevent-2.x-development ncurses/terminfo-development"
+    fi
+}
+
+have_missing_dependencies()
+{
+    [ -n "$MISSING_CMDS$MISSING_LIBS" ]
+}
+
+detect_package_manager()
+{
+    if [ -n "${SCREEN2TMUX_PACKAGE_MANAGER:-}" ]; then
+        case "$SCREEN2TMUX_PACKAGE_MANAGER" in
+            apt-get|dnf|yum|apk|brew) PACKAGE_MANAGER=$SCREEN2TMUX_PACKAGE_MANAGER ;;
+            *)
+                printf 'ERROR: unsupported SCREEN2TMUX_PACKAGE_MANAGER=%s\n' "$SCREEN2TMUX_PACKAGE_MANAGER" >&2
+                return 1
+                ;;
+        esac
+        command -v "$PACKAGE_MANAGER" >/dev/null 2>&1 || {
+            printf 'ERROR: requested package manager is not installed: %s\n' "$PACKAGE_MANAGER" >&2
+            return 1
+        }
+        return 0
+    fi
+    for _pm in apt-get dnf yum apk brew; do
+        if command -v "$_pm" >/dev/null 2>&1; then
+            PACKAGE_MANAGER=$_pm
+            return 0
+        fi
+    done
+    PACKAGE_MANAGER=
+    return 1
+}
+
+package_list_for_manager()
+{
+    case "$1" in
+        apt-get) printf '%s\n' 'build-essential git autoconf automake pkg-config bison libevent-dev libncurses-dev patch diffutils gawk sed grep tar coreutils' ;;
+        dnf|yum) printf '%s\n' 'gcc make git autoconf automake pkgconf-pkg-config bison libevent-devel ncurses-devel patch diffutils gawk sed grep tar coreutils' ;;
+        apk)     printf '%s\n' 'build-base git autoconf automake pkgconf bison libevent-dev ncurses-dev patch diffutils gawk sed grep tar coreutils' ;;
+        brew)    printf '%s\n' 'git autoconf automake pkg-config bison libevent ncurses diffutils gawk gnu-sed grep gnu-tar coreutils' ;;
+        *) return 1 ;;
+    esac
+}
+
+run_privileged()
+{
+    if [ "$(id -u 2>/dev/null || printf 1)" -eq 0 ] 2>/dev/null; then
+        "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        printf 'ERROR: installing packages with %s requires root privileges or sudo.\n' "$PACKAGE_MANAGER" >&2
+        return 1
+    fi
+}
+
+print_missing_dependencies()
+{
+    printf 'Missing tmux build dependencies were detected.\n' >&2
+    if [ -n "$MISSING_CMDS" ]; then
+        printf '  command(s):%s\n' "$MISSING_CMDS" >&2
+    fi
+    if [ -n "$MISSING_LIBS" ]; then
+        printf '  development library/libraries:%s\n' "$MISSING_LIBS" >&2
+    fi
+}
+
+confirm_dependency_install()
+{
+    case "${SCREEN2TMUX_AUTO_INSTALL:-ask}" in
+        1|y|Y|yes|YES|Yes) return 0 ;;
+        0|n|N|no|NO|No)
+            printf 'Dependency installation declined; build cancelled.\n' >&2
+            return 1
+            ;;
+        ask|'') ;;
+        *)
+            printf 'ERROR: SCREEN2TMUX_AUTO_INSTALL must be ask, yes, or no.\n' >&2
+            return 1
+            ;;
+    esac
+
+    printf 'Install the missing build software automatically and continue? [y/N] ' >&2
+    _answer=
+    if [ -r /dev/tty ]; then
+        IFS= read -r _answer </dev/tty || _answer=
+    else
+        IFS= read -r _answer || _answer=
+    fi
+    case "$_answer" in
+        y|Y|yes|YES|Yes) return 0 ;;
+        *)
+            printf 'Dependency installation declined; build cancelled.\n' >&2
+            return 1
+            ;;
+    esac
+}
+
+install_build_dependencies()
+{
+    _packages=$(package_list_for_manager "$PACKAGE_MANAGER") || return 1
+    printf 'Detected package manager: %s\n' "$PACKAGE_MANAGER" >&2
+    printf 'Packages requested: %s\n' "$_packages" >&2
+    printf 'Already-installed packages may simply be reported as current.\n' >&2
+
+    case "$PACKAGE_MANAGER" in
+        apt-get)
+            run_privileged apt-get update
+            # Intentional word splitting: _packages is a trusted internal list.
+            # shellcheck disable=SC2086
+            run_privileged apt-get install -y $_packages
+            ;;
+        dnf)
+            # shellcheck disable=SC2086
+            run_privileged dnf install -y $_packages
+            ;;
+        yum)
+            # shellcheck disable=SC2086
+            run_privileged yum install -y $_packages
+            ;;
+        apk)
+            # shellcheck disable=SC2086
+            run_privileged apk add $_packages
+            ;;
+        brew)
+            # Homebrew is intentionally never run through sudo.
+            # shellcheck disable=SC2086
+            brew install $_packages
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+check_dependencies
+if have_missing_dependencies; then
+    print_missing_dependencies
+    if ! detect_package_manager; then
+        printf 'ERROR: no supported package manager was detected for automatic installation.\n' >&2
+        print_dependency_help
+        exit 2
+    fi
+    _packages=$(package_list_for_manager "$PACKAGE_MANAGER")
+    printf 'Automatic installer can use %s with: %s\n' "$PACKAGE_MANAGER" "$_packages" >&2
+    if ! confirm_dependency_install; then
+        print_dependency_help
+        exit 2
+    fi
+    if ! install_build_dependencies; then
+        printf 'ERROR: automatic dependency installation failed.\n' >&2
+        print_dependency_help
+        exit 2
+    fi
+    printf 'Rechecking build dependencies after installation ...\n' >&2
+    check_dependencies
+    if have_missing_dependencies; then
+        print_missing_dependencies
+        printf 'ERROR: dependencies are still incomplete after package installation.\n' >&2
+        if [ "$PACKAGE_MANAGER" = brew ] && ! command -v "$CC_BIN" >/dev/null 2>&1; then
+            printf 'On macOS, install the Xcode Command Line Tools (xcode-select --install) to provide a C compiler.\n' >&2
+        fi
+        exit 2
+    fi
+    printf 'Build dependencies are now satisfied; continuing.\n' >&2
 fi
 
-if [ -n "$missing" ]; then
-    printf 'ERROR: missing build command(s):%s\n' "$missing" >&2
-    print_dependency_help
-    exit 2
-fi
-
-# Check the two mandatory development libraries before spending time cloning.
-if pkg-config --exists 'libevent_core >= 2' 2>/dev/null || pkg-config --exists 'libevent >= 2' 2>/dev/null; then
-    :
-else
-    printf 'ERROR: libevent 2.x development files were not found by pkg-config.\n' >&2
-    print_dependency_help
-    exit 2
-fi
-
-if pkg-config --exists tinfow 2>/dev/null || pkg-config --exists tinfo 2>/dev/null || \
-   pkg-config --exists ncursesw 2>/dev/null || pkg-config --exists ncurses 2>/dev/null; then
-    :
-else
-    printf 'ERROR: ncurses/terminfo development files were not found by pkg-config.\n' >&2
-    print_dependency_help
-    exit 2
+if [ "${SCREEN2TMUX_DEPENDENCY_CHECK_ONLY:-0}" = 1 ]; then
+    printf 'Dependency check complete.\n'
+    exit 0
 fi
 
 [ -r "$INTEGRATION" ] || { printf 'ERROR: missing integration source: %s\n' "$INTEGRATION" >&2; exit 2; }

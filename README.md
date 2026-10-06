@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.7
+# screen-to-tmux-translator 0.3.8
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -63,6 +63,12 @@ An exact mapping prints the tmux argv instead of executing it:
 
 Control bytes are escaped in dry-run output so they cannot corrupt the terminal or log. For example a carriage return is shown as `\r`.
 
+## Compatibility help
+
+`screen --help` is a translator-owned help page, not tmux's help and not a byte-for-byte copy of native GNU Screen help. It follows the GNU Screen 5.0.x option surface and annotates each option/command family with `EXACT`, `APPROX`, `UNSUPPORTED`, `MOOT`, `EXTERNAL`, or `VARIES`. It also explains the important differences introduced by tmux's session/client/pane model and documents translator extensions such as `--dry-run`/`--dryrun`.
+
+Only semantic tokens and headings are colorized; descriptions remain in the normal terminal color. `SCREEN2TMUX_COLOR=never` or `NO_COLOR=1` disables color. The same help is produced by the canonical source function, minified source function, standalone `screen.sh`, and the patched tmux hardlink named `screen`.
+
 ## Translation classes and exit status
 
 | Status | Class | Meaning |
@@ -97,7 +103,7 @@ This is intentionally a stop condition rather than a best-effort rewrite.
 
 - `screen -U` is now `APPROX`, not `tmux -u` `EXACT`. Screen `-U` both declares the display UTF-8 capable and sets UTF-8 as the default encoding for new Screen windows; tmux `-u` only forces its client UTF-8 assumption. No automatic command is executed.
 - Screen `-A` is treated as `APPROX` when it actually participates in an attach operation: Screen explicitly adapts all windows to the attaching terminal and tmux has no equivalent adapt-all-windows flag. On non-attach paths, where Screen does not use `adaptflag`, the option is semantically inert and does not force an approximation.
-- `screen -v`, `screen --version`, `screen --help`, and internal `version` are `UNSUPPORTED` as compatibility translations because tmux would report tmux help/version text, not Screen output.
+- `screen -v`, `screen --version`, and internal `version` remain `UNSUPPORTED` because a tmux-backed binary cannot truthfully report itself as native GNU Screen. `screen --help` is now translator-owned and returns a compatibility-aware Screen 5.0.x help page instead of tmux help.
 - Attached nested `screen -m` inside tmux is now `APPROX`. tmux deliberately rejects an attached nested `new-session` while `$TMUX` is set unless the operator explicitly unsets it; the translator no longer tries to bypass that safeguard.
 - `screen ... -X screen N` and `N:title` are now `APPROX`: Screen treats `N` as a `StartAt` lower bound and searches for the first free slot at or above it, whereas tmux `new-window -t :N` addresses the exact index. The translator does not emulate Screen's free-slot search.
 - tmux-format expansion is neutralized where source-confirmed name arguments are format-expanded. Literal `#` in Screen session/window names and titles becomes tmux `##` for `new-session -s/-n`, `new-window -n`, `rename-session`, and `rename-window`.
@@ -148,7 +154,7 @@ sh build_tmux_latest.sh
 
 `build_tmux_3.7d.sh` downloads the official `release_3.7d` branch. `build_tmux_latest.sh` downloads the official `master` branch at the commit current when the script is run. Both scripts record the exact source commit in `BUILD-INFO`.
 
-Before downloading, the shared builder checks for the normal tmux-from-Git prerequisites: a C compiler and make, Git, Autoconf/Automake, yacc or bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities. If something is missing it stops before the build and prints common Debian/Ubuntu, Fedora/RHEL, Alpine, and Homebrew package suggestions.
+Before downloading, the shared builder checks for the normal tmux-from-Git prerequisites: a C compiler and make, Git, Autoconf/Automake, yacc or bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities. If something is missing, the builder reports the missing commands/libraries, detects `apt-get`, `dnf`, `yum`, `apk`, or Homebrew, shows the package set, and asks `Install the missing build software automatically and continue? [y/N]`. `y`/`yes` installs and then rechecks dependencies before continuing; `n`, Enter, or any other answer cancels the build without installing anything. Set `SCREEN2TMUX_AUTO_INSTALL=yes` or `no` to pre-answer the prompt for automation.
 
 Each driver downloads one source commit, creates two independent clean snapshots, then performs two complete Autotools/configure/make/install builds:
 
@@ -182,6 +188,7 @@ The build scripts accept a few useful overrides:
 TMUX_BUILD_JOBS=8 sh build_tmux_3.7d.sh
 SCREEN2TMUX_BUILD_ROOT=/var/tmp/screen2tmux-builds sh build_tmux_latest.sh
 TMUX_GIT_URL=https://github.com/tmux/tmux.git sh build_tmux_latest.sh
+SCREEN2TMUX_AUTO_INSTALL=yes sh build_tmux_3.7d.sh
 ```
 
 `TMUX_SOURCE_DIR=/path/to/an/existing/tmux/tree` is also available as an offline/test override; normal use downloads from GitHub.
@@ -207,7 +214,7 @@ Current packaged results:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-77/77 focused semantic regression tests PASS
+83/83 focused semantic regression tests PASS
 683/683 canonical/minified source-placement comparisons PASS
 228/228 three-way command-case comparisons PASS
 1/1 three-way normal-execution stub comparison PASS
@@ -270,7 +277,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.7/
+screen-to-tmux-translator-0.3.8/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

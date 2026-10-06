@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.8 — 2026-10-05
+
+- Build dependency handling is now interactive by default. When required commands or libevent/ncurses development files are missing, `build_tmux_3.7d.sh` and `build_tmux_latest.sh` detect a supported package manager (`apt-get`, `dnf`, `yum`, `apk`, or Homebrew), display the package set, and ask whether to install it automatically. Yes installs and rechecks dependencies before continuing; no/default cancels without modifying the system.
+- Added `SCREEN2TMUX_AUTO_INSTALL=ask|yes|no` for interactive/automated dependency policy and `SCREEN2TMUX_PACKAGE_MANAGER` as an explicit package-manager override. Root or `sudo` is used only for system package managers; Homebrew is never run through `sudo`.
+- Added `SCREEN2TMUX_DEPENDENCY_CHECK_ONLY=1` as a test/diagnostic mode that exits after the dependency phase. Focused regressions verify both decline behavior and the automatic-install/recheck path using a fake `apt-get`, so the test suite never installs packages.
+- `screen --help` is now a successful translator-owned compatibility help page. It follows the GNU Screen 5.0.x option surface, documents `--dry-run`/`--dryrun`, annotates options and common `-X`/`-Q` command families with translation classes, and explains tmux-underneath differences such as multi-client attach behavior, unique session names, pane-vs-region semantics, server-wide buffers/key tables, and the lack of stale per-session sockets.
+- Help colorization is selective: headings and status tokens are colored, not entire rows. `SCREEN2TMUX_COLOR` and `NO_COLOR` use the same policy as diagnostics/tests.
+- Changed the top-level `--help` test case from `UNSUPPORTED` to successful compatibility help while leaving native Screen version reporting (`-v`/`--version`) unsupported. Internal Screen `-X help` remains an approximation of Screen key-binding help and is unchanged.
+- Regenerated the minified source and embedded tmux translator from the canonical 0.3.8 engine. The full 683 CLI/oracle matrix and 912 interface-equivalence comparisons remain clean; focused regressions are now 83/83.
+
 ## 0.3.7 — 2026-10-05
 
 - Added `build_tmux_3.7d.sh`. It downloads the `release_3.7d` branch from the official tmux Git repository, verifies required build tools/libraries, snapshots one exact commit twice, builds an untouched original tree from scratch, then independently builds a Screen-compat patched tree from scratch.

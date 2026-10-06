@@ -87,7 +87,7 @@ The runner's terminal stream is colorized only after the corresponding plain tex
 
 The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive terminal. `always` forces it and `never` disables it. `NO_COLOR` disables all color and takes precedence. Test components launched by `run-tests.sh` receive `NO_COLOR=1`; the parent runner then selectively colors its terminal copy. Standalone test scripts honor the same console color policy directly while forcing translator output captured into their detailed log to plain text.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.7.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.8.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` records interface parity. The canonical and minified source files are compared byte-for-byte with identical exit status across all 683 first/middle/last dry-run placements. All 228 base Screen command cases are then compared three ways against the standalone `bin/screen.sh` executable, and one normal-execution path is compared using a private stub `tmux`.
 
@@ -127,20 +127,22 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 - duplicate Screen `-S` labels versus unique tmux session names and the explicit unique-name opt-in;
 - Screen `-U` versus tmux `-u` partial semantics;
 - Screen `-A` versus tmux client/window sizing;
-- version/help output non-equivalence;
+- native version output non-equivalence and translator-owned compatibility `--help`;
 - nested attached `-m` and tmux's `$TMUX` safeguard;
 - literal tmux-format escaping in names/titles and literal `-Q echo`;
 - Screen `screen N` StartAt semantics;
 - explicit uncertain-argument warnings for incompatible target syntax;
 - selective diagnostic color tokens and `NO_COLOR` precedence;
-- sourceability/direct-execution behavior of both canonical and minified function-source files.
+- sourceability/direct-execution behavior of both canonical and minified function-source files;
+- interactive build-dependency decline and automatic-install/recheck control paths without performing real package installation;
+- selective compatibility-help color/status content.
 
 ## Current packaged result
 
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       77 PASS, 0 FAIL
+focused regressions:       83 PASS, 0 FAIL
 source/minified parity:     683 PASS, 0 FAIL
 three-way base cases:       228 PASS, 0 FAIL
 three-way execution stub:     1 PASS, 0 FAIL
@@ -159,7 +161,7 @@ live tmux behavior:         optional; skipped if tmux is unavailable
 
 If tmux is not installed, this layer reports `SKIP` and exits successfully; the source-derived syntax oracle and translator regressions still run.
 
-## Built tmux hardlink layer (0.3.7)
+## Built tmux hardlink layer (0.3.8)
 
 The repository includes two build drivers:
 
@@ -199,7 +201,7 @@ Every additional log is added to the same per-run ZIP as the five base logs.
 
 ## Build dependency and patch-safety checks
 
-The shared build driver performs dependency checks before downloading source. It requires the normal tmux-from-Git toolchain and mandatory libraries: compiler, make, Git, Autoconf/Automake, yacc/bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities.
+The shared build driver performs dependency checks before downloading source. It requires the normal tmux-from-Git toolchain and mandatory libraries: compiler, make, Git, Autoconf/Automake, yacc/bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities. If requirements are missing, it detects a supported package manager, shows the proposed package set, and asks before installing. `SCREEN2TMUX_AUTO_INSTALL=yes|no` can pre-answer the prompt; after a successful install the complete dependency probe is rerun before any download/build begins.
 
 The patch is intentionally non-adaptive. `patch --fuzz=0` must find the two known `tmux.c` integration locations. If a future master changes enough that this no longer applies, the build stops and reports the branch/commit rather than inserting code heuristically.
 

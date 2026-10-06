@@ -1,4 +1,4 @@
-# Source-derived Screen CLI cases for screen-to-tmux-translator 0.3.7.
+# Source-derived Screen CLI cases for screen-to-tmux-translator 0.3.8.
 # This file is sourced by test-screen-cli.sh, which defines case_.
 # Syntax: case_ ID EXPECTED "description" [screen arguments...]
 # EXPECTED: exact | approx | moot | external | unsupported | invalid
@@ -244,7 +244,7 @@ case_ O022 unsupported "virtual terminal type" -T screen-256color
 case_ O023 approx      "UTF-8 mode" -U
 case_ O024 unsupported "version short" -v
 case_ O025 unsupported "version long" --version
-case_ O026 unsupported "help" --help
+case_ O026 exact       "translator compatibility help" --help
 
 # Native command-mode informational mappings
 case_ N001 approx      "list attached displays" -S work -X displays
