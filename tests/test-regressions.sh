@@ -276,6 +276,47 @@ expect_selective_color "APPROX diagnostic colorizes only its class token" 3 "$YE
 expect_selective_color "UNSUPPORTED diagnostic colorizes only its class token" 2 "$RED_UNSUPPORTED" "screen2tmux: " --dry-run -c /tmp/my-screenrc
 expect_no_color_override "NO_COLOR overrides forced color without changing semantics" 3 --dry-run -L
 
+CURRENT_NAME='standalone screen.sh accepts --dryrun alias'
+OUT=$(NO_COLOR=1 "$PROJECT/bin/screen.sh" --dryrun -d -m bash 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='standalone screen.sh executes tmux by default'
+_s2t_stub_dir=${TMPDIR:-/tmp}/screen2tmux-wrapper-$$
+rm -rf "$_s2t_stub_dir"
+mkdir -p "$_s2t_stub_dir"
+cat > "$_s2t_stub_dir/tmux" <<'EOF_STUB'
+#!/bin/sh
+printf 'TMUX_EXEC'
+for a do printf ' <%s>' "$a"; done
+printf '\n'
+EOF_STUB
+chmod 755 "$_s2t_stub_dir/tmux"
+OUT=$(PATH="$_s2t_stub_dir:$PATH" NO_COLOR=1 "$PROJECT/bin/screen.sh" -d -m bash 2>&1)
+RC=$?
+rm -rf "$_s2t_stub_dir"
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && [ "$OUT" = 'TMUX_EXEC <new-session> <-d> <bash>' ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
 CR=$(printf '\r')
 CURRENT_NAME='dry-run renders carriage return safely'
 capture -S work -p 0 -X stuff "hello${CR}" --dry-run

@@ -1,14 +1,14 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.3.3
+# screen-to-tmux-translator 0.3.4
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
 #   screen2tmux ...     explicit translator entry point
 #   screen ...          drop-in function (unless SCREEN2TMUX_NO_SCREEN_FUNCTION=1)
 #
-# --dry-run may appear anywhere after the function name. It is removed before
-# Screen parsing and causes the equivalent tmux command (or unsupported message)
-# to be printed instead of executed.
+# --dry-run or --dryrun may appear anywhere after the function name. They are
+# removed before Screen parsing and cause the equivalent tmux command (or
+# unsupported message) to be printed instead of executed.
 #
 # Exit status:
 #   0   EXACT: safely translated (executed, or printed in dry-run mode)
@@ -24,12 +24,12 @@
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.3.3
+SCREEN2TMUX_VERSION=0.3.4
 
 _s2t_shell_quote()
 {
     # Shell-safe single-quoted word used internally to rebuild argv after
-    # removing --dry-run.  This preserves embedded control characters.
+    # removing --dry-run/--dryrun.  This preserves embedded control characters.
     _s2t_q=$(printf '%s' "$1" | sed "s/'/'\\\\''/g")
     printf "'%s'" "$_s2t_q"
 }
@@ -582,11 +582,12 @@ screen2tmux()
     _s2t_dry_run=0
     _s2t_rebuilt=
     for _s2t_a do
-        if [ "$_s2t_a" = "--dry-run" ]; then
-            _s2t_dry_run=1
-        else
-            _s2t_rebuilt="$_s2t_rebuilt $(_s2t_shell_quote "$_s2t_a")"
-        fi
+        case "$_s2t_a" in
+            --dry-run|--dryrun) _s2t_dry_run=1 ;;
+            *)
+                _s2t_rebuilt="$_s2t_rebuilt $(_s2t_shell_quote "$_s2t_a")"
+                ;;
+        esac
     done
     eval "set -- $_s2t_rebuilt"
     if [ "${1-}" = "screen" ]; then shift; fi

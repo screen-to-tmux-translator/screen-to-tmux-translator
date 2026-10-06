@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.4 — 2026-10-04
+
+- Added `bin/screen.sh` as a standalone executable front-end that behaves like the `screen` command and delegates all translation semantics to `screen-to-tmux.sh`.
+- Added `--dryrun` as an alias for `--dry-run`; either spelling may appear anywhere in the Screen argument vector and prints the translated tmux command instead of executing it.
+- Kept `screen-to-tmux.sh` as the sourceable translation engine rather than duplicating its implementation in the command front-end.
+- Added regressions proving `screen.sh --dryrun` prints the expected command and that `screen.sh` executes `tmux` by default when the translation is `EXACT`.
+- Translation semantics are otherwise unchanged from 0.3.3.
+
 ## 0.3.3 — 2026-10-04
 
 - Restored interactive ANSI colorization without coloring complete lines.

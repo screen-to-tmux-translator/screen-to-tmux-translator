@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.3
+# screen-to-tmux-translator 0.3.4
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -10,6 +10,14 @@ It defines:
 The translator executes only mappings classified as **EXACT**. When a tmux command is merely similar, broader in scope, depends on an external program, or the Screen operation is unnecessary under tmux's architecture, the translator explains that instead of silently executing a misleading substitute.
 
 ## Load it
+
+For a standalone command that behaves like `screen`, use:
+
+```sh
+./bin/screen.sh [Screen arguments ...]
+```
+
+For shell-function use, source the translation engine:
 
 ```sh
 . ./bin/screen-to-tmux.sh
@@ -27,11 +35,11 @@ export SCREEN2TMUX_NO_SCREEN_FUNCTION
 
 ## Dry run
 
-`--dry-run` may appear anywhere in the Screen argument vector:
+`--dry-run` or `--dryrun` may appear anywhere in the Screen argument vector:
 
 ```sh
 screen --dry-run -S work -X stuff hello
-screen -S work --dry-run -X stuff hello
+screen -S work --dryrun -X stuff hello
 screen -S work -X stuff hello --dry-run
 ```
 
@@ -136,7 +144,7 @@ Current packaged results:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-71/71 focused semantic regression tests PASS
+73/73 focused semantic regression tests PASS
 live tmux behavior tests run when a tmux executable is available
 ```
 
@@ -194,13 +202,14 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.3/
+screen-to-tmux-translator-0.3.4/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
 ├── MANIFEST.sha256
 ├── bin/
-│   └── screen-to-tmux.sh
+│   ├── screen-to-tmux.sh
+│   └── screen.sh
 ├── docs/
 │   ├── SOURCE-BASIS.md
 │   ├── TESTING.md
