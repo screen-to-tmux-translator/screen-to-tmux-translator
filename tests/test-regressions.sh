@@ -427,7 +427,10 @@ RC=$?
     printf '%s\n' "$OUT"
     printf '%s\n' 'OUTPUT_DISPLAY_END'
 } >> "$REG_LOG"
-if [ "$RC" -eq 2 ] && printf '%s\n' "$OUT" | grep -F 'Dependency installation declined; build cancelled.' >/dev/null 2>&1; then
+if [ "$RC" -eq 2 ] && \
+   printf '%s\n' "$OUT" | grep -F 'Dependency installation declined; build cancelled.' >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'If you do not have administrator rights, ask an administrator to run:' >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'sudo apt-get update && sudo apt-get install -y' >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
@@ -442,9 +445,16 @@ cat > "$_DEP_TMP/bin/apt-get" <<'EOF'
 printf '%s\n' "$*" >> "${SCREEN2TMUX_FAKE_APT_LOG:?}"
 exit 0
 EOF
-chmod +x "$_DEP_TMP/bin/apt-get"
+cat > "$_DEP_TMP/bin/sudo" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$*" >> "${SCREEN2TMUX_FAKE_SUDO_LOG:?}"
+exec "$@"
+EOF
+chmod +x "$_DEP_TMP/bin/apt-get" "$_DEP_TMP/bin/sudo"
 : > "$_DEP_TMP/apt.log"
+: > "$_DEP_TMP/sudo.log"
 OUT=$(PATH="$_DEP_TMP/bin:$PATH" SCREEN2TMUX_FAKE_APT_LOG="$_DEP_TMP/apt.log" \
+    SCREEN2TMUX_FAKE_SUDO_LOG="$_DEP_TMP/sudo.log" \
     CC=definitely-missing-screen2tmux-cc SCREEN2TMUX_PACKAGE_MANAGER=apt-get \
     SCREEN2TMUX_AUTO_INSTALL=yes SCREEN2TMUX_DEPENDENCY_CHECK_ONLY=1 \
     sh "$PROJECT/build_tmux_3.7d.sh" 2>&1)
@@ -459,9 +469,14 @@ RC=$?
     printf '%s\n' 'FAKE_APT_BEGIN'
     cat "$_DEP_TMP/apt.log"
     printf '%s\n' 'FAKE_APT_END'
+    printf '%s\n' 'FAKE_SUDO_BEGIN'
+    cat "$_DEP_TMP/sudo.log"
+    printf '%s\n' 'FAKE_SUDO_END'
 } >> "$REG_LOG"
 if [ "$RC" -eq 2 ] && grep -F 'update' "$_DEP_TMP/apt.log" >/dev/null 2>&1 && \
    grep -F 'install -y' "$_DEP_TMP/apt.log" >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'If you do not have administrator rights, ask an administrator to run:' >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'sudo apt-get update && sudo apt-get install -y' >/dev/null 2>&1 && \
    printf '%s\n' "$OUT" | grep -F 'Rechecking build dependencies after installation' >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else

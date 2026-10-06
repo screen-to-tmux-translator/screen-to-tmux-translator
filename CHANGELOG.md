@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.9 — 2026-10-06
+
+- Fixed the build-dependency automatic-install regression so it supplies a fake `sudo` wrapper as well as a fake package manager. Running the test suite as an unprivileged user can no longer reach the real `sudo`, prompt for a password, or fail because the test runner lacks administrative rights.
+- Improved missing-build-dependency diagnostics. The builder already names the missing commands/development libraries; it now also prints a copyable package-manager command that a user can give an administrator (`sudo apt-get update && sudo apt-get install ...` on Debian/Ubuntu, with equivalent `dnf`, `yum`, and `apk` forms). Homebrew guidance remains unprivileged.
+- Clarified the interactive installer prompt so users are told in advance that automatic installation through a system package manager may invoke `sudo`.
+- Added regressions requiring the administrator command to appear in both declined and automatic-install dependency paths.
+
 ## 0.4.8 — 2026-10-06
 
 - Colorized the complete right-hand mapping result with the same semantic class color used by the case label. `UNSUPPORTED` results are red, `MOOT` results cyan, executable/advisory `APPROX` results yellow, `EXTERNAL` results magenta, `INVALID` results red, and exact tmux mappings green.

@@ -80,6 +80,37 @@ Normal tmux-from-Git build dependency sets:
 HELP
 }
 
+print_dependency_install_command()
+{
+    _packages=$(package_list_for_manager "$PACKAGE_MANAGER") || return 1
+    case "$PACKAGE_MANAGER" in
+        apt-get)
+            printf 'If you do not have administrator rights, ask an administrator to run:\n' >&2
+            printf '  sudo apt-get update && sudo apt-get install -y %s\n' "$_packages" >&2
+            printf '  (or run the same apt-get commands directly from a root shell)\n' >&2
+            ;;
+        dnf)
+            printf 'If you do not have administrator rights, ask an administrator to run:\n' >&2
+            printf '  sudo dnf install -y %s\n' "$_packages" >&2
+            printf '  (or run dnf directly from a root shell)\n' >&2
+            ;;
+        yum)
+            printf 'If you do not have administrator rights, ask an administrator to run:\n' >&2
+            printf '  sudo yum install -y %s\n' "$_packages" >&2
+            printf '  (or run yum directly from a root shell)\n' >&2
+            ;;
+        apk)
+            printf 'If you do not have administrator rights, ask an administrator to run:\n' >&2
+            printf '  sudo apk add %s\n' "$_packages" >&2
+            printf '  (or run apk directly from a root shell)\n' >&2
+            ;;
+        brew)
+            printf 'Install the missing Homebrew build dependencies with:\n' >&2
+            printf '  brew install %s\n' "$_packages" >&2
+            ;;
+    esac
+}
+
 MISSING_CMDS=
 MISSING_LIBS=
 need_cmd() { command -v "$1" >/dev/null 2>&1 || MISSING_CMDS="$MISSING_CMDS $1"; }
@@ -139,7 +170,7 @@ confirm_dependency_install()
         ask|'') : ;;
         *) printf 'ERROR: SCREEN2TMUX_AUTO_INSTALL must be ask, yes, or no.\n' >&2; return 1 ;;
     esac
-    printf 'Install the missing build software automatically and continue? [y/N] ' >&2
+    printf 'Install the missing build software automatically and continue? This may invoke sudo. [y/N] ' >&2
     _answer=
     if [ -r /dev/tty ]; then IFS= read -r _answer </dev/tty || _answer=; else IFS= read -r _answer || _answer=; fi
     case "$_answer" in y|Y|yes|YES|Yes) return 0 ;; *) printf 'Dependency installation declined; build cancelled.\n' >&2; return 1 ;; esac
@@ -163,6 +194,8 @@ if have_missing_dependencies; then
     if ! detect_package_manager; then printf 'ERROR: no supported package manager was detected for automatic installation.\n' >&2; print_dependency_help; exit 2; fi
     _packages=$(package_list_for_manager "$PACKAGE_MANAGER")
     printf 'Automatic installer can use %s with: %s\n' "$PACKAGE_MANAGER" "$_packages" >&2
+    print_dependency_install_command
+    printf 'After the missing software is installed, rerun the same build command.\n' >&2
     if ! confirm_dependency_install; then print_dependency_help; exit 2; fi
     if ! install_build_dependencies; then printf 'ERROR: automatic dependency installation failed.\n' >&2; print_dependency_help; exit 2; fi
     printf 'Rechecking build dependencies after installation ...\n' >&2

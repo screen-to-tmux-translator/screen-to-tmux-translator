@@ -98,7 +98,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.8.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.9.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, both one-line source variants, standalone self-contained `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with full paths. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 
@@ -229,7 +229,9 @@ If an explicitly requested compiled interface is absent, the equivalence compone
 
 ## Build dependency and patch-safety checks
 
-The shared build driver performs dependency checks before downloading source. It requires the normal tmux-from-Git toolchain and mandatory libraries: compiler, make, Git, Autoconf/Automake, yacc/bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities. If requirements are missing, it detects a supported package manager, shows the proposed package set, and asks before installing. `SCREEN2TMUX_AUTO_INSTALL=yes|no` can pre-answer the prompt; after a successful install the complete dependency probe is rerun before any download/build begins.
+The shared build driver performs dependency checks before downloading source. It requires the normal tmux-from-Git toolchain and mandatory libraries: compiler, make, Git, Autoconf/Automake, yacc/bison, `pkg-config`, libevent 2.x development files, ncurses/terminfo development files, `patch`, and standard shell utilities. If requirements are missing, it names the missing commands/libraries, detects a supported package manager, prints the complete package set, and prints a copyable administrator command (`sudo apt-get ...`, `sudo dnf ...`, `sudo yum ...`, or `sudo apk ...`; Homebrew is unprivileged). It then asks before attempting automatic installation, with an explicit warning that a system package manager may invoke `sudo`. `SCREEN2TMUX_AUTO_INSTALL=yes|no` can pre-answer the prompt; after a successful install the complete dependency probe is rerun before any download/build begins.
+
+The automatic-install regression is fully isolated: it supplies both a fake package manager and a fake `sudo` wrapper, so `sh run-tests.sh` never contacts the real package manager or asks the person running the tests for a sudo password.
 
 The patch is intentionally non-adaptive. `patch --fuzz=0` must find the two known `tmux.c` integration locations. If a future master changes enough that this no longer applies, the build stops and reports the branch/commit rather than inserting code heuristically.
 
