@@ -1,6 +1,6 @@
 # Source basis
 
-**0.4.9 note:** source provenance remains explicit and reproducible. The supplied tmux master ZIP is identified by both its archive SHA-256 and GitHub archive commit comment, and the default tmux 3.7d build no longer follows the moving `release_3.7d` branch. It is pinned to the exact commit recorded by the supplied 3.7d GitHub ZIP. The 0.4.7 release added translator-owned `--strict`; 0.4.9 extends strict mode to executable `EXTERNAL` helper mappings and adds concrete tmux-launched `telnet`/`picocom` startup substitutions.
+**0.4.10 note:** source provenance is explicit at each build. The supplied tmux master ZIP is identified by both its archive SHA-256 and GitHub archive commit comment. Bare build commands now select tmux 3.7c and resolve only the `refs/tags/3.7c` release tag (or an explicit `SCREEN2TMUX_TMUX_3_7C_PIN`/`TMUX_PIN_COMMIT`) before checking out the resulting commit detached and recording it in `BUILD-INFO`. The supplied historical 3.7d archive remains pinned to its exact archive-derived commit.
 
 
 This release was built against the source archives supplied during the project work. At 0.4.0 packaging time, GNU's public distribution index lists Screen 5.0.1 as the latest official release. This project also has a supplied Screen 5.0.2 source snapshot (the version already used for the translator's source audit), and the runtime compatibility help derives its option surface from that 5.0.2 `screen.c` usage table. Because that snapshot is newer than the latest official tarball, the help deliberately labels itself GNU Screen 5.0.x-style compatibility help rather than claiming to be native Screen help or a native Screen version.
@@ -84,6 +84,12 @@ c920ff9819f90403b2268244f78e1ec5ea3875d83419aae065addc2cc6f5d631
 
 For plain Screen `-r`, tmux's `attach-session` is only an approximation: Screen resume semantics distinguish detached from already attached sessions, while tmux normally permits multiple clients. The wrapper preserves a Screen `-p` window in the suggested tmux `session:window` target, but no longer labels the overall `-r` behavior exact.
 
+### Default tmux 3.7c released build baseline
+
+Bare `--build`, `build_tmux_patched.sh`, and `build_tmux.sh` requests now select tmux `3.7c`. The project resolves that default only through the release tag `refs/tags/3.7c`; it does not follow the mutable `origin/release_3.7c` branch. The tag is dereferenced to a commit, the source is checked out detached at that commit, and the resulting `SOURCE_COMMIT` is written to `BUILD-INFO`.
+
+No tmux 3.7c source archive or archive-derived commit hash was supplied in the source-review corpus used for this package, so this document does not invent one. For a fully content-addressed audit, set `SCREEN2TMUX_TMUX_3_7C_PIN` (or `TMUX_PIN_COMMIT`) to the exact audited commit; otherwise the project baseline is the named release tag.
+
 ### Pinned tmux 3.7d build baseline
 
 The supplied `release_3.7d` GitHub ZIP records commit `e9634d40749a5ae330aabf5aa46a81505b094a6b` in its ZIP comment. Its archive SHA-256 is `5b9110765232103b128ec87081085d3ccfbba8eda6a31a8aced935f3bf9edecc`. `configure.ac` identifies that snapshot as tmux `3.7d`.
@@ -111,7 +117,7 @@ configure.ac SHA-256:
 4d852d89bc9e9cbcb67b793d8d82fbd27cc267c5989c5bf20469118c3dbcad6a
 ```
 
-`build_tmux.sh`, `build_tmux_patched.sh`, and the legacy 3.7d front ends therefore resolve the default `3.7d` request to that immutable commit rather than to the current head of `origin/release_3.7d`. `TMUX_PIN_COMMIT` remains the explicit per-run override, and `SCREEN2TMUX_TMUX_3_7D_PIN` can intentionally replace the project baseline for an audit. `latest` remains intentionally moving.
+Explicit `3.7d` requests and the 3.7d front ends resolve to that immutable commit rather than to the current head of `origin/release_3.7d`. `TMUX_PIN_COMMIT` remains the explicit per-run override, and `SCREEN2TMUX_TMUX_3_7D_PIN` can intentionally replace the historical 3.7d baseline for an audit. Bare builds now select 3.7c; `latest` remains intentionally moving.
 
 ## 0.3.1 source checks
 
@@ -168,11 +174,11 @@ For 0.3.0, `cmd-move-window.c` and `session.c` confirm that `move-window -r` cal
 
 The compatibility integration keeps the upstream source footprint intentionally small. The packaged build workflow copies `tmux-integration/screen-to-tmux-translator` into the selected tmux source tree and applies `tmux-integration/tmux.c-screen-compat.patch` with zero fuzz. The patch changes only `tmux.c`: it includes the translator file and calls `screen_to_tmux_translate(&argc, &argv)` at the beginning of `main()`.
 
-The same minimal tmux.c patch was checked locally against the supplied pinned `release_3.7d` source tree and the supplied development tmux source snapshot. The generic `build_tmux.sh` can resolve arbitrary tmux versions/refs, including intentionally moving `latest` from upstream master/main. The default `3.7d` request is pinned to `e9634d40749a5ae330aabf5aa46a81505b094a6b`, and every resolved source commit is recorded in `BUILD-INFO`. If the known integration anchors stop matching on a requested version, only that patched variant fails explicitly rather than inferring a new location.
+The same minimal tmux.c patch was checked locally against the supplied pinned `release_3.7d` source tree and the supplied development tmux source snapshot. The generic `build_tmux.sh` can resolve arbitrary tmux versions/refs, including intentionally moving `latest` from upstream master/main. Bare builds select the `refs/tags/3.7c` release baseline; explicit `3.7d` remains pinned to `e9634d40749a5ae330aabf5aa46a81505b094a6b`, and every resolved source commit is recorded in `BUILD-INFO`. If the known integration anchors stop matching on a requested version, only that patched variant fails explicitly rather than inferring a new location.
 
 `tmux-integration/screen-to-tmux-translator` embeds the canonical POSIX translator source. For this package, the embedded shell payload is regenerated directly from `bin/screen-function-source.sh`. The canonical/minified/two-one-line/standalone interfaces remain byte-identical across the existing equivalence corpus, and the help path is part of that corpus. The embedded help identifies itself as compatibility help rather than native GNU Screen output.
 
 
 ### 0.4.2 build layout
 
-The generic build integration stores preserved source trees beneath `src/tmux-*` and out-of-tree build/install products beneath `build/tmux-*`. `build_tmux_patched.sh` builds only patched variants and is what `run-tests.sh --build` uses by default. `build_tmux.sh` remains the explicit original+patched builder, and `run-tests.sh --compile-original` selects that paired build path. Patched builds continue to modify only upstream `tmux.c` and add `screen-to-tmux-translator`; original trees remain unpatched. When an original variant is requested and succeeds first, the patched counterpart is pinned to the same source commit for a directly comparable pair. `run-tests.sh` discovers successful builds dynamically from their `BUILD-INFO` records instead of assuming only 3.7d/latest.
+The generic build integration stores preserved source trees beneath `src/tmux-*` and out-of-tree build/install products beneath `build/tmux-*`. `build_tmux_patched.sh` builds only patched variants and is what `run-tests.sh --build` uses by default. `build_tmux.sh` remains the explicit original+patched builder, and `run-tests.sh --compile-original` selects that paired build path. Patched builds continue to modify only upstream `tmux.c` and add `screen-to-tmux-translator`; original trees remain unpatched. When an original variant is requested and succeeds first, the patched counterpart is pinned to the same source commit for a directly comparable pair. `run-tests.sh` discovers successful builds dynamically from their `BUILD-INFO` records instead of assuming only 3.7c/3.7d/latest.

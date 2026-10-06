@@ -657,7 +657,9 @@ fi
 
 
 CURRENT_NAME='generic tmux builders and legacy front-ends are readable shell scripts'
-if [ -r "$PROJECT/build_tmux.sh" ] && [ -r "$PROJECT/build_tmux_patched.sh" ] && [ -r "$PROJECT/build_tmux_3.7d.sh" ] && [ -r "$PROJECT/build_tmux_3.7d_patched.sh" ] && \
+if [ -r "$PROJECT/build_tmux.sh" ] && [ -r "$PROJECT/build_tmux_patched.sh" ] && \
+   [ -r "$PROJECT/build_tmux_3.7c.sh" ] && [ -r "$PROJECT/build_tmux_3.7c_patched.sh" ] && \
+   [ -r "$PROJECT/build_tmux_3.7d.sh" ] && [ -r "$PROJECT/build_tmux_3.7d_patched.sh" ] && \
    [ -r "$PROJECT/build_tmux_latest.sh" ] && [ -r "$PROJECT/build_tmux_latest_patched.sh" ]; then
     pass "$CURRENT_NAME"
 else
@@ -666,11 +668,21 @@ fi
 
 CURRENT_NAME='internal shell-script calls use explicit sh'
 if grep -F 'exec sh "$HERE/build_tmux.sh" "$@"' "$PROJECT/build_tmux_patched.sh" >/dev/null 2>&1 && \
-   grep -F 'exec sh "$HERE/scripts/build-tmux-one.sh" 3.7d 3.7d 1' "$PROJECT/build_tmux_3.7d_patched.sh" >/dev/null 2>&1 && \
+   grep -F 'exec sh "$HERE/scripts/build-tmux-one.sh" 3.7c 3.7c 1' "$PROJECT/build_tmux_3.7c_patched.sh" >/dev/null 2>&1 && \
    grep -F 'sh "$HERE/tests/test-interface-equivalence.sh"' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F 'sh "$HERE/tests/test-regressions.sh"' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F '*.sh) NO_COLOR=1 SCREEN2TMUX_COLOR=never sh "$INTERFACE"' "$PROJECT/tests/interface-equivalence-worker.sh" >/dev/null 2>&1 && \
    grep -F 'screen-script) _exec_count=$((_exec_count + 1)); PATH="$_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never sh "$_path"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='3.7c default builder uses pinned release tag'
+if grep -F 'TMUX_3_7C_PIN=${SCREEN2TMUX_TMUX_3_7C_PIN:-refs/tags/3.7c}' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F '3.7c|release_3.7c)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'rev-parse --verify "$TMUX_3_7C_PIN^{commit}"' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'exec sh "$HERE/scripts/build-tmux-one.sh" 3.7c 3.7c 0' "$PROJECT/build_tmux_3.7c.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
@@ -695,7 +707,7 @@ else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='generic tmux builder defaults to both 3.7d variants'
+CURRENT_NAME='generic tmux builder defaults to both 3.7c variants'
 _BTMP=${TMPDIR:-/tmp}/screen2tmux-build-driver-$$
 rm -rf "$_BTMP"; mkdir -p "$_BTMP"
 cat > "$_BTMP/driver" <<'EOF_BUILD_STUB'
@@ -708,19 +720,19 @@ chmod 755 "$_BTMP/driver"
 SCREEN2TMUX_BUILD_ONE="$_BTMP/driver" SCREEN2TMUX_BUILD_STUB_LOG="$_BTMP/calls" NO_COLOR=1 sh "$PROJECT/build_tmux.sh" --verbosity quiet >/dev/null 2>&1
 _RC=$?
 _BCALLS=$(cat "$_BTMP/calls")
-if [ "$_RC" -eq 0 ] && [ "$_BCALLS" = "3.7d 3.7d 0
-3.7d 3.7d 1" ]; then
+if [ "$_RC" -eq 0 ] && [ "$_BCALLS" = "3.7c 3.7c 0
+3.7c 3.7c 1" ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$_RC calls=$_BCALLS)"
 fi
 
-CURRENT_NAME='patched tmux builder defaults to patched 3.7d only'
+CURRENT_NAME='patched tmux builder defaults to patched 3.7c only'
 : > "$_BTMP/calls"
 SCREEN2TMUX_BUILD_ONE="$_BTMP/driver" SCREEN2TMUX_BUILD_STUB_LOG="$_BTMP/calls" NO_COLOR=1 sh "$PROJECT/build_tmux_patched.sh" --verbosity quiet >/dev/null 2>&1
 _RC=$?
 _BCALLS=$(cat "$_BTMP/calls")
-if [ "$_RC" -eq 0 ] && [ "$_BCALLS" = "3.7d 3.7d 1" ]; then
+if [ "$_RC" -eq 0 ] && [ "$_BCALLS" = "3.7c 3.7c 1" ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$_RC calls=$_BCALLS)"
@@ -765,7 +777,7 @@ fi
 CURRENT_NAME='run-tests builds patched only by default and exposes compile-original'
 if grep -F -- '--build [VERSION ...]' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F -- '--compile-original' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
-   grep -F 'BUILD_VERSIONS=3.7d' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'BUILD_VERSIONS=3.7c' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F '_builder=$HERE/build_tmux_patched.sh' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F '[ "$COMPILE_ORIGINAL" -eq 0 ] || _builder=$HERE/build_tmux.sh' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"

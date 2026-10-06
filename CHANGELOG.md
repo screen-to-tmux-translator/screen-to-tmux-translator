@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.4.9 — 2026-10-06
+## 0.4.10 — 2026-10-06
+
+- Reordered the README for immediate use: directly after the one-line project description it now links `bin/screen-function-source-minified.oneliner.sh` and embeds that file's exact paste-to-run function declaration in a shell code block. The next section is the one-command GitHub ZIP download/build/test workflow.
+- Changed bare `sh run-tests.sh --build`, `sh build_tmux_patched.sh`, and `sh build_tmux.sh` defaults from tmux 3.7d to the tmux 3.7c released baseline. Added `build_tmux_3.7c.sh` and `build_tmux_3.7c_patched.sh`; the existing 3.7d and `latest` front ends remain available.
+- Pinned the default 3.7c request to `refs/tags/3.7c`, checked out detached, rather than following the mutable `release_3.7c` branch. Every build records the resolved commit in `BUILD-INFO`; `SCREEN2TMUX_TMUX_3_7C_PIN` or `TMUX_PIN_COMMIT` may provide an exact commit for content-addressed audits.
+- Retained the supplied tmux 3.7d baseline's stronger archive-derived exact commit pin (`e9634d40749a5ae330aabf5aa46a81505b094a6b`) for historical reproducibility.
+- Added/updated regression coverage for the 3.7c default, release-tag pin resolution, the new version-specific wrappers, and the unchanged 3.7d exact pin.
+
+## 0.4.10 — 2026-10-06
 
 - Fixed the build-dependency automatic-install regression so it supplies a fake `sudo` wrapper as well as a fake package manager. Running the test suite as an unprivileged user can no longer reach the real `sudo`, prompt for a password, or fail because the test runner lacks administrative rights.
 - Improved missing-build-dependency diagnostics. The builder already names the missing commands/development libraries; it now also prints a copyable package-manager command that a user can give an administrator (`sudo apt-get update && sudo apt-get install ...` on Debian/Ubuntu, with equivalent `dnf`, `yum`, and `apk` forms). Homebrew guidance remains unprivileged.

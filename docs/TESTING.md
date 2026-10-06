@@ -98,7 +98,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.9.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.10.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, both one-line source variants, standalone self-contained `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with full paths. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 
@@ -152,7 +152,7 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 - `--strict` preserving exact mappings while preventing every executable and delayed `APPROX` path from invoking tmux;
 - concrete `EXTERNAL` dry-run mappings for serial/Telnet startup plus real helper-present execution and strict-mode suppression;
 - class-matched mapping colors on both the class token and right-hand result;
-- immutable default tmux 3.7d source pinning;
+- default tmux 3.7c release-tag pinning plus retained immutable tmux 3.7d source pinning;
 - explicit `sh` invocation for internal `.sh` scripts so ZIP-extracted trees do not depend on Unix executable mode bits.
 
 ## Current packaged result
@@ -160,7 +160,7 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 ```text
 translation permutations:       683 PASS, 0 FAIL
 syntax oracle base cases:       228 PASS, 0 FAIL
-focused regressions:            130 PASS, 0 FAIL
+focused regressions:            131 PASS, 0 FAIL
 packaged equivalence interfaces: 5 (canonical, minified, two one-line sources, screen.sh)
 equivalence variants/interface: 683
 equivalence command cases:      228 PASS, 0 FAIL
@@ -187,9 +187,9 @@ If tmux is not installed, this layer reports `SKIP` and exits successfully; the 
 The patched-only build entry point is:
 
 ```sh
-sh build_tmux_patched.sh         # patched 3.7d only
+sh build_tmux_patched.sh         # patched 3.7c only
 sh build_tmux_patched.sh latest
-sh build_tmux_patched.sh 3.7d,latest
+sh build_tmux_patched.sh 3.7c,latest
 ```
 
 `build_tmux.sh` remains the explicit original+patched builder. `run-tests.sh --build` now uses `build_tmux_patched.sh` by default; `--compile-original` switches that build phase back to `build_tmux.sh` so both variants are compiled. `latest` resolves master/main; other values are accepted as exact refs and also tried as `release_VERSION`. Generated sources are kept under `src/tmux-*`; build/install output is kept under `build/tmux-*`. A successful build is identified by its `BUILD-INFO` file plus executable installed tmux binary.
@@ -212,14 +212,15 @@ Compiling alerts.c ... [OK] cfg.c ... [OK] cmd-new-session.c ... [OK] cmd-send-k
 
 `--verbosity quiet|normal|verbose` is supported by both generic builders and `run-tests.sh`, with `normal` as the default. In normal mode Autoconf results are normalized and de-duplicated before display: header usability/presence/final triples collapse to one header token, `whether`/`working` boilerplate is removed, common compiler names are shortened, cached booleans join the yes/no groups, and the internal `.screen2tmux-cc` wrapper path is replaced with the real compiler. `yes` names are grouped in green, `no` names in red, and all other results are comma-separated `name=value` entries. Each group wraps at the measured console width. Compiler success markers are collected into one width-wrapped `Compiling ...` stream. Full raw build diagnostics remain in each build directory's `build.log`; selective color follows `SCREEN2TMUX_COLOR` / `NO_COLOR`.
 
-`run-tests.sh --build` builds patched 3.7d before testing. Versions following `--build` may be comma- or space-separated. `--compile-original` additionally compiles the pristine original for each requested version. Build failures set the eventual run status to FAIL but do not prevent discovery/testing of other variants that completed successfully.
+`run-tests.sh --build` builds patched 3.7c before testing. Versions following `--build` may be comma- or space-separated. `--compile-original` additionally compiles the pristine original for each requested version. Build failures set the eventual run status to FAIL but do not prevent discovery/testing of other variants that completed successfully.
 
-Every discovered patched build contributes its `screen` hardlink to the unified 683-variant equivalence matrix. The interface name is dynamic (`tmux-3.7d`, `tmux-latest`, `tmux-<other-version>`), so the suite is no longer limited to two hardcoded versions. Every patched build additionally receives inode-identity, compiled dry-run, and real-execution smoke checks. The isolated live behavior suite runs once per version against the patched tmux only; original binaries are retained as pristine build baselines.
+Every discovered patched build contributes its `screen` hardlink to the unified 683-variant equivalence matrix. The interface name is dynamic (`tmux-3.7c`, `tmux-3.7d`, `tmux-latest`, `tmux-<other-version>`), so the suite is no longer limited to two hardcoded versions. Every patched build additionally receives inode-identity, compiled dry-run, and real-execution smoke checks. The isolated live behavior suite runs once per version against the patched tmux only; original binaries are retained as pristine build baselines.
 
 Individual equivalence selection examples:
 
 ```sh
 sh run-tests.sh --equivalence screen-script
+sh run-tests.sh --equivalence tmux-3.7c
 sh run-tests.sh --equivalence tmux-3.7d
 sh run-tests.sh --equivalence tmux-latest
 sh run-tests.sh --equivalence tmux-3.8

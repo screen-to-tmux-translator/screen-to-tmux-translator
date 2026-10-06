@@ -20,11 +20,11 @@ Builds BOTH original and Screen-compat patched variants of every requested
 version. For patched-only builds, use build_tmux_patched.sh. VERSION may be
 comma-separated, for example:
 
-  sh build_tmux.sh 3.7d
-  sh build_tmux.sh 3.7d,3.8,latest
-  sh build_tmux.sh 3.7d 3.8 latest
+  sh build_tmux.sh 3.7c
+  sh build_tmux.sh 3.7c,3.7d,latest
+  sh build_tmux.sh 3.7c 3.7d latest
 
-With no VERSION, the project-pinned tmux 3.7d baseline is built. "latest"
+With no VERSION, the project-pinned tmux 3.7c release baseline is built. "latest"
 resolves the current tmux master/main commit. Other values are accepted as exact
 tags/branches/commits and also tried as release_VERSION branches.
 
@@ -65,7 +65,7 @@ while [ "$#" -gt 0 ]; do
     esac
 done
 case "$VERBOSITY" in quiet|normal|verbose) : ;; *) printf 'ERROR: --verbosity must be quiet, normal, or verbose.\n' >&2; exit 64 ;; esac
-[ -n "$VERSIONS" ] || VERSIONS=3.7d
+[ -n "$VERSIONS" ] || VERSIONS=3.7c
 [ -x "$DRIVER" ] || [ -r "$DRIVER" ] || { printf 'ERROR: tmux build driver is unavailable: %s\n' "$DRIVER" >&2; exit 2; }
 
 _color=0

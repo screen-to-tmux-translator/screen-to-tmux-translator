@@ -24,7 +24,7 @@ usage()
 Usage: sh run-tests.sh [options]
 
   --build [VERSION ...]       Build patched tmux variant(s) before testing.
-                              With no VERSION, builds 3.7d. Versions may be
+                              With no VERSION, builds 3.7c. Versions may be
                               comma-separated or space-separated.
   --compile-original          With --build, also compile the pristine original
                               variant for each requested tmux version.
@@ -41,9 +41,9 @@ Usage: sh run-tests.sh [options]
 
 Examples:
   sh run-tests.sh --build
-  sh run-tests.sh --build 3.7d,latest
+  sh run-tests.sh --build 3.7c,latest
   sh run-tests.sh --build latest --compile-original
-  sh run-tests.sh --build 3.7d 3.8 latest --verbosity normal
+  sh run-tests.sh --build 3.7c 3.7d latest --verbosity normal
 
 The canonical screen-function-source interface is always the equivalence reference.
 Every successful patched build discovered under build/ is added automatically.
@@ -100,7 +100,7 @@ if [ "$COMPILE_ORIGINAL" -eq 1 ] && [ "$BUILD_REQUESTED" -eq 0 ]; then
     printf 'ERROR: --compile-original requires --build.\n' >&2
     exit 64
 fi
-if [ "$BUILD_REQUESTED" -eq 1 ] && [ -z "$BUILD_VERSIONS" ]; then BUILD_VERSIONS=3.7d; fi
+if [ "$BUILD_REQUESTED" -eq 1 ] && [ -z "$BUILD_VERSIONS" ]; then BUILD_VERSIONS=3.7c; fi
 
 # Listing current interfaces is a read-only operation and should not create a
 # timestamped test run when no build was requested.
