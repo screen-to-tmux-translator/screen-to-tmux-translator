@@ -1,5 +1,5 @@
 #!/bin/sh
-# Focused regressions for semantic/scope false positives observed through 0.2.0.
+# Focused regressions for semantic/scope false positives observed through 0.2.1.
 set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT=$(CDPATH= cd -- "$HERE/.." && pwd)
@@ -83,6 +83,38 @@ expect_exact_in_tmux()
     fi
 }
 
+expect_class_contains_in_tmux()
+{
+    name=$1; rcwant=$2; needle=$3; shift 3
+    CURRENT_NAME=$name
+    capture_in_tmux "$@"
+    if [ "$RC" -eq "$rcwant" ] && printf '%s\n' "$OUT" | grep -F -- "$needle" >/dev/null 2>&1; then pass "$name"; else
+        fail "$name (wanted rc=$rcwant and '$needle'; rc=$RC output=$OUT)"
+    fi
+}
+
+expect_exact_unique()
+{
+    name=$1; expected=$2; shift 2
+    _eu_had=${SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES+x}
+    _eu_old=${SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES-}
+    SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1
+    export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES
+    expect_exact "$name" "$expected" "$@"
+    if [ "$_eu_had" = x ]; then SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=$_eu_old; export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES; else unset SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES; fi
+}
+
+expect_exact_unique_in_tmux()
+{
+    name=$1; expected=$2; shift 2
+    _eui_had=${SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES+x}
+    _eui_old=${SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES-}
+    SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1
+    export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES
+    expect_exact_in_tmux "$name" "$expected" "$@"
+    if [ "$_eui_had" = x ]; then SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=$_eui_old; export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES; else unset SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES; fi
+}
+
 expect_exact "-d -m preserves command operand" "'tmux' 'new-session' '-d' 'bash'" --dry-run -d -m bash
 expect_exact "-m alone does not detach" "'tmux' 'new-session'" -m --dry-run
 expect_class_contains "screenrc is not passed to tmux -f" 2 "Screen -c reads Screen configuration syntax" --dry-run -c /tmp/my-screenrc
@@ -114,7 +146,26 @@ expect_exact_in_tmux "inside tmux plain screen bash creates a window" "'tmux' 'n
 expect_exact_in_tmux "inside tmux plain screen creates a window" "'tmux' 'new-window'" --dry-run
 expect_exact_in_tmux "inside tmux -t title creates titled window" "'tmux' 'new-window' '-n' 'editor' 'vim'" --dry-run -t editor vim
 expect_exact_in_tmux "inside tmux -m forces new session" "'tmux' 'new-session' 'bash'" --dry-run -m bash
-expect_exact_in_tmux "inside tmux -S forces named new session" "'tmux' 'new-session' '-s' 'work' 'bash'" --dry-run -S work bash
+expect_class_contains_in_tmux "inside tmux -S warns about duplicate Screen labels" 3 "multiple sessions whose socket names share the same -S label" --dry-run -S work bash
+expect_exact_unique_in_tmux "inside tmux -S can opt into unique-name policy" "'tmux' 'new-session' '-s' 'work' 'bash'" --dry-run -S work bash
+
+# 0.3.0 hardening: state, scope, and edge-condition semantics.
+expect_class_contains "named session creation is approximate by default" 3 "tmux requires each session name to be unique" --dry-run -S work
+expect_exact_unique "unique-name policy restores direct named creation" "'tmux' 'new-session' '-s' 'work'" --dry-run -S work
+expect_class_contains "session listing is not output-compatible" 3 "dead sockets" --dry-run -ls
+expect_class_contains "quiet listing preserves Screen-specific exit-status warning" 3 "status codes" --dry-run -q -ls
+expect_class_contains "Screen -R is state-sensitive approximation" 3 "only considers sockets suitable" --dry-run -R work
+expect_class_contains "Screen -RR multiple-match rules are not tmux -A" 3 "multiple-match selection" --dry-run -RR work
+expect_class_contains "detach-and-R remains state-sensitive" 3 "only considers sockets suitable" --dry-run -d -R work
+expect_class_contains "number documents occupied-destination swap" 3 "tmux swap-window" --dry-run -S work -p 2 -X number 5
+expect_class_contains "collapse documents base-index mismatch" 3 "base-index" --dry-run -S work -X collapse
+expect_class_contains "internal detach is client-specific" 3 "Display only" --dry-run -S work -X detach
+expect_class_contains "internal power detach is client-specific" 3 "one concrete Display" --dry-run -S work -X pow_detach
+expect_class_contains "altscreen is backend-wide versus pane scoped" 3 "backend-wide use_altscreen" --dry-run -S work -X altscreen on
+expect_class_contains "readbuf warns about server-wide tmux buffers" 3 "shared by the entire tmux server" --dry-run -S work -X readbuf /tmp/text
+expect_class_contains "writebuf warns about server-wide tmux buffers" 3 "server-wide" --dry-run -S work -X writebuf /tmp/text
+expect_class_contains "register warns about server-wide tmux buffers" 3 "server-wide" --dry-run -S work -X register a hello
+expect_class_contains "paste with no register is not tmux paste-buffer" 2 "interactive register prompt" --dry-run -S work -p 0 -X paste
 
 CR=$(printf '\r')
 CURRENT_NAME='dry-run renders carriage return safely'

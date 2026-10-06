@@ -66,7 +66,7 @@ RESULT
 
 Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and preserved exactly in the hex fields.
 
-`logs/test-regressions.log` records the focused semantic regressions introduced in 0.2.1.
+`logs/test-regressions.log` records the focused semantic regressions accumulated through 0.3.0.
 
 ## Focused regressions
 
@@ -92,12 +92,34 @@ Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and pr
 - client targeting for redisplay/suspend;
 - non-compatible informational/query output;
 - hardcopy/capture-pane approximation;
-- plain `-r` attach/resume semantic differences.
+- plain `-r` attach/resume semantic differences;
+- `-R/-RR` attached/detached and multiple-match selection differences;
+- `-q -ls` output/exit-status semantics;
+- occupied-destination `number` swap semantics;
+- `collapse` versus tmux `base-index`;
+- client-specific internal detach/power-detach;
+- backend-wide Screen `altscreen` versus pane/window-scoped tmux settings;
+- Screen copy/register state versus server-wide tmux buffers;
+- interactive no-argument `paste`;
+- duplicate Screen `-S` labels versus unique tmux session names and the explicit unique-name opt-in.
 
 ## Current packaged result
 
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       33 PASS, 0 FAIL
+focused regressions:       50 PASS, 0 FAIL
+live tmux behavior:         optional; skipped if tmux is unavailable
 ```
+
+## Optional live tmux behavioral layer
+
+`tests/test-tmux-behavior.sh` starts an isolated tmux server using `tmux -L screen2tmux-behavior-$$ -f /dev/null`. It never connects to the user's normal tmux server. When tmux is installed, it checks properties that cannot be established by argv inspection alone:
+
+- duplicate literal tmux session names are rejected;
+- `move-window` rejects an occupied destination while `swap-window` exchanges it;
+- `move-window -r` honors nonzero `base-index`;
+- tmux named buffers are server-wide;
+- `alternate-screen` can differ between panes.
+
+If tmux is not installed, this layer reports `SKIP` and exits successfully; the source-derived syntax oracle and translator regressions still run.

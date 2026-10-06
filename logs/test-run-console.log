@@ -1,41 +1,41 @@
 [PASS] C001 exact       first  start a new session
 [PASS] C001 exact       last   start a new session
-[PASS] C002 exact       first  start named session
-[PASS] C002 exact       middle start named session
-[PASS] C002 exact       last   start named session
+[PASS] C002 approx      first  start named session
+[PASS] C002 approx      middle start named session
+[PASS] C002 approx      last   start named session
 [PASS] C003 exact       first  start session running bash
 [PASS] C003 exact       middle start session running bash
 [PASS] C003 exact       last   start session running bash
-[PASS] C004 exact       first  start named session running bash
-[PASS] C004 exact       middle start named session running bash
-[PASS] C004 exact       last   start named session running bash
+[PASS] C004 approx      first  start named session running bash
+[PASS] C004 approx      middle start named session running bash
+[PASS] C004 approx      last   start named session running bash
 [PASS] C005 exact       first  start session running vim
 [PASS] C005 exact       middle start session running vim
 [PASS] C005 exact       last   start session running vim
 [PASS] C006 exact       first  start session running vim file
 [PASS] C006 exact       middle start session running vim file
 [PASS] C006 exact       last   start session running vim file
-[PASS] C007 exact       first  start named editor session
-[PASS] C007 exact       middle start named editor session
-[PASS] C007 exact       last   start named editor session
-[PASS] C008 exact       first  clustered detached named session
-[PASS] C008 exact       middle clustered detached named session
-[PASS] C008 exact       last   clustered detached named session
-[PASS] C009 exact       first  clustered detached named session with command
-[PASS] C009 exact       middle clustered detached named session with command
-[PASS] C009 exact       last   clustered detached named session with command
-[PASS] C010 exact       first  clustered detached build session
-[PASS] C010 exact       middle clustered detached build session
-[PASS] C010 exact       last   clustered detached build session
-[PASS] C011 exact       first  list sessions short
-[PASS] C011 exact       middle list sessions short
-[PASS] C011 exact       last   list sessions short
-[PASS] C012 exact       first  list sessions long
-[PASS] C012 exact       middle list sessions long
-[PASS] C012 exact       last   list sessions long
-[PASS] C013 exact       first  list matching sessions
-[PASS] C013 exact       middle list matching sessions
-[PASS] C013 exact       last   list matching sessions
+[PASS] C007 approx      first  start named editor session
+[PASS] C007 approx      middle start named editor session
+[PASS] C007 approx      last   start named editor session
+[PASS] C008 approx      first  clustered detached named session
+[PASS] C008 approx      middle clustered detached named session
+[PASS] C008 approx      last   clustered detached named session
+[PASS] C009 approx      first  clustered detached named session with command
+[PASS] C009 approx      middle clustered detached named session with command
+[PASS] C009 approx      last   clustered detached named session with command
+[PASS] C010 approx      first  clustered detached build session
+[PASS] C010 approx      middle clustered detached build session
+[PASS] C010 approx      last   clustered detached build session
+[PASS] C011 approx      first  list sessions short
+[PASS] C011 approx      middle list sessions short
+[PASS] C011 approx      last   list sessions short
+[PASS] C012 approx      first  list sessions long
+[PASS] C012 approx      middle list sessions long
+[PASS] C012 approx      last   list sessions long
+[PASS] C013 approx      first  list matching sessions
+[PASS] C013 approx      middle list matching sessions
+[PASS] C013 approx      last   list matching sessions
 [PASS] C014 approx      first  attach to an available session
 [PASS] C014 approx      middle attach to an available session
 [PASS] C014 approx      last   attach to an available session
@@ -57,51 +57,51 @@
 [PASS] C020 exact       first  power detach elsewhere and attach
 [PASS] C020 exact       middle power detach elsewhere and attach
 [PASS] C020 exact       last   power detach elsewhere and attach
-[PASS] C021 exact       first  create-or-attach named session
-[PASS] C021 exact       middle create-or-attach named session
-[PASS] C021 exact       last   create-or-attach named session
-[PASS] C022 exact       first  aggressive create-or-attach named session
-[PASS] C022 exact       middle aggressive create-or-attach named session
-[PASS] C022 exact       last   aggressive create-or-attach named session
-[PASS] C023 exact       first  detach and create-or-attach
-[PASS] C023 exact       middle detach and create-or-attach
-[PASS] C023 exact       last   detach and create-or-attach
-[PASS] C024 exact       first  power-detach and create-or-attach
-[PASS] C024 exact       middle power-detach and create-or-attach
-[PASS] C024 exact       last   power-detach and create-or-attach
-[PASS] C025 exact       first  detach and RR
-[PASS] C025 exact       middle detach and RR
-[PASS] C025 exact       last   detach and RR
-[PASS] C026 exact       first  power-detach and RR
-[PASS] C026 exact       middle power-detach and RR
-[PASS] C026 exact       last   power-detach and RR
+[PASS] C021 approx      first  create-or-attach named session
+[PASS] C021 approx      middle create-or-attach named session
+[PASS] C021 approx      last   create-or-attach named session
+[PASS] C022 approx      first  aggressive create-or-attach named session
+[PASS] C022 approx      middle aggressive create-or-attach named session
+[PASS] C022 approx      last   aggressive create-or-attach named session
+[PASS] C023 approx      first  detach and create-or-attach
+[PASS] C023 approx      middle detach and create-or-attach
+[PASS] C023 approx      last   detach and create-or-attach
+[PASS] C024 approx      first  power-detach and create-or-attach
+[PASS] C024 approx      middle power-detach and create-or-attach
+[PASS] C024 approx      last   power-detach and create-or-attach
+[PASS] C025 approx      first  detach and RR
+[PASS] C025 approx      middle detach and RR
+[PASS] C025 approx      last   detach and RR
+[PASS] C026 approx      first  power-detach and RR
+[PASS] C026 approx      middle power-detach and RR
+[PASS] C026 approx      last   power-detach and RR
 [PASS] C027 moot        first  wipe stale sessions
 [PASS] C027 moot        middle wipe stale sessions
 [PASS] C027 moot        last   wipe stale sessions
 [PASS] C028 moot        first  wipe matching stale sessions
 [PASS] C028 moot        middle wipe matching stale sessions
 [PASS] C028 moot        last   wipe matching stale sessions
-[PASS] P001 exact       first  expanded detached named session
-[PASS] P001 exact       middle expanded detached named session
-[PASS] P001 exact       last   expanded detached named session
-[PASS] P002 exact       first  expanded detached named command
-[PASS] P002 exact       middle expanded detached named command
-[PASS] P002 exact       last   expanded detached named command
-[PASS] P003 exact       first  session option before detached flags
-[PASS] P003 exact       middle session option before detached flags
-[PASS] P003 exact       last   session option before detached flags
-[PASS] P004 exact       first  cluster dR attach-create
-[PASS] P004 exact       middle cluster dR attach-create
-[PASS] P004 exact       last   cluster dR attach-create
-[PASS] P005 exact       first  cluster dRR attach-create
-[PASS] P005 exact       middle cluster dRR attach-create
-[PASS] P005 exact       last   cluster dRR attach-create
-[PASS] P006 exact       first  cluster DR attach-create
-[PASS] P006 exact       middle cluster DR attach-create
-[PASS] P006 exact       last   cluster DR attach-create
-[PASS] P007 exact       first  cluster DRR attach-create
-[PASS] P007 exact       middle cluster DRR attach-create
-[PASS] P007 exact       last   cluster DRR attach-create
+[PASS] P001 approx      first  expanded detached named session
+[PASS] P001 approx      middle expanded detached named session
+[PASS] P001 approx      last   expanded detached named session
+[PASS] P002 approx      first  expanded detached named command
+[PASS] P002 approx      middle expanded detached named command
+[PASS] P002 approx      last   expanded detached named command
+[PASS] P003 approx      first  session option before detached flags
+[PASS] P003 approx      middle session option before detached flags
+[PASS] P003 approx      last   session option before detached flags
+[PASS] P004 approx      first  cluster dR attach-create
+[PASS] P004 approx      middle cluster dR attach-create
+[PASS] P004 approx      last   cluster dR attach-create
+[PASS] P005 approx      first  cluster dRR attach-create
+[PASS] P005 approx      middle cluster dRR attach-create
+[PASS] P005 approx      last   cluster dRR attach-create
+[PASS] P006 approx      first  cluster DR attach-create
+[PASS] P006 approx      middle cluster DR attach-create
+[PASS] P006 approx      last   cluster DR attach-create
+[PASS] P007 approx      first  cluster DRR attach-create
+[PASS] P007 approx      middle cluster DRR attach-create
+[PASS] P007 approx      last   cluster DRR attach-create
 [PASS] P008 approx      first  attached preselect syntax
 [PASS] P008 approx      middle attached preselect syntax
 [PASS] P008 approx      last   attached preselect syntax
@@ -126,9 +126,9 @@
 [PASS] P015 unsupported first  login mode off
 [PASS] P015 unsupported middle login mode off
 [PASS] P015 unsupported last   login mode off
-[PASS] P016 exact       first  quiet session list
-[PASS] P016 exact       middle quiet session list
-[PASS] P016 exact       last   quiet session list
+[PASS] P016 approx      first  quiet session list
+[PASS] P016 approx      middle quiet session list
+[PASS] P016 approx      last   quiet session list
 [PASS] D001 exact       first  expanded detached session
 [PASS] D001 exact       middle expanded detached session
 [PASS] D001 exact       last   expanded detached session
@@ -138,15 +138,15 @@
 [PASS] D003 exact       first  expanded detached shell command
 [PASS] D003 exact       middle expanded detached shell command
 [PASS] D003 exact       last   expanded detached shell command
-[PASS] D004 exact       first  expanded detached named
-[PASS] D004 exact       middle expanded detached named
-[PASS] D004 exact       last   expanded detached named
-[PASS] D005 exact       first  expanded detached named bash
-[PASS] D005 exact       middle expanded detached named bash
-[PASS] D005 exact       last   expanded detached named bash
-[PASS] D006 exact       first  expanded detached build
-[PASS] D006 exact       middle expanded detached build
-[PASS] D006 exact       last   expanded detached build
+[PASS] D004 approx      first  expanded detached named
+[PASS] D004 approx      middle expanded detached named
+[PASS] D004 approx      last   expanded detached named
+[PASS] D005 approx      first  expanded detached named bash
+[PASS] D005 approx      middle expanded detached named bash
+[PASS] D005 approx      last   expanded detached named bash
+[PASS] D006 approx      first  expanded detached build
+[PASS] D006 approx      middle expanded detached build
+[PASS] D006 approx      last   expanded detached build
 [PASS] D007 unsupported first  Screen D-m process semantics
 [PASS] D007 unsupported middle Screen D-m process semantics
 [PASS] D007 unsupported last   Screen D-m process semantics
@@ -189,9 +189,9 @@
 [PASS] W104 exact       first  rename window
 [PASS] W104 exact       middle rename window
 [PASS] W104 exact       last   rename window
-[PASS] W105 exact       first  renumber window
-[PASS] W105 exact       middle renumber window
-[PASS] W105 exact       last   renumber window
+[PASS] W105 approx      first  renumber window
+[PASS] W105 approx      middle renumber window
+[PASS] W105 approx      last   renumber window
 [PASS] W106 exact       first  kill window
 [PASS] W106 exact       middle kill window
 [PASS] W106 exact       last   kill window
@@ -204,9 +204,9 @@
 [PASS] W109 exact       first  other/last window
 [PASS] W109 exact       middle other/last window
 [PASS] W109 exact       last   other/last window
-[PASS] W110 exact       first  collapse window numbers
-[PASS] W110 exact       middle collapse window numbers
-[PASS] W110 exact       last   collapse window numbers
+[PASS] W110 approx      first  collapse window numbers
+[PASS] W110 approx      middle collapse window numbers
+[PASS] W110 approx      last   collapse window numbers
 [PASS] W111 unsupported first  alphabetically sort and renumber windows
 [PASS] W111 unsupported middle alphabetically sort and renumber windows
 [PASS] W111 unsupported last   alphabetically sort and renumber windows
@@ -270,12 +270,12 @@
 [PASS] R014 approx      first  redisplay
 [PASS] R014 approx      middle redisplay
 [PASS] R014 approx      last   redisplay
-[PASS] S001 exact       first  detach via X
-[PASS] S001 exact       middle detach via X
-[PASS] S001 exact       last   detach via X
-[PASS] S002 exact       first  power detach via X
-[PASS] S002 exact       middle power detach via X
-[PASS] S002 exact       last   power detach via X
+[PASS] S001 approx      first  detach via X
+[PASS] S001 approx      middle detach via X
+[PASS] S001 approx      last   detach via X
+[PASS] S002 approx      first  power detach via X
+[PASS] S002 approx      middle power detach via X
+[PASS] S002 approx      last   power detach via X
 [PASS] S003 approx      first  suspend frontend
 [PASS] S003 approx      middle suspend frontend
 [PASS] S003 approx      last   suspend frontend
@@ -321,21 +321,21 @@
 [PASS] B004 unsupported first  change existing window scrollback
 [PASS] B004 unsupported middle change existing window scrollback
 [PASS] B004 unsupported last   change existing window scrollback
-[PASS] B005 exact       first  read copy buffer
-[PASS] B005 exact       middle read copy buffer
-[PASS] B005 exact       last   read copy buffer
-[PASS] B006 exact       first  write copy buffer
-[PASS] B006 exact       middle write copy buffer
-[PASS] B006 exact       last   write copy buffer
+[PASS] B005 approx      first  read copy buffer
+[PASS] B005 approx      middle read copy buffer
+[PASS] B005 approx      last   read copy buffer
+[PASS] B006 approx      first  write copy buffer
+[PASS] B006 approx      middle write copy buffer
+[PASS] B006 approx      last   write copy buffer
 [PASS] B007 unsupported first  remove Screen exchange file
 [PASS] B007 unsupported middle remove Screen exchange file
 [PASS] B007 unsupported last   remove Screen exchange file
-[PASS] B008 exact       first  register text
-[PASS] B008 exact       middle register text
-[PASS] B008 exact       last   register text
-[PASS] B009 exact       first  paste buffer
-[PASS] B009 exact       middle paste buffer
-[PASS] B009 exact       last   paste buffer
+[PASS] B008 approx      first  register text
+[PASS] B008 approx      middle register text
+[PASS] B008 approx      last   register text
+[PASS] B009 unsupported first  paste buffer
+[PASS] B009 unsupported middle paste buffer
+[PASS] B009 unsupported last   paste buffer
 [PASS] B010 exact       first  enter copy mode
 [PASS] B010 exact       middle enter copy mode
 [PASS] B010 exact       last   enter copy mode
@@ -423,12 +423,12 @@
 [PASS] T003 approx      first  enable truecolor
 [PASS] T003 approx      middle enable truecolor
 [PASS] T003 approx      last   enable truecolor
-[PASS] T004 exact       first  enable alternate screen
-[PASS] T004 exact       middle enable alternate screen
-[PASS] T004 exact       last   enable alternate screen
-[PASS] T005 exact       first  disable alternate screen
-[PASS] T005 exact       middle disable alternate screen
-[PASS] T005 exact       last   disable alternate screen
+[PASS] T004 approx      first  enable alternate screen
+[PASS] T004 approx      middle enable alternate screen
+[PASS] T004 approx      last   enable alternate screen
+[PASS] T005 approx      first  disable alternate screen
+[PASS] T005 approx      middle disable alternate screen
+[PASS] T005 approx      last   disable alternate screen
 [PASS] T006 exact       first  reset terminal state
 [PASS] T006 exact       middle reset terminal state
 [PASS] T006 exact       last   reset terminal state
@@ -585,15 +585,15 @@
 [PASS] O017 unsupported first  Screen authentication flag
 [PASS] O017 unsupported middle Screen authentication flag
 [PASS] O017 unsupported last   Screen authentication flag
-[PASS] O018 exact       first  quiet list
-[PASS] O018 exact       middle quiet list
-[PASS] O018 exact       last   quiet list
+[PASS] O018 approx      first  quiet list
+[PASS] O018 approx      middle quiet list
+[PASS] O018 approx      last   quiet list
 [PASS] O019 unsupported first  default shell override
 [PASS] O019 unsupported middle default shell override
 [PASS] O019 unsupported last   default shell override
-[PASS] O020 exact       first  session name
-[PASS] O020 exact       middle session name
-[PASS] O020 exact       last   session name
+[PASS] O020 approx      first  session name
+[PASS] O020 approx      middle session name
+[PASS] O020 approx      last   session name
 [PASS] O021 exact       first  initial window title
 [PASS] O021 exact       middle initial window title
 [PASS] O021 exact       last   initial window title
@@ -683,7 +683,8 @@
 [PASS] Z010 invalid     last   invalid focus direction
 
 Summary: 683 PASS, 0 FAIL, 683 translation invocations; oracle 228 PASS/0 FAIL
-Log: /mnt/data/screen-to-tmux-translator-0.2.1/logs/test-screen-cli.log
+Log: /mnt/data/screen-to-tmux-translator-0.3.0/logs/test-screen-cli.log
+
 [PASS] -d -m preserves command operand
 [PASS] -m alone does not detach
 [PASS] screenrc is not passed to tmux -f
@@ -715,8 +716,27 @@ Log: /mnt/data/screen-to-tmux-translator-0.2.1/logs/test-screen-cli.log
 [PASS] inside tmux plain screen creates a window
 [PASS] inside tmux -t title creates titled window
 [PASS] inside tmux -m forces new session
-[PASS] inside tmux -S forces named new session
+[PASS] inside tmux -S warns about duplicate Screen labels
+[PASS] inside tmux -S can opt into unique-name policy
+[PASS] named session creation is approximate by default
+[PASS] unique-name policy restores direct named creation
+[PASS] session listing is not output-compatible
+[PASS] quiet listing preserves Screen-specific exit-status warning
+[PASS] Screen -R is state-sensitive approximation
+[PASS] Screen -RR multiple-match rules are not tmux -A
+[PASS] detach-and-R remains state-sensitive
+[PASS] number documents occupied-destination swap
+[PASS] collapse documents base-index mismatch
+[PASS] internal detach is client-specific
+[PASS] internal power detach is client-specific
+[PASS] altscreen is backend-wide versus pane scoped
+[PASS] readbuf warns about server-wide tmux buffers
+[PASS] writebuf warns about server-wide tmux buffers
+[PASS] register warns about server-wide tmux buffers
+[PASS] paste with no register is not tmux paste-buffer
 [PASS] dry-run renders carriage return safely
 
-Regression summary: 33 PASS, 0 FAIL
-Regression log: /mnt/data/screen-to-tmux-translator-0.2.1/logs/test-regressions.log
+Regression summary: 50 PASS, 0 FAIL
+Regression log: /mnt/data/screen-to-tmux-translator-0.3.0/logs/test-regressions.log
+
+[SKIP] live tmux behavior tests: tmux executable not installed

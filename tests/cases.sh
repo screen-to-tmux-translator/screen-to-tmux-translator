@@ -5,18 +5,18 @@
 
 # Common everyday usage
 case_ C001 exact       "start a new session"
-case_ C002 exact       "start named session" -S work
+case_ C002 approx       "start named session" -S work
 case_ C003 exact       "start session running bash" bash
-case_ C004 exact       "start named session running bash" -S work bash
+case_ C004 approx       "start named session running bash" -S work bash
 case_ C005 exact       "start session running vim" vim
 case_ C006 exact       "start session running vim file" vim file.txt
-case_ C007 exact       "start named editor session" -S editor vim file.txt
-case_ C008 exact       "clustered detached named session" -dmS work
-case_ C009 exact       "clustered detached named session with command" -dmS work bash
-case_ C010 exact       "clustered detached build session" -dmS build make
-case_ C011 exact       "list sessions short" -ls
-case_ C012 exact       "list sessions long" -list
-case_ C013 exact       "list matching sessions" -ls work
+case_ C007 approx       "start named editor session" -S editor vim file.txt
+case_ C008 approx       "clustered detached named session" -dmS work
+case_ C009 approx       "clustered detached named session with command" -dmS work bash
+case_ C010 approx       "clustered detached build session" -dmS build make
+case_ C011 approx       "list sessions short" -ls
+case_ C012 approx       "list sessions long" -list
+case_ C013 approx       "list matching sessions" -ls work
 case_ C014 approx      "attach to an available session" -r
 case_ C015 approx      "attach named session" -r work
 case_ C016 exact       "multi-display attach named session" -x work
@@ -24,23 +24,23 @@ case_ C017 exact       "detach named session" -d work
 case_ C018 exact       "power detach named session" -D work
 case_ C019 exact       "detach elsewhere and attach" -d -r work
 case_ C020 exact       "power detach elsewhere and attach" -D -r work
-case_ C021 exact       "create-or-attach named session" -R work
-case_ C022 exact       "aggressive create-or-attach named session" -RR work
-case_ C023 exact       "detach and create-or-attach" -d -R work
-case_ C024 exact       "power-detach and create-or-attach" -D -R work
-case_ C025 exact       "detach and RR" -d -RR work
-case_ C026 exact       "power-detach and RR" -D -RR work
+case_ C021 approx       "create-or-attach named session" -R work
+case_ C022 approx       "aggressive create-or-attach named session" -RR work
+case_ C023 approx       "detach and create-or-attach" -d -R work
+case_ C024 approx       "power-detach and create-or-attach" -D -R work
+case_ C025 approx       "detach and RR" -d -RR work
+case_ C026 approx       "power-detach and RR" -D -RR work
 case_ C027 moot        "wipe stale sessions" -wipe
 case_ C028 moot        "wipe matching stale sessions" -wipe work
 
 # Option clustering / ordering permutations explicitly supported by Screen parser
-case_ P001 exact       "expanded detached named session" -d -m -S work
-case_ P002 exact       "expanded detached named command" -d -m -S work bash
-case_ P003 exact       "session option before detached flags" -S work -d -m
-case_ P004 exact       "cluster dR attach-create" -dR work
-case_ P005 exact       "cluster dRR attach-create" -dRR work
-case_ P006 exact       "cluster DR attach-create" -DR work
-case_ P007 exact       "cluster DRR attach-create" -DRR work
+case_ P001 approx       "expanded detached named session" -d -m -S work
+case_ P002 approx       "expanded detached named command" -d -m -S work bash
+case_ P003 approx       "session option before detached flags" -S work -d -m
+case_ P004 approx       "cluster dR attach-create" -dR work
+case_ P005 approx       "cluster dRR attach-create" -dRR work
+case_ P006 approx       "cluster DR attach-create" -DR work
+case_ P007 approx       "cluster DRR attach-create" -DRR work
 case_ P008 approx      "attached preselect syntax" -p 2 -r work
 case_ P009 approx      "attached preselect compact syntax" -p2 -r work
 case_ P010 unsupported "compact alternate rc syntax" -c/tmp/screenrc
@@ -49,15 +49,15 @@ case_ P012 unsupported "flow enabled form" -f
 case_ P013 unsupported "flow off form" -fn
 case_ P014 unsupported "flow auto form" -fa
 case_ P015 unsupported "login mode off" -ln
-case_ P016 exact       "quiet session list" -q -ls
+case_ P016 approx       "quiet session list" -q -ls
 
 # Detached/background forms
 case_ D001 exact       "expanded detached session" -d -m
 case_ D002 exact       "expanded detached bash" -d -m bash
 case_ D003 exact       "expanded detached shell command" -d -m sh -c 'sleep 60'
-case_ D004 exact       "expanded detached named" -d -m -S work
-case_ D005 exact       "expanded detached named bash" -d -m -S work bash
-case_ D006 exact       "expanded detached build" -d -m -S build make
+case_ D004 approx       "expanded detached named" -d -m -S work
+case_ D005 approx       "expanded detached named bash" -d -m -S work bash
+case_ D006 approx       "expanded detached build" -d -m -S build make
 case_ D007 unsupported "Screen D-m process semantics" -D -m -S work
 case_ D008 unsupported "Screen D-m command semantics" -D -m -S work bash
 
@@ -76,12 +76,12 @@ case_ W101 exact       "select window zero" -S work -p 0 -X select
 case_ W102 exact       "select window two" -S work -p 2 -X select
 case_ W103 exact       "select named window" -S work -p editor -X select
 case_ W104 exact       "rename window" -S work -p 2 -X title editor
-case_ W105 exact       "renumber window" -S work -p 2 -X number 5
+case_ W105 approx       "renumber window" -S work -p 2 -X number 5
 case_ W106 exact       "kill window" -S work -p 2 -X kill
 case_ W107 exact       "next window" -S work -X next
 case_ W108 exact       "previous window" -S work -X prev
 case_ W109 exact       "other/last window" -S work -X other
-case_ W110 exact       "collapse window numbers" -S work -X collapse
+case_ W110 approx       "collapse window numbers" -S work -X collapse
 case_ W111 unsupported "alphabetically sort and renumber windows" -S work -X sort
 
 # Sending input
@@ -109,8 +109,8 @@ case_ R013 approx      "resize region plus five" -S work -X resize +5
 case_ R014 approx      "redisplay" -S work -X redisplay
 
 # Client/session control
-case_ S001 exact       "detach via X" -S work -X detach
-case_ S002 exact       "power detach via X" -S work -X pow_detach
+case_ S001 approx       "detach via X" -S work -X detach
+case_ S002 approx       "power detach via X" -S work -X pow_detach
 case_ S003 approx      "suspend frontend" -S work -X suspend
 case_ S004 exact       "quit named Screen session" -S work -X quit
 case_ S005 approx      "lock Screen session" -S work -X lockscreen
@@ -130,11 +130,11 @@ case_ B001 unsupported "hardcopy default filename" -S work -p 0 -X hardcopy
 case_ B002 approx      "hardcopy explicit file" -S work -p 0 -X hardcopy /tmp/window.txt
 case_ B003 approx      "hardcopy history explicit file" -S work -p 0 -X hardcopy -h /tmp/all.txt
 case_ B004 unsupported "change existing window scrollback" -S work -p 0 -X scrollback 10000
-case_ B005 exact       "read copy buffer" -S work -X readbuf /tmp/text
-case_ B006 exact       "write copy buffer" -S work -X writebuf /tmp/text
+case_ B005 approx       "read copy buffer" -S work -X readbuf /tmp/text
+case_ B006 approx       "write copy buffer" -S work -X writebuf /tmp/text
 case_ B007 unsupported "remove Screen exchange file" -S work -X removebuf
-case_ B008 exact       "register text" -S work -X register a hello
-case_ B009 exact       "paste buffer" -S work -p 0 -X paste
+case_ B008 approx       "register text" -S work -X register a hello
+case_ B009 unsupported       "paste buffer" -S work -p 0 -X paste
 case_ B010 exact       "enter copy mode" -S work -p 0 -X copy
 
 # Logging
@@ -174,8 +174,8 @@ case_ K005 approx      "unbind all" -S work -X unbindall
 case_ T001 unsupported "set Screen virtual TERM at startup" -T screen-256color
 case_ T002 exact       "force UTF-8 client output" -U
 case_ T003 approx      "enable truecolor" -S work -X truecolor on
-case_ T004 exact       "enable alternate screen" -S work -X altscreen on
-case_ T005 exact       "disable alternate screen" -S work -X altscreen off
+case_ T004 approx       "enable alternate screen" -S work -X altscreen on
+case_ T005 approx       "disable alternate screen" -S work -X altscreen off
 case_ T006 exact       "reset terminal state" -S work -X reset
 case_ T007 unsupported "set UTF-8 Screen encoding" -S work -X encoding UTF-8
 case_ T008 unsupported "set Shift-JIS Screen encoding" -S work -X encoding SJIS
@@ -236,9 +236,9 @@ case_ O014 exact       "force new Screen session semantics" -m
 case_ O015 unsupported "optimized VT output mode" -O
 case_ O016 approx      "preselect then attach" -p 2 -r work
 case_ O017 unsupported "Screen authentication flag" -P
-case_ O018 exact       "quiet list" -q -ls
+case_ O018 approx       "quiet list" -q -ls
 case_ O019 unsupported "default shell override" -s /bin/bash
-case_ O020 exact       "session name" -S work
+case_ O020 approx       "session name" -S work
 case_ O021 exact       "initial window title" -t editor vim
 case_ O022 unsupported "virtual terminal type" -T screen-256color
 case_ O023 exact       "UTF-8 mode" -U

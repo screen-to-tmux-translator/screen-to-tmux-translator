@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 — 2026-10-04
+
+- Reclassified the entire `-R/-RR` create-or-attach family as `APPROX`. GNU Screen filters candidate sockets by attached/detached state and `-RR` has distinct multiple-match selection behavior; tmux `new-session -A` does not preserve those rules.
+- Reclassified `-ls/-list` as `APPROX` because Screen's socket-oriented output and attached/detached/dead-state reporting are not output-compatible with `tmux list-sessions`.
+- Implemented explicit `-q` tracking and reclassified `-q -ls/-list` as `APPROX`; Screen suppresses output and returns special socket-count-derived exit statuses that tmux does not reproduce.
+- Reclassified `number N` as state-sensitive `APPROX`. Screen swaps window numbers when the target slot is occupied; the translator now recommends `tmux swap-window` for an occupied slot and `move-window` only for an empty slot.
+- Reclassified `collapse` as `APPROX` because Screen always renumbers from zero while tmux `move-window -r` starts at `base-index`.
+- Reclassified internal `detach` and `pow_detach` as client-scoped approximations rather than session-wide automatic detaches.
+- Reclassified `altscreen on/off` as `APPROX` because Screen's `use_altscreen` is backend-wide while tmux's `alternate-screen` option is window/pane scoped.
+- Reclassified `readbuf`, `writebuf`, and `register` as `APPROX` due to Screen-backend/user versus tmux-server buffer scope. Suggestions now use explicit namespaced buffer names.
+- Corrected `paste` with no register argument to `UNSUPPORTED`; GNU Screen opens an interactive register-selection prompt rather than immediately pasting a default buffer.
+- Added a conservative named-session creation policy. `-S NAME` creation is `APPROX` by default because Screen permits multiple `PID.NAME` sockets sharing a label whereas tmux names are unique. `SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1` opts into direct tmux named-session creation.
+- Fixed malformed `list-windows`/`collapse` suggestion construction that could duplicate a session name in diagnostic text.
+- Expanded focused semantic regressions from 33 to 50 tests.
+- Added optional isolated live-tmux behavioral tests for duplicate session names, occupied window indices, `base-index`, server-wide buffers, and pane-scoped `alternate-screen`.
+- Packaged static results: 683/683 translator permutations PASS, 228/228 syntax-oracle cases PASS, 50/50 focused regressions PASS. Live tmux behavior checks are skipped when no tmux executable is installed.
+
 ## 0.2.1 — 2026-10-04
 
 - Fixed nested-multiplexer behavior: ordinary `screen [program ...]` now maps to `tmux new-window [program ...]` when `$TMUX` is set, no `-S` is supplied, and Screen `-m` was not requested. This mirrors Screen's `$STY`/`SendCreateMsg` behavior.

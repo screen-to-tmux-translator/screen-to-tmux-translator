@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.2.1
+# screen-to-tmux-translator 0.3.0
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -63,20 +63,38 @@ screen2tmux: APPROX: Screen focus moves among display regions; tmux select-pane 
 screen2tmux: suggestion: Closest substitute: tmux select-pane -t work:.{right-of}
 ```
 
-## Important 0.2.1 correctness changes
+## Important 0.3.0 correctness changes
 
-0.2.1 tightens the remaining scope, context, and output-compatibility cases found after the 0.2.0 run:
+0.3.0 tightens state-dependent and namespace semantics that remained after 0.2.1:
 
-- Inside tmux, ordinary `screen` and `screen PROGRAM ...` now create a **new tmux window**, matching Screen's behavior inside an existing `$STY` session. `-m` or `-S name` still forces a new session.
-- Plain `screen -r name` is now `APPROX`, not `EXACT`, because Screen resume semantics normally require a detached session while tmux normally allows another client to attach.
-- `screen -X removebuf` no longer maps to `tmux delete-buffer`; Screen actually deletes its exchange file and leaves the in-memory copy buffer alone.
-- `screen -Q number` now uses `#{window_index} (#{window_name})`, matching Screen's `N (title)` output shape.
-- `displays` is no longer an unscoped `tmux list-clients`; its substitute is explicitly session-scoped.
-- `bind` and `unbindall` are `APPROX` because tmux key tables are server-wide, while Screen bindings belong to a single Screen backend/session.
-- Display/client operations such as `redisplay`, `suspend`, and `dinfo` no longer claim exactness when a Screen session name cannot identify one unique tmux client.
-- Screen informational commands whose output format differs from tmux (`windows`, `info`, `lastmsg`, `help`, and corresponding query forms) are now `APPROX`.
-- Explicit-file `hardcopy` uses `capture-pane` only as an `APPROX` suggestion rather than executing it automatically.
-- Serial/Telnet suggestions now use `tmux new-window` when the compatibility function is invoked from inside tmux without `-S`/`-m`.
+- `screen -R/-RR` and the `-d/-D` variants are now `APPROX`, not `EXACT`. Screen filters sockets by attached/detached state and `-RR` has its own multiple-match behavior; `tmux new-session -A` does not preserve those rules.
+- `screen -ls/-list` is now `APPROX` because Screen reports socket names, attached/detached/dead state, and socket-directory information that `tmux list-sessions` does not reproduce. `-q -ls` is also `APPROX` because Screen returns special socket-count-derived exit statuses while suppressing output.
+- `screen ... -X number N` is now `APPROX`. Screen swaps window numbers when `N` is already occupied; tmux `move-window` fails in that situation. The translator now suggests `swap-window` for an occupied destination and `move-window` for an empty one.
+- `collapse` is now `APPROX`: Screen always renumbers from 0, while tmux `move-window -r` starts at the session's `base-index`.
+- Internal `detach` and `pow_detach` are now client/display-scoped approximations. They no longer expand a single Screen Display operation into a tmux session-wide detach.
+- `altscreen` is now `APPROX`: Screen changes one backend-wide `use_altscreen` switch, while tmux's `alternate-screen` setting is window/pane scoped.
+- `readbuf`, `writebuf`, and `register` are now `APPROX` because Screen copy/register state belongs to a Screen backend/user while tmux buffers are server-wide. Suggestions use explicit session-style buffer namespaces.
+- `paste` with no register argument is now `UNSUPPORTED`; Screen opens its interactive register prompt, which is not equivalent to immediate `tmux paste-buffer`.
+- Named session creation with `-S NAME` is conservative by default because Screen permits multiple `PID.NAME` sessions sharing the same user label while tmux session names are unique. Set `SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1` only when your environment enforces unique Screen labels; then the direct `tmux new-session -s NAME` mapping is enabled.
+- The regression suite now covers the above state/scope issues and an optional live tmux behavior suite verifies duplicate-name rejection, occupied-index move/swap behavior, `base-index` renumbering, server-wide buffer scope, and pane-scoped `alternate-screen` on an isolated tmux server.
+
+### Unique-name compatibility policy
+
+By default:
+
+```sh
+screen --dry-run -S work
+```
+
+returns `APPROX` rather than silently assuming Screen's label namespace is identical to tmux's. If your operational convention already guarantees that Screen `-S` labels are unique:
+
+```sh
+SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1
+export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES
+. ./bin/screen-to-tmux.sh
+```
+
+then named creation is permitted as an `EXACT` mapping within that explicit policy.
 
 ## Tests
 
@@ -86,17 +104,19 @@ Run everything:
 sh run-tests.sh
 ```
 
-The test system has two layers:
+The test system has three layers:
 
 1. A **Screen syntax oracle**, independent from the translator, built from GNU Screen 5.0.2 `comm.c` command metadata plus a separate top-level CLI parser.
 2. Translator tests that insert `--dry-run` at first/middle/last positions and compare the resulting classification.
+3. An **optional live tmux behavioral suite** using an isolated `-L` server. It is skipped cleanly if no tmux executable is installed.
 
 Current packaged results:
 
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-33/33 focused semantic regression tests PASS
+50/50 focused semantic regression tests PASS
+live tmux behavior tests run when a tmux executable is available
 ```
 
 Logs:
@@ -104,6 +124,7 @@ Logs:
 ```text
 logs/test-screen-cli.log
 logs/test-regressions.log
+logs/test-tmux-behavior.log
 ```
 
 `test-screen-cli.log` records the displayed input, exact argv bytes in hex, output, output bytes in hex, expected class, actual exit code, and PASS/FAIL for every invocation.
@@ -115,7 +136,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.2.1/
+screen-to-tmux-translator-0.3.0/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md
@@ -130,11 +151,13 @@ screen-to-tmux-translator-0.2.1/
 │   ├── cases.sh
 │   ├── screen-syntax-oracle.sh
 │   ├── test-regressions.sh
-│   └── test-screen-cli.sh
+│   ├── test-screen-cli.sh
+│   └── test-tmux-behavior.sh
 ├── logs/
 │   ├── test-regressions.log
 │   ├── test-run-console.log
-│   └── test-screen-cli.log
+│   ├── test-screen-cli.log
+│   └── test-tmux-behavior.log
 └── run-tests.sh
 ```
 
