@@ -1,5 +1,5 @@
 #!/bin/sh
-# POSIX-shell test harness for screen-to-tmux-translator 0.3.2.
+# POSIX-shell test harness for screen-to-tmux-translator 0.3.3.
 # 1. Validate base Screen syntax with an independent Screen 5.0.2 oracle.
 # 2. Exercise translator --dry-run at first/middle/last argument positions.
 # 3. Log escaped argv/output plus exact byte hex.
@@ -24,10 +24,18 @@ LOG_FILE=${LOG_FILE:-$PROJECT_DIR/logs/test-screen-cli-$RUN_TIMESTAMP.log}
 mkdir -p "$(dirname -- "$LOG_FILE")"
 : > "$LOG_FILE"
 
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-    C_GREEN='\033[32m'; C_RED='\033[31m'; C_YELLOW='\033[33m'; C_CYAN='\033[36m'; C_RESET='\033[0m'
+_color_enabled=0
+if [ -z "${NO_COLOR:-}" ]; then
+    case "${SCREEN2TMUX_COLOR:-auto}" in
+        always) _color_enabled=1 ;;
+        auto|'') if [ -t 1 ] && [ "${TERM:-}" != dumb ]; then _color_enabled=1; fi ;;
+        never) : ;;
+    esac
+fi
+if [ "$_color_enabled" -eq 1 ]; then
+    C_GREEN='\033[32m'; C_RED='\033[31m'; C_YELLOW='\033[33m'; C_CYAN='\033[36m'; C_MAGENTA='\033[35m'; C_RESET='\033[0m'
 else
-    C_GREEN=; C_RED=; C_YELLOW=; C_CYAN=; C_RESET=
+    C_GREEN=; C_RED=; C_YELLOW=; C_CYAN=; C_MAGENTA=; C_RESET=
 fi
 
 PASS=0
@@ -73,6 +81,13 @@ log_argv_hex()
     done
 }
 
+capture_translator_plain()
+{
+    # Keep diagnostic bytes in the detailed log deterministic/plain even when
+    # the test harness itself is being displayed with forced ANSI color.
+    NO_COLOR=1 screen "$@"
+}
+
 run_variant()
 {
     _rv_id=$1; _rv_expected=$2; _rv_desc=$3; _rv_placement=$4
@@ -81,19 +96,19 @@ run_variant()
     case "$_rv_placement" in
         first)
             _rv_input=$(print_input screen --dry-run "$@")
-            _rv_output=$(screen --dry-run "$@" 2>&1); _rv_rc=$?
+            _rv_output=$(capture_translator_plain --dry-run "$@" 2>&1); _rv_rc=$?
             set -- screen --dry-run "$@"
             ;;
         middle)
             [ "$#" -gt 0 ] || return 0
             _rv_first=$1; shift
             _rv_input=$(print_input screen "$_rv_first" --dry-run "$@")
-            _rv_output=$(screen "$_rv_first" --dry-run "$@" 2>&1); _rv_rc=$?
+            _rv_output=$(capture_translator_plain "$_rv_first" --dry-run "$@" 2>&1); _rv_rc=$?
             set -- screen "$_rv_first" --dry-run "$@"
             ;;
         last)
             _rv_input=$(print_input screen "$@" --dry-run)
-            _rv_output=$(screen "$@" --dry-run 2>&1); _rv_rc=$?
+            _rv_output=$(capture_translator_plain "$@" --dry-run 2>&1); _rv_rc=$?
             set -- screen "$@" --dry-run
             ;;
         *) printf 'internal test error: unknown placement %s\n' "$_rv_placement" >&2; exit 2 ;;
@@ -101,12 +116,22 @@ run_variant()
 
     _rv_want=$(expected_rc "$_rv_expected")
     TOTAL=$((TOTAL + 1))
+    case "$_rv_expected" in
+        exact)       _rv_class_color=$C_GREEN ;;
+        approx)      _rv_class_color=$C_YELLOW ;;
+        unsupported) _rv_class_color=$C_RED ;;
+        moot)        _rv_class_color=$C_CYAN ;;
+        external)    _rv_class_color=$C_MAGENTA ;;
+        invalid)     _rv_class_color=$C_RED ;;
+        *)           _rv_class_color= ;;
+    esac
+
     if [ "$_rv_rc" -eq "$_rv_want" ]; then
         PASS=$((PASS + 1)); _rv_result=PASS
-        printf '%b[PASS]%b %s %-11s %-6s %s\n' "$C_GREEN" "$C_RESET" "$_rv_id" "$_rv_expected" "$_rv_placement" "$_rv_desc"
+        printf '%b[PASS]%b %s %b%-11s%b %-6s %s\n' "$C_GREEN" "$C_RESET" "$_rv_id" "$_rv_class_color" "$_rv_expected" "$C_RESET" "$_rv_placement" "$_rv_desc"
     else
         FAIL=$((FAIL + 1)); _rv_result=FAIL
-        printf '%b[FAIL]%b %s expected=%s(rc=%s) got=%s placement=%s %s\n' "$C_RED" "$C_RESET" "$_rv_id" "$_rv_expected" "$_rv_want" "$_rv_rc" "$_rv_placement" "$_rv_desc"
+        printf '%b[FAIL]%b %s expected=%b%s%b(rc=%s) got=%s placement=%s %s\n' "$C_RED" "$C_RESET" "$_rv_id" "$_rv_class_color" "$_rv_expected" "$C_RESET" "$_rv_want" "$_rv_rc" "$_rv_placement" "$_rv_desc"
     fi
 
     {
@@ -178,8 +203,8 @@ case_()
     printf 'SUMMARY: translation_total=%s pass=%s fail=%s oracle_pass=%s oracle_fail=%s\n' "$TOTAL" "$PASS" "$FAIL" "$ORACLE_PASS" "$ORACLE_FAIL"
 } >> "$LOG_FILE"
 
-printf '\n%bSummary:%b %b%s PASS%b, %b%s FAIL%b, %s translation invocations; oracle %s PASS/%s FAIL\n' \
-    "$C_CYAN" "$C_RESET" "$C_GREEN" "$PASS" "$C_RESET" "$C_RED" "$FAIL" "$C_RESET" "$TOTAL" "$ORACLE_PASS" "$ORACLE_FAIL"
+printf '\n%bSummary:%b %s %bPASS%b, %s %bFAIL%b, %s translation invocations; oracle %s %bPASS%b/%s %bFAIL%b\n' \
+    "$C_CYAN" "$C_RESET" "$PASS" "$C_GREEN" "$C_RESET" "$FAIL" "$C_RED" "$C_RESET" "$TOTAL" "$ORACLE_PASS" "$C_GREEN" "$C_RESET" "$ORACLE_FAIL" "$C_RED" "$C_RESET"
 printf '%bLog:%b %s\n' "$C_YELLOW" "$C_RESET" "$LOG_FILE"
 
 [ "$FAIL" -eq 0 ] && [ "$ORACLE_FAIL" -eq 0 ]

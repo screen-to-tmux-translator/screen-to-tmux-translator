@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.3 — 2026-10-04
+
+- Restored interactive ANSI colorization without coloring complete lines.
+- `run-tests.sh` now colors only semantic terminal tokens after the plain stream has already been written to the timestamped console log. `[PASS]`/`[FAIL]`/`[SKIP]`, translation classes, selected diagnostic labels, section titles, and run-summary/status labels are colorized individually.
+- CLI case rows now color the translation class itself (`exact`, `approx`, `unsupported`, `moot`, `external`, `invalid`) in addition to the result marker.
+- Translator diagnostics selectively color only `APPROX`, `UNSUPPORTED`, `MOOT`, `EXTERNAL`, `WARNING`, `suggestion`, `note`, and the existing `invalid/unknown Screen syntax` phrase; reason/suggestion text and exact dry-run commands remain uncolored.
+- Added `SCREEN2TMUX_COLOR=auto|always|never`. `auto` is the default; `NO_COLOR` remains a hard override, including over `always`.
+- Test components run by the aggregate runner are forced to plain output before `tee`, so timestamped logs and their ZIP archive stay ANSI-free even while the terminal is colorized. Standalone test scripts honor the same color policy directly.
+- Added three focused regressions for selective diagnostic color and `NO_COLOR` precedence, bringing the focused regression count to 71.
+- Translation semantics are otherwise unchanged from 0.3.2.
+
 ## 0.3.2 — 2026-10-04
 
 - Changed `run-tests.sh` to generate one shared run timestamp (`YYYYMMDD-HHMMSS`) and apply it to every log filename.

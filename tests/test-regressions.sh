@@ -9,7 +9,15 @@ REG_LOG=${REG_LOG:-$PROJECT/logs/test-regressions-$RUN_TIMESTAMP.log}
 mkdir -p "$(dirname -- "$REG_LOG")"
 : > "$REG_LOG"
 
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+_color_enabled=0
+if [ -z "${NO_COLOR:-}" ]; then
+    case "${SCREEN2TMUX_COLOR:-auto}" in
+        always) _color_enabled=1 ;;
+        auto|'') if [ -t 1 ] && [ "${TERM:-}" != dumb ]; then _color_enabled=1; fi ;;
+        never) : ;;
+    esac
+fi
+if [ "$_color_enabled" -eq 1 ]; then
     G='\033[32m'; R='\033[31m'; C='\033[36m'; Z='\033[0m'
 else G=; R=; C=; Z=; fi
 P=0; F=0
@@ -20,7 +28,7 @@ fail(){ F=$((F+1)); printf '%b[FAIL]%b %s\n' "$R" "$Z" "$1"; }
 capture()
 {
     INPUT=$( _s2t_display_quote screen; for a do printf ' '; _s2t_display_quote "$a"; done )
-    OUT=$(screen "$@" 2>&1)
+    OUT=$(NO_COLOR=1 screen "$@" 2>&1)
     RC=$?
     {
         printf '%s\n' '=============================================================================='
@@ -116,6 +124,78 @@ expect_exact_unique_in_tmux()
     if [ "$_eui_had" = x ]; then SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=$_eui_old; export SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES; else unset SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES; fi
 }
 
+
+capture_forced_color()
+{
+    _cfc_no_had=${NO_COLOR+x}
+    _cfc_no_old=${NO_COLOR-}
+    _cfc_color_had=${SCREEN2TMUX_COLOR+x}
+    _cfc_color_old=${SCREEN2TMUX_COLOR-}
+    unset NO_COLOR
+    SCREEN2TMUX_COLOR=always
+    export SCREEN2TMUX_COLOR
+
+    OUT=$(screen "$@" 2>&1)
+    RC=$?
+    OUT_HEX=$(printf '%s' "$OUT" | od -An -v -tx1 | tr -d ' \n')
+    {
+        printf '%s\n' '=============================================================================='
+        printf 'TEST: %s\n' "${CURRENT_NAME:-unnamed}"
+        printf 'COLOR_MODE: always\n'
+        printf 'ACTUAL_EXIT: %s\n' "$RC"
+        printf 'OUTPUT_HEX: %s\n' "$OUT_HEX"
+    } >> "$REG_LOG"
+
+    if [ "$_cfc_no_had" = x ]; then NO_COLOR=$_cfc_no_old; export NO_COLOR; else unset NO_COLOR; fi
+    if [ "$_cfc_color_had" = x ]; then SCREEN2TMUX_COLOR=$_cfc_color_old; export SCREEN2TMUX_COLOR; else unset SCREEN2TMUX_COLOR; fi
+}
+
+expect_selective_color()
+{
+    name=$1; rcwant=$2; colored_token=$3; plain_prefix=$4; shift 4
+    CURRENT_NAME=$name
+    capture_forced_color "$@"
+    case "$OUT" in
+        "$plain_prefix"*"$colored_token"*) _esc_prefix_ok=1 ;;
+        *) _esc_prefix_ok=0 ;;
+    esac
+    case "$OUT_HEX" in *1b*) _esc_present=1 ;; *) _esc_present=0 ;; esac
+    if [ "$RC" -eq "$rcwant" ] && [ "$_esc_prefix_ok" -eq 1 ] && [ "$_esc_present" -eq 1 ]; then
+        pass "$name"
+    else
+        fail "$name (rc=$RC prefix_ok=$_esc_prefix_ok ansi=$_esc_present hex=$OUT_HEX)"
+    fi
+}
+
+expect_no_color_override()
+{
+    name=$1; rcwant=$2; shift 2
+    CURRENT_NAME=$name
+    _nco_color_had=${SCREEN2TMUX_COLOR+x}
+    _nco_color_old=${SCREEN2TMUX_COLOR-}
+    _nco_no_had=${NO_COLOR+x}
+    _nco_no_old=${NO_COLOR-}
+    SCREEN2TMUX_COLOR=always
+    NO_COLOR=1
+    export SCREEN2TMUX_COLOR NO_COLOR
+    OUT=$(screen "$@" 2>&1)
+    RC=$?
+    OUT_HEX=$(printf '%s' "$OUT" | od -An -v -tx1 | tr -d ' \n')
+    {
+        printf '%s\n' '=============================================================================='
+        printf 'TEST: %s\n' "${CURRENT_NAME:-unnamed}"
+        printf 'COLOR_MODE: always + NO_COLOR\n'
+        printf 'ACTUAL_EXIT: %s\n' "$RC"
+        printf 'OUTPUT_HEX: %s\n' "$OUT_HEX"
+    } >> "$REG_LOG"
+    if [ "$_nco_color_had" = x ]; then SCREEN2TMUX_COLOR=$_nco_color_old; export SCREEN2TMUX_COLOR; else unset SCREEN2TMUX_COLOR; fi
+    if [ "$_nco_no_had" = x ]; then NO_COLOR=$_nco_no_old; export NO_COLOR; else unset NO_COLOR; fi
+    case "$OUT_HEX" in *1b*) _nco_clean=0 ;; *) _nco_clean=1 ;; esac
+    if [ "$RC" -eq "$rcwant" ] && [ "$_nco_clean" -eq 1 ]; then pass "$name"; else
+        fail "$name (rc=$RC ansi_free=$_nco_clean hex=$OUT_HEX)"
+    fi
+}
+
 expect_exact "-d -m preserves command operand" "'tmux' 'new-session' '-d' 'bash'" --dry-run -d -m bash
 expect_exact "-m alone does not detach" "'tmux' 'new-session'" -m --dry-run
 expect_class_contains "screenrc is not passed to tmux -f" 2 "Screen -c reads Screen configuration syntax" --dry-run -c /tmp/my-screenrc
@@ -189,6 +269,13 @@ expect_class_contains "risky Screen session selector prints uncertainty warning"
 expect_class_contains "numeric Screen session selector warns about PID ambiguity" 3 "may interpret leading digits as a PID" --dry-run -r 12345
 expect_class_contains "risky Screen window selector prints uncertainty warning" 3 "WARNING: uncertain translation of argument Screen window selector" --dry-run -S work -p 'editor.1' -X stuff x
 
+ESC=$(printf '\033')
+YELLOW_APPROX="${ESC}[33mAPPROX${ESC}[0m"
+RED_UNSUPPORTED="${ESC}[31mUNSUPPORTED${ESC}[0m"
+expect_selective_color "APPROX diagnostic colorizes only its class token" 3 "$YELLOW_APPROX" "screen2tmux: " --dry-run -L
+expect_selective_color "UNSUPPORTED diagnostic colorizes only its class token" 2 "$RED_UNSUPPORTED" "screen2tmux: " --dry-run -c /tmp/my-screenrc
+expect_no_color_override "NO_COLOR overrides forced color without changing semantics" 3 --dry-run -L
+
 CR=$(printf '\r')
 CURRENT_NAME='dry-run renders carriage return safely'
 capture -S work -p 0 -X stuff "hello${CR}" --dry-run
@@ -199,7 +286,7 @@ else
     fail "dry-run carriage-return rendering (rc=$RC hex=$HEX output=$OUT)"
 fi
 
-printf '\n%bRegression summary:%b %s PASS, %s FAIL\n' "$C" "$Z" "$P" "$F"
+printf '\n%bRegression summary:%b %s %bPASS%b, %s %bFAIL%b\n' "$C" "$Z" "$P" "$G" "$Z" "$F" "$R" "$Z"
 printf 'SUMMARY: pass=%s fail=%s\n' "$P" "$F" >> "$REG_LOG"
 printf 'Regression log: %s\n' "$REG_LOG"
 [ "$F" -eq 0 ]

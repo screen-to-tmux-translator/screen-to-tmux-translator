@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.3.2
+# screen-to-tmux-translator 0.3.3
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
@@ -24,7 +24,7 @@
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.3.2
+SCREEN2TMUX_VERSION=0.3.3
 
 _s2t_shell_quote()
 {
@@ -86,9 +86,53 @@ _s2t_tmux()
     _s2t_run tmux "$@"
 }
 
+_s2t_color_enabled()
+{
+    [ -z "${NO_COLOR:-}" ] || return 1
+    case "${SCREEN2TMUX_COLOR:-auto}" in
+        always) return 0 ;;
+        never) return 1 ;;
+        auto|'') [ -t 2 ] && [ "${TERM:-}" != dumb ] ;;
+        *) return 1 ;;
+    esac
+}
+
+_s2t_color_token()
+{
+    _s2t_ct_color=$1
+    _s2t_ct_text=$2
+    if _s2t_color_enabled; then
+        case "$_s2t_ct_color" in
+            green)   _s2t_ct_code='\033[32m' ;;
+            red)     _s2t_ct_code='\033[31m' ;;
+            yellow)  _s2t_ct_code='\033[33m' ;;
+            cyan)    _s2t_ct_code='\033[36m' ;;
+            magenta) _s2t_ct_code='\033[35m' ;;
+            *)       _s2t_ct_code= ;;
+        esac
+        printf '%b%s%b' "$_s2t_ct_code" "$_s2t_ct_text" '\033[0m'
+    else
+        printf '%s' "$_s2t_ct_text"
+    fi
+}
+
+_s2t_class_color()
+{
+    case "$1" in
+        EXACT)       printf green ;;
+        APPROX)      printf yellow ;;
+        UNSUPPORTED) printf red ;;
+        MOOT)        printf cyan ;;
+        EXTERNAL)    printf magenta ;;
+        INVALID)     printf red ;;
+        *)           printf cyan ;;
+    esac
+}
+
 _s2t_invalid()
 {
-    printf '%s\n' "screen2tmux: invalid/unknown Screen syntax: $*" >&2
+    _s2t_inv_label=$(_s2t_color_token red "invalid/unknown Screen syntax")
+    printf 'screen2tmux: %s: %s\n' "$_s2t_inv_label" "$*" >&2
     return 64
 }
 
@@ -98,9 +142,11 @@ _s2t_report()
     _s2t_rc=$2
     _s2t_reason=$3
     _s2t_suggestion=${4-}
-    printf '%s\n' "screen2tmux: $_s2t_class: $_s2t_reason" >&2
+    _s2t_class_label=$(_s2t_color_token "$(_s2t_class_color "$_s2t_class")" "$_s2t_class")
+    printf 'screen2tmux: %s: %s\n' "$_s2t_class_label" "$_s2t_reason" >&2
     if [ -n "$_s2t_suggestion" ]; then
-        printf '%s\n' "screen2tmux: suggestion: $_s2t_suggestion" >&2
+        _s2t_suggestion_label=$(_s2t_color_token cyan suggestion)
+        printf 'screen2tmux: %s: %s\n' "$_s2t_suggestion_label" "$_s2t_suggestion" >&2
     fi
     return "$_s2t_rc"
 }
@@ -127,7 +173,8 @@ _s2t_external()
 
 _s2t_note()
 {
-    printf '%s\n' "screen2tmux: note: $*" >&2
+    _s2t_note_label=$(_s2t_color_token cyan note)
+    printf 'screen2tmux: %s: %s\n' "$_s2t_note_label" "$*" >&2
 }
 
 _s2t_uncertain_arg()
@@ -135,9 +182,11 @@ _s2t_uncertain_arg()
     _s2t_arg_desc=$1
     _s2t_reason=$2
     _s2t_suggestion=${3-}
-    printf '%s\n' "screen2tmux: WARNING: uncertain translation of argument $_s2t_arg_desc: $_s2t_reason" >&2
+    _s2t_warning_label=$(_s2t_color_token yellow WARNING)
+    printf 'screen2tmux: %s: uncertain translation of argument %s: %s\n' "$_s2t_warning_label" "$_s2t_arg_desc" "$_s2t_reason" >&2
     if [ -n "$_s2t_suggestion" ]; then
-        printf '%s\n' "screen2tmux: suggestion: $_s2t_suggestion" >&2
+        _s2t_suggestion_label=$(_s2t_color_token cyan suggestion)
+        printf 'screen2tmux: %s: %s\n' "$_s2t_suggestion_label" "$_s2t_suggestion" >&2
     fi
     return 3
 }

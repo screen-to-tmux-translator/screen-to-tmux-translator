@@ -11,7 +11,15 @@ LOG=${BEHAVIOR_LOG:-$PROJECT/logs/test-tmux-behavior-$RUN_TIMESTAMP.log}
 mkdir -p "$(dirname -- "$LOG")"
 : > "$LOG"
 
-if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+_color_enabled=0
+if [ -z "${NO_COLOR:-}" ]; then
+    case "${SCREEN2TMUX_COLOR:-auto}" in
+        always) _color_enabled=1 ;;
+        auto|'') if [ -t 1 ] && [ "${TERM:-}" != dumb ]; then _color_enabled=1; fi ;;
+        never) : ;;
+    esac
+fi
+if [ "$_color_enabled" -eq 1 ]; then
     G='\033[32m'; R='\033[31m'; Y='\033[33m'; C='\033[36m'; Z='\033[0m'
 else G=; R=; Y=; C=; Z=; fi
 
@@ -165,7 +173,7 @@ else
     fail "could not construct alternate-screen scope fixture"
 fi
 
-printf '\n%bBehavior summary:%b %s PASS, %s FAIL\n' "$C" "$Z" "$P" "$F"
+printf '\n%bBehavior summary:%b %s %bPASS%b, %s %bFAIL%b\n' "$C" "$Z" "$P" "$G" "$Z" "$F" "$R" "$Z"
 printf 'SUMMARY: pass=%s fail=%s\n' "$P" "$F" >> "$LOG"
 printf 'Behavior log: %s\n' "$LOG"
 [ "$F" -eq 0 ]

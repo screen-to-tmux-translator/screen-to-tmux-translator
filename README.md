@@ -1,4 +1,4 @@
-# screen-to-tmux-translator 0.3.2
+# screen-to-tmux-translator 0.3.3
 
 A conservative POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 
@@ -136,7 +136,7 @@ Current packaged results:
 ```text
 683/683 translation dry-run permutations PASS
 228/228 independent Screen syntax oracle cases PASS
-68/68 focused semantic regression tests PASS
+71/71 focused semantic regression tests PASS
 live tmux behavior tests run when a tmux executable is available
 ```
 
@@ -170,6 +170,23 @@ SCREEN2TMUX_LOG_DIR=/tmp/screen2tmux-logs sh run-tests.sh
 
 The static package manifest intentionally excludes `logs/`, since those files are runtime artifacts and change on every test run.
 
+## Console color
+
+Interactive output uses selective ANSI colorization: only semantic elements such as `[PASS]`, `[FAIL]`, `[SKIP]`, translation classes (`exact`, `approx`, `unsupported`, `moot`, `external`, `invalid`), diagnostic labels (`APPROX`, `UNSUPPORTED`, `WARNING`, `suggestion`), section titles, and run-summary labels/statuses are colored. Descriptions, commands, arguments, paths, and whole lines are left in the terminal's normal color.
+
+`run-tests.sh` applies color **after** `tee` writes the console transcript, so all timestamped `.log` files and the ZIP contents remain plain text with no ANSI escape bytes. Child test scripts are explicitly run with `NO_COLOR=1` for the same reason. When a test script is run standalone with forced console color, translator output captured into its detailed log is still forced plain, so the log remains ANSI-free.
+
+Color policy is controlled with:
+
+```sh
+SCREEN2TMUX_COLOR=auto    # default: color only when the relevant fd is a terminal
+SCREEN2TMUX_COLOR=always  # force terminal color; useful for testing/pagers that support ANSI
+SCREEN2TMUX_COLOR=never   # disable color
+NO_COLOR=1                # standard hard disable; overrides SCREEN2TMUX_COLOR=always
+```
+
+The translator itself uses the same policy for diagnostic labels on stderr. Exact dry-run command text remains uncolored and copy/paste safe.
+
 ## Source basis
 
 The bundled command manifest was generated from the GNU Screen 5.0.2 source supplied with this project work. The tmux mappings were audited against the supplied tmux `next-3.9` development source snapshot. See `docs/SOURCE-BASIS.md`.
@@ -177,7 +194,7 @@ The bundled command manifest was generated from the GNU Screen 5.0.2 source supp
 ## Project files
 
 ```text
-screen-to-tmux-translator-0.3.2/
+screen-to-tmux-translator-0.3.3/
 ├── VERSION
 ├── README.md
 ├── CHANGELOG.md

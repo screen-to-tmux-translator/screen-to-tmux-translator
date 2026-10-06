@@ -80,7 +80,13 @@ The ZIP is produced after all test layers finish and contains exactly the four `
 
 `SCREEN2TMUX_RUN_TIMESTAMP` may be set for deterministic filenames; `SCREEN2TMUX_LOG_DIR` may be set to redirect all runtime artifacts. ZIP creation prefers the `zip` executable and falls back to Python 3 `zipfile`. Runtime log files are intentionally excluded from the static package checksum manifest.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.1.
+## Console colorization
+
+The runner's terminal stream is colorized only after the corresponding plain text has been appended to `test-run-console-*`. ANSI escapes therefore never become part of the normal log/archive contract. Only semantic tokens are colored; complete test lines are not.
+
+The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive terminal. `always` forces it and `never` disables it. `NO_COLOR` disables all color and takes precedence. Test components launched by `run-tests.sh` receive `NO_COLOR=1`; the parent runner then selectively colors its terminal copy. Standalone test scripts honor the same console color policy directly while forcing translator output captured into their detailed log to plain text.
+
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.3.3.
 
 ## Focused regressions
 
@@ -122,14 +128,15 @@ The ZIP is produced after all test layers finish and contains exactly the four `
 - nested attached `-m` and tmux's `$TMUX` safeguard;
 - literal tmux-format escaping in names/titles and literal `-Q echo`;
 - Screen `screen N` StartAt semantics;
-- explicit uncertain-argument warnings for incompatible target syntax.
+- explicit uncertain-argument warnings for incompatible target syntax;
+- selective diagnostic color tokens and `NO_COLOR` precedence.
 
 ## Current packaged result
 
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       68 PASS, 0 FAIL
+focused regressions:       71 PASS, 0 FAIL
 live tmux behavior:         optional; skipped if tmux is unavailable
 ```
 
