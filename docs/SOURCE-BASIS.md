@@ -13,9 +13,21 @@ comm.c SHA-256:
 
 screen.c SHA-256:
 36598a0c3381b7fa1dc7f6b439f24ed690d8ca74463086d25ef027c7dd8e6989
+
+process.c SHA-256:
+8ad5c4fc976a1420ede9ad28daf479fd69ef7ed975696a177e613aa90a65a2e3
+
+fileio.c SHA-256:
+5af1aebd7fe2b58aa6521e8b8d70d28ff7fae1fd262927428856c493cdf5f25a
 ```
 
 `docs/screen-5.0.2-command-manifest.tsv` was generated from the 189-entry `comm.c` command table. It records each command's flag/arity expression and whether it has `CAN_QUERY`.
+
+The 0.2.1 nested-invocation behavior follows `screen.c`: when there is no `SocketMatch` (`-S` selector), `-m` is not set, and `$STY` is present, Screen sends `SendCreateMsg` to the existing Screen backend instead of starting another Screen session. The compatibility wrapper mirrors that rule using `$TMUX` and `tmux new-window`.
+
+The `removebuf` correction follows `process.c:DoCommandRemovebuf()` -> `fileio.c:KillBuffers()`, which unlinks Screen's `BufferFile`. It does not clear the in-memory copy buffer.
+
+`screen -Q number` is based on `DoCommandNumber()`, which returns `%d (%s)` in query mode.
 
 ## tmux
 
@@ -27,9 +39,25 @@ SHA-256: df78c6897052eaf158945ce98007a4ce5fa68790b7c43fa3b2ce8fe6a66da1e6
 
 cmd-attach-session.c SHA-256:
 40c4868f3a643d9e19105bda8d30a08e718072cfa7bbe92a7eb7add7ccf6aae2
+
+cmd-list-clients.c SHA-256:
+cecd7547017c11420e540e9102b1556ebecd6c63ec1d279a3d741814f25d7fd9
+
+cmd-list-keys.c SHA-256:
+d96fb4acdd936609b07895011235c307eaba8c96d642289fa25f5a912ff5c738
+
+cmd-refresh-client.c SHA-256:
+983a57e0382c3f97c450b73aee94734a2ffbe86f796f27abd81d96edc0d78d34
+
+cmd-detach-client.c SHA-256:
+112872b2ade3821982d96b560257cae4fd973c088a450ea8d2a25e7c87a405be
 ```
 
-The 0.2.0 attach preselection fix specifically relies on current tmux behavior in `cmd-attach-session.c`: if the `-t` value contains `:` or `.`, tmux resolves it as a pane target and then makes the corresponding window/pane current before attaching. This permits `screen -p 2 -r work` to map to `tmux attach-session -t work:2` without a separate selection command.
+`cmd-list-clients.c` confirms that `list-clients -t session` scopes results to clients attached to the selected session. tmux key bindings, by contrast, live in server key tables, so a Screen-session-local `bind` cannot safely be executed as an unconditional `tmux bind-key` without broadening scope.
+
+`refresh-client` and `suspend-client` are target-client commands. A Screen session selector (`-S`) does not uniquely identify a tmux client when multiple clients are attached, so these translations are classified as `APPROX` instead of being executed automatically.
+
+For plain Screen `-r`, tmux's `attach-session` is only an approximation: Screen resume semantics distinguish detached from already attached sessions, while tmux normally permits multiple clients. The wrapper preserves a Screen `-p` window in the suggested tmux `session:window` target, but no longer labels the overall `-r` behavior exact.
 
 ## Caveat
 

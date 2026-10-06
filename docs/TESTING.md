@@ -66,11 +66,11 @@ RESULT
 
 Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and preserved exactly in the hex fields.
 
-`logs/test-regressions.log` records the focused semantic regressions introduced in 0.2.0.
+`logs/test-regressions.log` records the focused semantic regressions introduced in 0.2.1.
 
 ## Focused regressions
 
-`tests/test-regressions.sh` checks the bugs observed after the 0.1.0 package was run on a real system, including:
+`tests/test-regressions.sh` checks the bugs observed through the 0.2.0 package runs, including:
 
 - `-d -m <program>` operand handling;
 - `-m` not implying detach;
@@ -83,12 +83,21 @@ Control characters are rendered visibly in `INPUT_DISPLAY`/dry-run output and pr
 - layout abstraction mismatch;
 - ACL scope mismatch;
 - serial mappings being external;
-- safe rendering of carriage-return bytes.
+- safe rendering of carriage-return bytes;
+- Screen `$STY`-style nested invocation behavior using `$TMUX`;
+- `removebuf` exchange-file semantics;
+- Screen-compatible `-Q number` output shape;
+- session scoping for `displays`;
+- server-wide tmux key-binding scope;
+- client targeting for redisplay/suspend;
+- non-compatible informational/query output;
+- hardcopy/capture-pane approximation;
+- plain `-r` attach/resume semantic differences.
 
 ## Current packaged result
 
 ```text
 translation permutations: 683 PASS, 0 FAIL
 syntax oracle base cases: 228 PASS, 0 FAIL
-focused regressions:       15 PASS, 0 FAIL
+focused regressions:       33 PASS, 0 FAIL
 ```

@@ -1,4 +1,4 @@
-# Source-derived Screen CLI cases for screen-to-tmux-translator 0.2.0.
+# Source-derived Screen CLI cases for screen-to-tmux-translator 0.2.1.
 # This file is sourced by test-screen-cli.sh, which defines case_.
 # Syntax: case_ ID EXPECTED "description" [screen arguments...]
 # EXPECTED: exact | approx | moot | external | unsupported | invalid
@@ -18,7 +18,7 @@ case_ C011 exact       "list sessions short" -ls
 case_ C012 exact       "list sessions long" -list
 case_ C013 exact       "list matching sessions" -ls work
 case_ C014 approx      "attach to an available session" -r
-case_ C015 exact       "attach named session" -r work
+case_ C015 approx      "attach named session" -r work
 case_ C016 exact       "multi-display attach named session" -x work
 case_ C017 exact       "detach named session" -d work
 case_ C018 exact       "power detach named session" -D work
@@ -41,8 +41,8 @@ case_ P004 exact       "cluster dR attach-create" -dR work
 case_ P005 exact       "cluster dRR attach-create" -dRR work
 case_ P006 exact       "cluster DR attach-create" -DR work
 case_ P007 exact       "cluster DRR attach-create" -DRR work
-case_ P008 exact       "attached preselect syntax" -p 2 -r work
-case_ P009 exact       "attached preselect compact syntax" -p2 -r work
+case_ P008 approx      "attached preselect syntax" -p 2 -r work
+case_ P009 approx      "attached preselect compact syntax" -p2 -r work
 case_ P010 unsupported "compact alternate rc syntax" -c/tmp/screenrc
 case_ P011 unsupported "compact escape syntax" '-e^Bb'
 case_ P012 unsupported "flow enabled form" -f
@@ -106,20 +106,20 @@ case_ R010 approx      "only current region" -S work -X only
 case_ R011 unsupported "remove Screen region without killing window" -S work -X remove
 case_ R012 unsupported "fit layer to Screen region" -S work -X fit
 case_ R013 approx      "resize region plus five" -S work -X resize +5
-case_ R014 exact       "redisplay" -S work -X redisplay
+case_ R014 approx      "redisplay" -S work -X redisplay
 
 # Client/session control
 case_ S001 exact       "detach via X" -S work -X detach
 case_ S002 exact       "power detach via X" -S work -X pow_detach
-case_ S003 exact       "suspend frontend" -S work -X suspend
+case_ S003 approx      "suspend frontend" -S work -X suspend
 case_ S004 exact       "quit named Screen session" -S work -X quit
 case_ S005 approx      "lock Screen session" -S work -X lockscreen
 case_ S006 exact       "rename session" -S work -X sessionname development
 
 # Queries
-case_ Q001 exact       "query windows" -S work -Q windows
-case_ Q002 exact       "query info" -S work -Q info
-case_ Q003 exact       "query last message" -S work -Q lastmsg
+case_ Q001 approx      "query windows" -S work -Q windows
+case_ Q002 approx      "query info" -S work -Q info
+case_ Q003 approx      "query last message" -S work -Q lastmsg
 case_ Q004 exact       "query window number" -S work -Q number
 case_ Q005 exact       "query window title" -S work -Q title
 case_ Q006 exact       "query echo" -S work -Q echo hello
@@ -127,12 +127,12 @@ case_ Q007 exact       "query-select window two" -S work -Q select 2
 
 # Copy buffer/scrollback
 case_ B001 unsupported "hardcopy default filename" -S work -p 0 -X hardcopy
-case_ B002 exact       "hardcopy explicit file" -S work -p 0 -X hardcopy /tmp/window.txt
-case_ B003 exact       "hardcopy history explicit file" -S work -p 0 -X hardcopy -h /tmp/all.txt
+case_ B002 approx      "hardcopy explicit file" -S work -p 0 -X hardcopy /tmp/window.txt
+case_ B003 approx      "hardcopy history explicit file" -S work -p 0 -X hardcopy -h /tmp/all.txt
 case_ B004 unsupported "change existing window scrollback" -S work -p 0 -X scrollback 10000
 case_ B005 exact       "read copy buffer" -S work -X readbuf /tmp/text
 case_ B006 exact       "write copy buffer" -S work -X writebuf /tmp/text
-case_ B007 exact       "remove copy buffer" -S work -X removebuf
+case_ B007 unsupported "remove Screen exchange file" -S work -X removebuf
 case_ B008 exact       "register text" -S work -X register a hello
 case_ B009 exact       "paste buffer" -S work -p 0 -X paste
 case_ B010 exact       "enter copy mode" -S work -p 0 -X copy
@@ -166,9 +166,9 @@ case_ E005 unsupported "change Screen backend default cwd" -S work -X chdir /tmp
 # Prefix/key configuration
 case_ K001 unsupported "startup Screen escape pair" -e '^Bb'
 case_ K002 unsupported "runtime Screen escape pair" -S work -X escape '^Bb'
-case_ K003 exact       "bind c to create window" -S work -X bind c screen
-case_ K004 exact       "bind k to kill window" -S work -X bind k kill
-case_ K005 exact       "unbind all" -S work -X unbindall
+case_ K003 approx      "bind c to create window" -S work -X bind c screen
+case_ K004 approx      "bind k to kill window" -S work -X bind k kill
+case_ K005 approx      "unbind all" -S work -X unbindall
 
 # Terminal/encoding
 case_ T001 unsupported "set Screen virtual TERM at startup" -T screen-256color
@@ -188,7 +188,7 @@ case_ H003 approx      "hardstatus bottom" -S work -X hardstatus alwayslastline
 case_ H004 approx      "hardstatus top" -S work -X hardstatus alwaysfirstline
 case_ H005 approx      "caption always" -S work -X caption always
 case_ H006 unsupported "caption splitonly" -S work -X caption splitonly
-case_ H007 exact       "redisplay from status section" -S work -X redisplay
+case_ H007 approx      "redisplay from status section" -S work -X redisplay
 
 # Security/multiuser
 case_ A001 unsupported "enable Screen multiuser mode" -S work -X multiuser on
@@ -234,7 +234,7 @@ case_ O012 approx      "startup logging" -L
 case_ O013 unsupported "set logfile path without logging" -Logfile /tmp/screen.log
 case_ O014 exact       "force new Screen session semantics" -m
 case_ O015 unsupported "optimized VT output mode" -O
-case_ O016 exact       "preselect then attach" -p 2 -r work
+case_ O016 approx      "preselect then attach" -p 2 -r work
 case_ O017 unsupported "Screen authentication flag" -P
 case_ O018 exact       "quiet list" -q -ls
 case_ O019 unsupported "default shell override" -s /bin/bash
@@ -247,12 +247,12 @@ case_ O025 exact       "version long" --version
 case_ O026 exact       "help" --help
 
 # Native command-mode informational mappings
-case_ N001 exact       "list attached displays" -S work -X displays
-case_ N002 exact       "display info" -S work -X dinfo
-case_ N003 exact       "list windows internal command" -S work -X windows
-case_ N004 exact       "help/list keys" -S work -X help
-case_ N005 exact       "info internal command" -S work -X info
-case_ N006 exact       "lastmsg internal command" -S work -X lastmsg
+case_ N001 approx      "list attached displays" -S work -X displays
+case_ N002 approx      "display info" -S work -X dinfo
+case_ N003 approx      "list windows internal command" -S work -X windows
+case_ N004 approx      "help/list keys" -S work -X help
+case_ N005 approx      "info internal command" -S work -X info
+case_ N006 approx      "lastmsg internal command" -S work -X lastmsg
 case_ N007 exact       "version internal command" -S work -X version
 case_ N008 unsupported "license internal command" -S work -X license
 case_ N009 approx      "layout next" -S work -X layout next

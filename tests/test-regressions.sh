@@ -1,5 +1,5 @@
 #!/bin/sh
-# Focused regressions for semantic false positives observed in 0.1.0.
+# Focused regressions for semantic/scope false positives observed through 0.2.0.
 set -u
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 PROJECT=$(CDPATH= cd -- "$HERE/.." && pwd)
@@ -63,6 +63,26 @@ expect_not_contains()
     fi
 }
 
+capture_in_tmux()
+{
+    _cit_had=${TMUX+x}
+    _cit_old=${TMUX-}
+    TMUX='/tmp/tmux-test/default,12345,0'
+    export TMUX
+    capture "$@"
+    if [ "$_cit_had" = x ]; then TMUX=$_cit_old; export TMUX; else unset TMUX; fi
+}
+
+expect_exact_in_tmux()
+{
+    name=$1; expected=$2; shift 2
+    CURRENT_NAME=$name
+    capture_in_tmux "$@"
+    if [ "$RC" -eq 0 ] && [ "$OUT" = "$expected" ]; then pass "$name"; else
+        fail "$name (rc=$RC, output=$OUT)"
+    fi
+}
+
 expect_exact "-d -m preserves command operand" "'tmux' 'new-session' '-d' 'bash'" --dry-run -d -m bash
 expect_exact "-m alone does not detach" "'tmux' 'new-session'" -m --dry-run
 expect_class_contains "screenrc is not passed to tmux -f" 2 "Screen -c reads Screen configuration syntax" --dry-run -c /tmp/my-screenrc
@@ -70,13 +90,31 @@ expect_not_contains "screenrc rejection never emits tmux -f" 2 "'tmux' '-f'" -c 
 expect_class_contains "Screen source is not tmux source-file" 2 "Screen 'source' reads Screen command syntax" -S work -X source /tmp/screen-extra --dry-run
 expect_class_contains "-L is approximation, never silently dropped" 3 "APPROX" --dry-run -L
 expect_class_contains "-Logfile without -L is unsupported" 2 "persistent logfile-name setting" -Logfile /tmp/screen.log --dry-run
-expect_exact "-p window is preserved when attaching" "'tmux' 'attach-session' '-t' 'work:2'" -p 2 -r work --dry-run
-expect_exact "compact -p window is preserved when attaching" "'tmux' 'attach-session' '-t' 'work:2'" -p2 -r work --dry-run
+expect_class_contains "-p window is preserved in attach suggestion" 3 "tmux attach-session -t work:2" -p 2 -r work --dry-run
+expect_class_contains "compact -p window is preserved in attach suggestion" 3 "tmux attach-session -t work:2" -p2 -r work --dry-run
 expect_class_contains "focus right is approximation with correct target" 3 "work:.{right-of}" -S work -X focus right --dry-run
 expect_not_contains "resize +5 does not invent down direction" 3 "resize-pane -D" -S work -X resize +5 --dry-run
 expect_class_contains "Screen layout next is not claimed exact" 3 "saved display-region layouts" -S work -X layout next --dry-run
 expect_class_contains "ACL add warns about server-wide scope" 3 "server level" -S work -X acladd alice --dry-run
 expect_class_contains "direct serial mapping is external" 5 "EXTERNAL" /dev/ttyUSB0 115200 --dry-run
+expect_class_contains "plain -r is approximation because tmux allows extra clients" 3 "normally refuses an already attached session" -r work --dry-run
+expect_class_contains "hardcopy explicit file is approximation" 3 "not byte-for-byte equivalent" -S work -p 0 -X hardcopy /tmp/window.txt --dry-run
+expect_class_contains "removebuf does not delete tmux buffer" 2 "exchange file" -S work -X removebuf --dry-run
+expect_not_contains "removebuf never emits delete-buffer" 2 "delete-buffer'" -S work -X removebuf --dry-run
+expect_exact "query number reproduces Screen N (title) shape" "'tmux' 'display-message' '-p' '-t' 'work' '#{window_index} (#{window_name})'" -S work -Q number --dry-run
+expect_class_contains "displays is session scoped" 3 "tmux list-clients -t work" -S work -X displays --dry-run
+expect_class_contains "bind warns about tmux server-wide key tables" 3 "server-wide" -S work -X bind c screen --dry-run
+expect_class_contains "unbindall warns about tmux server-wide key tables" 3 "server-wide" -S work -X unbindall --dry-run
+expect_class_contains "redisplay requires a concrete client" 3 "particular attached Display" -S work -X redisplay --dry-run
+expect_class_contains "suspend requires a concrete client" 3 "does not uniquely identify a tmux client" -S work -X suspend --dry-run
+expect_class_contains "query info is not claimed output-compatible" 3 "fixed status summary" -S work -Q info --dry-run
+expect_class_contains "query lastmsg is not claimed output-compatible" 3 "single most recent message" -S work -Q lastmsg --dry-run
+expect_class_contains "Screen help is not claimed output-compatible" 3 "server-wide key tables" -S work -X help --dry-run
+expect_exact_in_tmux "inside tmux plain screen bash creates a window" "'tmux' 'new-window' 'bash'" --dry-run bash
+expect_exact_in_tmux "inside tmux plain screen creates a window" "'tmux' 'new-window'" --dry-run
+expect_exact_in_tmux "inside tmux -t title creates titled window" "'tmux' 'new-window' '-n' 'editor' 'vim'" --dry-run -t editor vim
+expect_exact_in_tmux "inside tmux -m forces new session" "'tmux' 'new-session' 'bash'" --dry-run -m bash
+expect_exact_in_tmux "inside tmux -S forces named new session" "'tmux' 'new-session' '-s' 'work' 'bash'" --dry-run -S work bash
 
 CR=$(printf '\r')
 CURRENT_NAME='dry-run renders carriage return safely'

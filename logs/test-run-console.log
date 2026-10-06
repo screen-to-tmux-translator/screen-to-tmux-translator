@@ -39,9 +39,9 @@
 [PASS] C014 approx      first  attach to an available session
 [PASS] C014 approx      middle attach to an available session
 [PASS] C014 approx      last   attach to an available session
-[PASS] C015 exact       first  attach named session
-[PASS] C015 exact       middle attach named session
-[PASS] C015 exact       last   attach named session
+[PASS] C015 approx      first  attach named session
+[PASS] C015 approx      middle attach named session
+[PASS] C015 approx      last   attach named session
 [PASS] C016 exact       first  multi-display attach named session
 [PASS] C016 exact       middle multi-display attach named session
 [PASS] C016 exact       last   multi-display attach named session
@@ -102,12 +102,12 @@
 [PASS] P007 exact       first  cluster DRR attach-create
 [PASS] P007 exact       middle cluster DRR attach-create
 [PASS] P007 exact       last   cluster DRR attach-create
-[PASS] P008 exact       first  attached preselect syntax
-[PASS] P008 exact       middle attached preselect syntax
-[PASS] P008 exact       last   attached preselect syntax
-[PASS] P009 exact       first  attached preselect compact syntax
-[PASS] P009 exact       middle attached preselect compact syntax
-[PASS] P009 exact       last   attached preselect compact syntax
+[PASS] P008 approx      first  attached preselect syntax
+[PASS] P008 approx      middle attached preselect syntax
+[PASS] P008 approx      last   attached preselect syntax
+[PASS] P009 approx      first  attached preselect compact syntax
+[PASS] P009 approx      middle attached preselect compact syntax
+[PASS] P009 approx      last   attached preselect compact syntax
 [PASS] P010 unsupported first  compact alternate rc syntax
 [PASS] P010 unsupported middle compact alternate rc syntax
 [PASS] P010 unsupported last   compact alternate rc syntax
@@ -267,18 +267,18 @@
 [PASS] R013 approx      first  resize region plus five
 [PASS] R013 approx      middle resize region plus five
 [PASS] R013 approx      last   resize region plus five
-[PASS] R014 exact       first  redisplay
-[PASS] R014 exact       middle redisplay
-[PASS] R014 exact       last   redisplay
+[PASS] R014 approx      first  redisplay
+[PASS] R014 approx      middle redisplay
+[PASS] R014 approx      last   redisplay
 [PASS] S001 exact       first  detach via X
 [PASS] S001 exact       middle detach via X
 [PASS] S001 exact       last   detach via X
 [PASS] S002 exact       first  power detach via X
 [PASS] S002 exact       middle power detach via X
 [PASS] S002 exact       last   power detach via X
-[PASS] S003 exact       first  suspend frontend
-[PASS] S003 exact       middle suspend frontend
-[PASS] S003 exact       last   suspend frontend
+[PASS] S003 approx      first  suspend frontend
+[PASS] S003 approx      middle suspend frontend
+[PASS] S003 approx      last   suspend frontend
 [PASS] S004 exact       first  quit named Screen session
 [PASS] S004 exact       middle quit named Screen session
 [PASS] S004 exact       last   quit named Screen session
@@ -288,15 +288,15 @@
 [PASS] S006 exact       first  rename session
 [PASS] S006 exact       middle rename session
 [PASS] S006 exact       last   rename session
-[PASS] Q001 exact       first  query windows
-[PASS] Q001 exact       middle query windows
-[PASS] Q001 exact       last   query windows
-[PASS] Q002 exact       first  query info
-[PASS] Q002 exact       middle query info
-[PASS] Q002 exact       last   query info
-[PASS] Q003 exact       first  query last message
-[PASS] Q003 exact       middle query last message
-[PASS] Q003 exact       last   query last message
+[PASS] Q001 approx      first  query windows
+[PASS] Q001 approx      middle query windows
+[PASS] Q001 approx      last   query windows
+[PASS] Q002 approx      first  query info
+[PASS] Q002 approx      middle query info
+[PASS] Q002 approx      last   query info
+[PASS] Q003 approx      first  query last message
+[PASS] Q003 approx      middle query last message
+[PASS] Q003 approx      last   query last message
 [PASS] Q004 exact       first  query window number
 [PASS] Q004 exact       middle query window number
 [PASS] Q004 exact       last   query window number
@@ -312,12 +312,12 @@
 [PASS] B001 unsupported first  hardcopy default filename
 [PASS] B001 unsupported middle hardcopy default filename
 [PASS] B001 unsupported last   hardcopy default filename
-[PASS] B002 exact       first  hardcopy explicit file
-[PASS] B002 exact       middle hardcopy explicit file
-[PASS] B002 exact       last   hardcopy explicit file
-[PASS] B003 exact       first  hardcopy history explicit file
-[PASS] B003 exact       middle hardcopy history explicit file
-[PASS] B003 exact       last   hardcopy history explicit file
+[PASS] B002 approx      first  hardcopy explicit file
+[PASS] B002 approx      middle hardcopy explicit file
+[PASS] B002 approx      last   hardcopy explicit file
+[PASS] B003 approx      first  hardcopy history explicit file
+[PASS] B003 approx      middle hardcopy history explicit file
+[PASS] B003 approx      last   hardcopy history explicit file
 [PASS] B004 unsupported first  change existing window scrollback
 [PASS] B004 unsupported middle change existing window scrollback
 [PASS] B004 unsupported last   change existing window scrollback
@@ -327,9 +327,9 @@
 [PASS] B006 exact       first  write copy buffer
 [PASS] B006 exact       middle write copy buffer
 [PASS] B006 exact       last   write copy buffer
-[PASS] B007 exact       first  remove copy buffer
-[PASS] B007 exact       middle remove copy buffer
-[PASS] B007 exact       last   remove copy buffer
+[PASS] B007 unsupported first  remove Screen exchange file
+[PASS] B007 unsupported middle remove Screen exchange file
+[PASS] B007 unsupported last   remove Screen exchange file
 [PASS] B008 exact       first  register text
 [PASS] B008 exact       middle register text
 [PASS] B008 exact       last   register text
@@ -405,15 +405,15 @@
 [PASS] K002 unsupported first  runtime Screen escape pair
 [PASS] K002 unsupported middle runtime Screen escape pair
 [PASS] K002 unsupported last   runtime Screen escape pair
-[PASS] K003 exact       first  bind c to create window
-[PASS] K003 exact       middle bind c to create window
-[PASS] K003 exact       last   bind c to create window
-[PASS] K004 exact       first  bind k to kill window
-[PASS] K004 exact       middle bind k to kill window
-[PASS] K004 exact       last   bind k to kill window
-[PASS] K005 exact       first  unbind all
-[PASS] K005 exact       middle unbind all
-[PASS] K005 exact       last   unbind all
+[PASS] K003 approx      first  bind c to create window
+[PASS] K003 approx      middle bind c to create window
+[PASS] K003 approx      last   bind c to create window
+[PASS] K004 approx      first  bind k to kill window
+[PASS] K004 approx      middle bind k to kill window
+[PASS] K004 approx      last   bind k to kill window
+[PASS] K005 approx      first  unbind all
+[PASS] K005 approx      middle unbind all
+[PASS] K005 approx      last   unbind all
 [PASS] T001 unsupported first  set Screen virtual TERM at startup
 [PASS] T001 unsupported middle set Screen virtual TERM at startup
 [PASS] T001 unsupported last   set Screen virtual TERM at startup
@@ -459,9 +459,9 @@
 [PASS] H006 unsupported first  caption splitonly
 [PASS] H006 unsupported middle caption splitonly
 [PASS] H006 unsupported last   caption splitonly
-[PASS] H007 exact       first  redisplay from status section
-[PASS] H007 exact       middle redisplay from status section
-[PASS] H007 exact       last   redisplay from status section
+[PASS] H007 approx      first  redisplay from status section
+[PASS] H007 approx      middle redisplay from status section
+[PASS] H007 approx      last   redisplay from status section
 [PASS] A001 unsupported first  enable Screen multiuser mode
 [PASS] A001 unsupported middle enable Screen multiuser mode
 [PASS] A001 unsupported last   enable Screen multiuser mode
@@ -579,9 +579,9 @@
 [PASS] O015 unsupported first  optimized VT output mode
 [PASS] O015 unsupported middle optimized VT output mode
 [PASS] O015 unsupported last   optimized VT output mode
-[PASS] O016 exact       first  preselect then attach
-[PASS] O016 exact       middle preselect then attach
-[PASS] O016 exact       last   preselect then attach
+[PASS] O016 approx      first  preselect then attach
+[PASS] O016 approx      middle preselect then attach
+[PASS] O016 approx      last   preselect then attach
 [PASS] O017 unsupported first  Screen authentication flag
 [PASS] O017 unsupported middle Screen authentication flag
 [PASS] O017 unsupported last   Screen authentication flag
@@ -612,24 +612,24 @@
 [PASS] O026 exact       first  help
 [PASS] O026 exact       middle help
 [PASS] O026 exact       last   help
-[PASS] N001 exact       first  list attached displays
-[PASS] N001 exact       middle list attached displays
-[PASS] N001 exact       last   list attached displays
-[PASS] N002 exact       first  display info
-[PASS] N002 exact       middle display info
-[PASS] N002 exact       last   display info
-[PASS] N003 exact       first  list windows internal command
-[PASS] N003 exact       middle list windows internal command
-[PASS] N003 exact       last   list windows internal command
-[PASS] N004 exact       first  help/list keys
-[PASS] N004 exact       middle help/list keys
-[PASS] N004 exact       last   help/list keys
-[PASS] N005 exact       first  info internal command
-[PASS] N005 exact       middle info internal command
-[PASS] N005 exact       last   info internal command
-[PASS] N006 exact       first  lastmsg internal command
-[PASS] N006 exact       middle lastmsg internal command
-[PASS] N006 exact       last   lastmsg internal command
+[PASS] N001 approx      first  list attached displays
+[PASS] N001 approx      middle list attached displays
+[PASS] N001 approx      last   list attached displays
+[PASS] N002 approx      first  display info
+[PASS] N002 approx      middle display info
+[PASS] N002 approx      last   display info
+[PASS] N003 approx      first  list windows internal command
+[PASS] N003 approx      middle list windows internal command
+[PASS] N003 approx      last   list windows internal command
+[PASS] N004 approx      first  help/list keys
+[PASS] N004 approx      middle help/list keys
+[PASS] N004 approx      last   help/list keys
+[PASS] N005 approx      first  info internal command
+[PASS] N005 approx      middle info internal command
+[PASS] N005 approx      last   info internal command
+[PASS] N006 approx      first  lastmsg internal command
+[PASS] N006 approx      middle lastmsg internal command
+[PASS] N006 approx      last   lastmsg internal command
 [PASS] N007 exact       first  version internal command
 [PASS] N007 exact       middle version internal command
 [PASS] N007 exact       last   version internal command
@@ -683,7 +683,7 @@
 [PASS] Z010 invalid     last   invalid focus direction
 
 Summary: 683 PASS, 0 FAIL, 683 translation invocations; oracle 228 PASS/0 FAIL
-Log: /mnt/data/screen-to-tmux-translator-0.2.0/logs/test-screen-cli.log
+Log: /mnt/data/screen-to-tmux-translator-0.2.1/logs/test-screen-cli.log
 [PASS] -d -m preserves command operand
 [PASS] -m alone does not detach
 [PASS] screenrc is not passed to tmux -f
@@ -691,14 +691,32 @@ Log: /mnt/data/screen-to-tmux-translator-0.2.0/logs/test-screen-cli.log
 [PASS] Screen source is not tmux source-file
 [PASS] -L is approximation, never silently dropped
 [PASS] -Logfile without -L is unsupported
-[PASS] -p window is preserved when attaching
-[PASS] compact -p window is preserved when attaching
+[PASS] -p window is preserved in attach suggestion
+[PASS] compact -p window is preserved in attach suggestion
 [PASS] focus right is approximation with correct target
 [PASS] resize +5 does not invent down direction
 [PASS] Screen layout next is not claimed exact
 [PASS] ACL add warns about server-wide scope
 [PASS] direct serial mapping is external
+[PASS] plain -r is approximation because tmux allows extra clients
+[PASS] hardcopy explicit file is approximation
+[PASS] removebuf does not delete tmux buffer
+[PASS] removebuf never emits delete-buffer
+[PASS] query number reproduces Screen N (title) shape
+[PASS] displays is session scoped
+[PASS] bind warns about tmux server-wide key tables
+[PASS] unbindall warns about tmux server-wide key tables
+[PASS] redisplay requires a concrete client
+[PASS] suspend requires a concrete client
+[PASS] query info is not claimed output-compatible
+[PASS] query lastmsg is not claimed output-compatible
+[PASS] Screen help is not claimed output-compatible
+[PASS] inside tmux plain screen bash creates a window
+[PASS] inside tmux plain screen creates a window
+[PASS] inside tmux -t title creates titled window
+[PASS] inside tmux -m forces new session
+[PASS] inside tmux -S forces named new session
 [PASS] dry-run renders carriage return safely
 
-Regression summary: 15 PASS, 0 FAIL
-Regression log: /mnt/data/screen-to-tmux-translator-0.2.0/logs/test-regressions.log
+Regression summary: 33 PASS, 0 FAIL
+Regression log: /mnt/data/screen-to-tmux-translator-0.2.1/logs/test-regressions.log
