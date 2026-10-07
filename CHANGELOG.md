@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.22 — 2026-10-07
+
+- Hide successful built patched tmux integration-check sections by default. `--show-integration-checks` restores the full section; any failure automatically reveals the section banner, failed check row, and its indented diagnostics while the complete integration log is still written.
+- Hide successful tmux behavior-test sections by default. `--show-behavior-test` restores full behavior output; failures automatically reveal only the banner and failed check rows/diagnostics while dedicated behavior logs remain complete.
+- Render project-owned paths relative to the repository root on the terminal (`./logs/...`, `./build/...`, and so on) while preserving absolute paths in the underlying component and console-source logs before terminal formatting.
+- Print the test-log archive path only once by retaining the final `LOG_ARCHIVE:` summary entry and removing the duplicate `Log archive:` success line.
+- Added focused regressions covering both opt-in display flags, failure-only reveal behavior, terminal path relativization, and archive-path deduplication. Focused regressions are now 153 PASS.
+
+
 ## 0.4.21 — 2026-10-07
 
 - Make translator INVALID/unknown-syntax rejection strict-only. Normal mode now stops an unrecognized validation path successfully without emitting INVALID or executing a guessed tmux command; `--strict` preserves the explicit INVALID diagnostic and exit status 64.

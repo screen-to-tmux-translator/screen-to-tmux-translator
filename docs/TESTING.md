@@ -90,6 +90,8 @@ screen-to-tmux-translator-<VERSION>-test-logs-YYYYMMDD-HHMMSS.zip
 
 The ZIP is produced after all test layers finish. With no compiled tmux build present it contains those four base `.log` files. When patched builds are discovered, the system-tmux behavior log is replaced by one behavior log per patched version and the built-hardlink integration log is added. A `--build` run additionally includes `test-build-<timestamp>.log`. The standalone `test-screen-cli.sh` creates its own detailed CLI log only when invoked directly. `test-run-console-*` is produced by the runner itself and includes the shared run timestamp, start/finish timestamps, overall status, and paths of all run artifacts. The runner refuses to overwrite artifacts when a forced timestamp collides with an existing run.
 
+On the terminal, paths inside the project are rewritten relative to the project root (for example `./logs/test-build-...log` and `./build/tmux-3.7c-patched`). This is display-only: the component logs and pre-format console stream retain their original paths. The final archive is reported once as `LOG_ARCHIVE: ./logs/...zip`; there is no duplicate `Log archive:` success line.
+
 `SCREEN2TMUX_RUN_TIMESTAMP` may be set for deterministic filenames; `SCREEN2TMUX_LOG_DIR` may be set to redirect all runtime artifacts. ZIP creation prefers the `zip` executable and falls back to Python 3 `zipfile`. Runtime log files are intentionally excluded from the static package checksum manifest.
 
 ## Console colorization
@@ -100,7 +102,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.21. The terminal hides individual PASS rows by default and still prints every failure; `run-tests.sh --show-regression-test-pass` restores PASS rows. The log records every result in both modes.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.22. The terminal hides individual PASS rows by default and still prints every failure; `run-tests.sh --show-regression-test-pass` restores PASS rows. The log records every result in both modes. Successful built-hardlink integration sections are hidden unless `--show-integration-checks` is passed, and successful tmux behavior sections are hidden unless `--show-behavior-test` is passed. A failure in either hidden section automatically prints that section banner, failed row, and indented diagnostics.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, both one-line source variants, standalone self-contained `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with the path on the same line in parentheses; paths inside the project are relative to the repository root. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 
@@ -162,7 +164,7 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 ```text
 translation permutations:       683 PASS, 0 FAIL
 syntax oracle base cases:       228 PASS, 0 FAIL
-focused regressions:            149 PASS, 0 FAIL
+focused regressions:            153 PASS, 0 FAIL
 packaged equivalence interfaces: 5 (canonical, minified, two one-line sources, screen.sh)
 equivalence variants/interface: 683
 equivalence command cases:      228 PASS, 0 FAIL

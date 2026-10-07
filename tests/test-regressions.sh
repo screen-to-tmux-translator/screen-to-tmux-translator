@@ -868,6 +868,46 @@ else
     fail "$CURRENT_NAME"
 fi
 
+CURRENT_NAME='run-tests exposes opt-in integration and behavior display flags'
+if grep -F -- '--show-integration-checks' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F -- '--show-behavior-test' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'SHOW_INTEGRATION_CHECKS=0' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'SHOW_BEHAVIOR_TEST=0' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='successful integration and behavior sections are hidden by default'
+if grep -F 'run_component_selective' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F "'built patched tmux integration checks' \"\$SHOW_INTEGRATION_CHECKS\"" "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F "'live tmux behavior tests' \"\$SHOW_BEHAVIOR_TEST\"" "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F '"tmux $_name patched behavior tests" "$SHOW_BEHAVIOR_TEST"' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F '/^\[FAIL\]/ { showing=1; print; next }' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='terminal paths are project-relative while logs retain originals'
+if grep -F 'relativize_stream()' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'replace_literal($0, root, ".")' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'terminal_stream() { verbosity_filter | relativize_stream | truncate_stream | colorize_stream; }' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='log archive path is printed once'
+_ARCHIVE_LABELS=$(grep -F "printf 'Log archive:" "$PROJECT/run-tests.sh" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$_ARCHIVE_LABELS" -eq 0 ] && \
+   grep -F "printf 'LOG_CONSOLE: %s\\nLOG_ARCHIVE: %s\\n'" "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (extra Log archive success labels=$_ARCHIVE_LABELS)"
+fi
+unset _ARCHIVE_LABELS
+
 CURRENT_NAME='console and build formatters flush progress incrementally'
 if grep -F 'function emit(s) { print s; fflush() }' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F 'function add_compile(item,' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \

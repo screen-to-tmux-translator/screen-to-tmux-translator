@@ -1,5 +1,5 @@
 #!/bin/sh
-SCREEN2TMUX_VERSION=0.4.21
+SCREEN2TMUX_VERSION=0.4.22
 case ${0##*/} in
     screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)
         _s2t_source_name=${0##*/}

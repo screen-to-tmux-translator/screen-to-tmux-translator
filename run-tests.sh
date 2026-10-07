@@ -17,6 +17,8 @@ BUILD_VERSIONS=
 COMPILE_ORIGINAL=0
 LIST_EQUIV=0
 SHOW_REGRESSION_PASS=0
+SHOW_INTEGRATION_CHECKS=0
+SHOW_BEHAVIOR_TEST=0
 TAB=$(printf '\t')
 
 usage()
@@ -36,6 +38,12 @@ Usage: sh run-tests.sh [options]
   --show-regression-test-pass Show individual focused-regression PASS rows.
                               By default only regression failures and the summary
                               are printed; full results remain in the log.
+  --show-integration-checks   Show successful built-tmux integration checks.
+                              By default this section is hidden when all checks
+                              pass; failures are always shown.
+  --show-behavior-test        Show successful tmux behavior tests. By default
+                              behavior sections are hidden when all checks pass;
+                              failures are always shown.
   --truncate-lines N          Limit terminal display lines to N columns. Full logs
                               are never truncated. --trunkate-lines is an alias.
   --equivalence NAME          Restrict interface equivalence to NAME. Repeatable.
@@ -83,6 +91,8 @@ while [ "$#" -gt 0 ]; do
         --verbosity=*) VERBOSITY=${1#*=}; shift ;;
         --quiet) TEST_QUIET=1; shift ;;
         --show-regression-test-pass) SHOW_REGRESSION_PASS=1; shift ;;
+        --show-integration-checks) SHOW_INTEGRATION_CHECKS=1; shift ;;
+        --show-behavior-test) SHOW_BEHAVIOR_TEST=1; shift ;;
         --equivalence|--equivalence-only)
             [ "$#" -ge 2 ] || { printf 'ERROR: %s requires an interface name.\n' "$1" >&2; exit 64; }
             if [ "$EQUIV_CUSTOM" -eq 0 ]; then EQUIV_REQUEST=$2; EQUIV_CUSTOM=1; else EQUIV_REQUEST="$EQUIV_REQUEST,$2"; fi
@@ -212,7 +222,18 @@ colorize_stream()
         emit(line)
     }'
 }
-terminal_stream() { verbosity_filter | truncate_stream | colorize_stream; }
+relativize_stream()
+{
+    awk -v root="$HERE" '
+    function replace_literal(s, old, new, p) {
+        while ((p = index(s, old)) != 0)
+            s = substr(s, 1, p - 1) new substr(s, p + length(old))
+        return s
+    }
+    { print replace_literal($0, root, "."); fflush() }
+    '
+}
+terminal_stream() { verbosity_filter | relativize_stream | truncate_stream | colorize_stream; }
 
 mkdir -p "$LOG_DIR"
 LOG_DIR=$(CDPATH= cd -- "$LOG_DIR" && pwd)
@@ -249,6 +270,42 @@ run_component()
     ) 2>&1 | tee -a "$CONSOLE_LOG" | terminal_stream
     [ -r "$_rc_file" ] || { printf 'ERROR: could not recover status for %s\n' "$_name" | tee -a "$CONSOLE_LOG" | terminal_stream >&2; return 125; }
     _rc=$(cat "$_rc_file"); rm -f "$_rc_file"; return "$_rc"
+}
+
+run_component_selective()
+{
+    _name=$1; _show=$2; shift 2
+    if [ "$_show" -eq 1 ]; then
+        run_component "$_name" "$@"
+        return $?
+    fi
+
+    _rc_file=$LOG_DIR/.run-tests-$RUN_TIMESTAMP-$$.rc
+    _out_file=$LOG_DIR/.run-tests-$RUN_TIMESTAMP-$$.out
+    rm -f "$_rc_file" "$_out_file"
+    (
+        NO_COLOR=1 SCREEN2TMUX_TEST_QUIET="$TEST_QUIET" SCREEN2TMUX_MAP_LEFT_WIDTH=26 SCREEN2TMUX_MAP_DESC_WIDTH=52 SCREEN2TMUX_MAP_SCREEN_WIDTH=49 "$@"
+        _rc=$?; printf '%s\n' "$_rc" > "$_rc_file"; exit 0
+    ) >"$_out_file" 2>&1
+    if [ ! -r "$_rc_file" ]; then
+        printf '\n===== %s =====\n' "$_name" | tee -a "$CONSOLE_LOG" | terminal_stream
+        printf 'ERROR: could not recover status for %s\n' "$_name" | tee -a "$CONSOLE_LOG" | terminal_stream >&2
+        rm -f "$_out_file"
+        return 125
+    fi
+    _rc=$(cat "$_rc_file")
+    rm -f "$_rc_file"
+    if [ "$_rc" -ne 0 ]; then
+        printf '\n===== %s =====\n' "$_name" | tee -a "$CONSOLE_LOG" | terminal_stream
+        awk '
+        /^\[FAIL\]/ { showing=1; print; next }
+        showing && /^  / { print; next }
+        showing { showing=0 }
+        /^ERROR:/ { print }
+        ' "$_out_file" | tee -a "$CONSOLE_LOG" | terminal_stream
+    fi
+    rm -f "$_out_file"
+    return "$_rc"
 }
 
 run_build_component()
@@ -335,14 +392,14 @@ if run_component 'focused regressions' env REG_LOG="$REG_LOG" SCREEN2TMUX_SHOW_R
 # no patched build to exercise.
 if [ "$PATCHED_COUNT" -eq 0 ]; then
     check_new_artifact "$SYSTEM_BEHAVIOR_LOG"; : > "$SYSTEM_BEHAVIOR_LOG"
-    if run_component 'live tmux behavior tests' env BEHAVIOR_LOG="$SYSTEM_BEHAVIOR_LOG" sh "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
+    if run_component_selective 'live tmux behavior tests' "$SHOW_BEHAVIOR_TEST" env BEHAVIOR_LOG="$SYSTEM_BEHAVIOR_LOG" sh "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
 fi
 
 if [ "$PATCHED_COUNT" -gt 0 ]; then
     check_new_artifact "$BUILT_SCREEN_LOG"; : > "$BUILT_SCREEN_LOG"
     set --
     while IFS="$TAB" read -r _en _ep _elabel; do set -- "$@" "$_ep"; done < "$EQUIV_BUILT_REGISTRY"
-    if run_component 'built patched tmux integration checks' env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" sh "$HERE/tests/test-built-tmux-screen.sh" "$@"; then :; else suite_rc=1; fi
+    if run_component_selective 'built patched tmux integration checks' "$SHOW_INTEGRATION_CHECKS" env BUILT_SCREEN_LOG="$BUILT_SCREEN_LOG" sh "$HERE/tests/test-built-tmux-screen.sh" "$@"; then :; else suite_rc=1; fi
 fi
 
 # One live behavior pass per successfully built version, using its patched tmux.
@@ -352,7 +409,7 @@ while IFS="$TAB" read -r _name _variant _tmux _screen _dir; do
     _safe=$(printf '%s-patched' "$_name" | sed 's/[^A-Za-z0-9._-]/_/g')
     _blog=$LOG_DIR/test-tmux-behavior-tmux-$_safe-$RUN_TIMESTAMP.log
     check_new_artifact "$_blog"; : > "$_blog"
-    if run_component "tmux $_name patched behavior tests" env TMUX_BIN="$_tmux" BEHAVIOR_LOG="$_blog" sh "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
+    if run_component_selective "tmux $_name patched behavior tests" "$SHOW_BEHAVIOR_TEST" env TMUX_BIN="$_tmux" BEHAVIOR_LOG="$_blog" sh "$HERE/tests/test-tmux-behavior.sh"; then :; else suite_rc=1; fi
     DYNAMIC_LOGS="$DYNAMIC_LOGS $_blog"
 done < "$BUILD_REGISTRY"
 
@@ -390,5 +447,5 @@ set -- "$(basename -- "$REG_LOG")" "$(basename -- "$EQUIV_LOG")" "$(basename -- 
 [ "$BUILD_REQUESTED" -eq 0 ] || set -- "$@" "$(basename -- "$BUILD_RUN_LOG")"
 [ "$PATCHED_COUNT" -eq 0 ] || set -- "$@" "$(basename -- "$BUILT_SCREEN_LOG")"
 for _dl in $DYNAMIC_LOGS; do set -- "$@" "$(basename -- "$_dl")"; done
-if archive_logs "$ARCHIVE" "$@"; then printf 'Log archive: %s\n' "$ARCHIVE" | terminal_stream; else suite_rc=1; printf 'ERROR: failed to create log archive: %s\n' "$ARCHIVE" | tee -a "$CONSOLE_LOG" | terminal_stream >&2; fi
+if archive_logs "$ARCHIVE" "$@"; then :; else suite_rc=1; printf 'ERROR: failed to create log archive: %s\n' "$ARCHIVE" | tee -a "$CONSOLE_LOG" | terminal_stream >&2; fi
 exit "$suite_rc"

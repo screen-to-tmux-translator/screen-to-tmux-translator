@@ -185,4 +185,4 @@ The generic build integration stores preserved source trees beneath `src/tmux-*`
 
 ### Strict-only syntax validation
 
-Validity rejection is strict-only in 0.4.21. When the compatibility parser reaches an invalid/unknown syntax path without `--strict`, it stops translation successfully and does not execute a guessed tmux command. With `--strict`, the same path emits the explicit INVALID diagnostic and exits 64. The test corpus still validates all INVALID cases by enabling strict validation internally.
+Validity rejection is strict-only in 0.4.22. When the compatibility parser reaches an invalid/unknown syntax path without `--strict`, it stops translation successfully and does not execute a guessed tmux command. With `--strict`, the same path emits the explicit INVALID diagnostic and exits 64. The test corpus still validates all INVALID cases by enabling strict validation internally.

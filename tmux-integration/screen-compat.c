@@ -14,7 +14,7 @@
 
 #include "tmux.h"
 
-#define SCREEN_COMPAT_VERSION "0.4.21"
+#define SCREEN_COMPAT_VERSION "0.4.22"
 
 struct screen_compat_cmd {
 	char	**argv;
@@ -267,7 +267,7 @@ screen_compat_strict_refusal(const char *class)
 }
 
 static const char screen_compat_help_text[] =
-	"screen-to-tmux compatibility help (translator 0.4.21)\n"
+	"screen-to-tmux compatibility help (translator 0.4.22)\n"
 	"GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe "
 	"mapping exists.\n"
 	"This is compatibility help, not byte-for-byte native GNU Screen help.\n"
