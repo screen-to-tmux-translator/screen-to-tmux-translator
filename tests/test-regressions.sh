@@ -539,7 +539,7 @@ CURRENT_NAME='invalid equivalence cases enable strict validation internally'
 if grep -F '[ "$_iw_expected" = invalid ] && set -- "$@" --strict' "$PROJECT/tests/interface-equivalence-worker.sh" >/dev/null 2>&1; then pass "$CURRENT_NAME"; else fail "$CURRENT_NAME"; fi
 
 CURRENT_NAME='built integration formatter aligns both pipe columns'
-_BUILT_FMT=$(NO_COLOR=1 SCREEN2TMUX_MAP_LEFT_WIDTH=32 SCREEN2TMUX_MAP_DESC_WIDTH=60 SCREEN2TMUX_MAP_SCREEN_WIDTH=70 sh -c '
+_BUILT_FMT=$(NO_COLOR=1 SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=32 SCREEN2TMUX_MAP_DESC_WIDTH=60 SCREEN2TMUX_MAP_SCREEN_WIDTH=70 sh -c '
 . "$1"
 _s2t_test_print_case "[PASS] tmux-3.7c DRYRUN" "compiled screen hardlink translation smoke test" "screen -d -m bash" "tmux new-session -d bash"
 _s2t_test_print_case "[PASS] tmux-3.7c STRICT-EXTERNAL" "compiled strict mode blocks helper-backed EXTERNAL execution" "screen --strict -d -m //telnet example.com 23" "<EXTERNAL: advisory only>"
@@ -818,7 +818,7 @@ BEGIN { in_call = 0; need_stop = 0; bad = 0 }
     if (need_stop) {
         if ($0 ~ /^[[:space:]]*$/)
             next
-        if ($0 !~ /^[[:space:]]*return;[[:space:]]*$/ &&
+        if ($0 !~ /^[[:space:]]*return([[:space:]]+\(1\))?;[[:space:]]*$/ &&
             $0 !~ /^[[:space:]]*}[[:space:]]*$/)
             bad = 1
         need_stop = 0
@@ -844,7 +844,27 @@ else
 fi
 unset _CFILE
 
-CURRENT_NAME='README ZIP build command removes stale extraction first'
+CURRENT_NAME='native C translator is organized into readable phases'
+_CFILE=$PROJECT/tmux-integration/screen-compat.c
+if grep -F 'screen_compat_parse_options(struct screen_compat *sc)' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_window(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_pane(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_data(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_config(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_status(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_access(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_inspect(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_top_attach(struct screen_compat *sc)' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_top_create(struct screen_compat *sc)' "$_CFILE" >/dev/null 2>&1 && \
+   ! grep -E 'Aflag|Uflag|mflag|xflag|sc->af|sc->pos' "$_CFILE" >/dev/null 2>&1 && \
+   ! awk 'length($0) > 80 || $0 ~ /[[:blank:]]$/ { bad=1 } END { exit bad ? 0 : 1 }' "$_CFILE"; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+unset _CFILE
+
+CURRENT_NAME='README ZIP build command removes stale extraction first' 
 if grep -F 'rm -rf screen-to-tmux-translator-main && unzip -q stt.zip' "$PROJECT/README.md" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else

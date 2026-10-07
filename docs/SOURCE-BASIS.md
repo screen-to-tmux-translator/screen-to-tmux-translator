@@ -178,6 +178,8 @@ The same minimal integration patch was checked locally against the supplied pinn
 
 `tmux-integration/screen-compat.c` is a self-contained native C implementation of the same compatibility policy. It parses Screen-style argv and rewrites it in-process before tmux parses its own command line; there is no embedded shell source, `/bin/sh` child, pipe/fork serializer, or generated shell payload in the compiled path. The shell interfaces remain the reference implementation for the equivalence corpus, and the native C implementation is differentially checked against that reference across every generated placement variant. The compatibility help is represented as ordinary C text and identifies itself as compatibility help rather than native GNU Screen output.
 
+The C implementation is intentionally organized as a small pipeline rather than one monolithic parser. `screen_compat_parse_options()` decodes Screen CLI state first; the top-level dispatcher then selects list/wipe, attach/detach, startup-policy, external serial/telnet, or creation handling. `-X` commands are grouped into named handlers for window, pane, data/logging, configuration/environment, status, access/serial, and inspection/layout operations. Common tmux argv construction lives in the `screen_compat_cmd_*` helpers. This organization keeps the mapping decisions close to their diagnostics while making control flow and extension points visible to a reviewer.
+
 
 ### 0.4.2 build layout
 
@@ -185,4 +187,4 @@ The generic build integration stores preserved source trees beneath `src/tmux-*`
 
 ### Strict-only syntax validation
 
-Validity rejection is strict-only in 0.4.22. When the compatibility parser reaches an invalid/unknown syntax path without `--strict`, it stops translation successfully and does not execute a guessed tmux command. With `--strict`, the same path emits the explicit INVALID diagnostic and exits 64. The test corpus still validates all INVALID cases by enabling strict validation internally.
+Validity rejection is strict-only starting in 0.4.21. When the compatibility parser reaches an invalid/unknown syntax path without `--strict`, it stops translation successfully and does not execute a guessed tmux command. With `--strict`, the same path emits the explicit INVALID diagnostic and exits 64. The test corpus still validates all INVALID cases by enabling strict validation internally.

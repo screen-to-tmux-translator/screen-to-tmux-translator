@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.24 — 2026-10-07
+
+- Refactored `tmux-integration/screen-compat.c` for readability without changing the compatibility policy. The former ~1,260-line `screen_compat_xcommand()` is now a small dispatcher over named command families (`window`, `pane`, `data`, `config`, `status`, `access`, and `inspect`), and the former ~760-line top-level parser is separated into option decoding plus list, attach/detach, startup-policy, external-endpoint, and session-creation phases.
+- Replaced shell-origin C state names such as `Aflag`, `Uflag`, `mflag`, and `xflag` with descriptive names, introduced enums for translator mode/detach/attach-strength states, centralized repeated optional tmux argument construction in `screen_compat_cmd_add_option()`, and centralized the repeated info-format string. Added comments describing the translation layers and the purpose of each command family.
+- Added a focused regression locking the readable native-C phase structure, descriptive state naming, 80-column limit, and trailing-whitespace cleanliness. Updated the executable-mapping fall-through regression to accept helper functions that return a handled status. Focused regressions are now 155 PASS.
+- Revalidated the refactor against the independent shell implementation: 683/683 native-C dry-run placement variants have zero divergences, and a separate normal-execution differential passes all 228 canonical cases.
+
 ## 0.4.23 — 2026-10-07
 
 - Hide successful INVALID-series (`Z001`-`Z010`) rows from the aggregate interface-equivalence console by default while continuing to execute the full strict validity corpus and include it in summaries, exit status, and detailed equivalence logs.
