@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.19 — 2026-10-07
+
+- Fixed native-C normal-execution control flow for executable `APPROX` mappings. `screen_compat_approx_exec()` rewrites tmux argv in-process and returns, so callers must stop parsing immediately; 0.4.18 could otherwise fall through into a later fallback branch after installing the translated command. The reported `hardstatus off` case therefore emitted the intended APPROX mapping and then an erroneous UNSUPPORTED diagnostic/exit status.
+- Audited every executable `APPROX` and helper-backed `EXTERNAL` call site in `screen-compat.c` and made each parser branch return immediately after argv installation (or naturally end the helper function). This preserves the selected tmux argv without allowing later mapping logic to run.
+- Strengthened source regression coverage so executable native-C mapping helpers must be followed by parser termination, and strengthened the compiled hardlink APPROX integration check to reject any spurious UNSUPPORTED diagnostic. Focused regressions are now 142 PASS.
+
 ## 0.4.18 — 2026-10-06
 
 - Fixed the native tmux module's printf-format annotation to use tmux's own `printflike(a, b)` macro and placement style. The 0.4.17 module used the nonexistent `__printflike`, which caused `screen-compat.c` to fail at its first annotated declaration under the real tmux 3.7c headers and produced a cascade of parser errors.

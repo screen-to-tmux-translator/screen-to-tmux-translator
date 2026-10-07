@@ -14,7 +14,7 @@
 
 #include "tmux.h"
 
-#define SCREEN_COMPAT_VERSION "0.4.18"
+#define SCREEN_COMPAT_VERSION "0.4.19"
 
 struct screen_compat_cmd {
 	char	**argv;
@@ -264,7 +264,7 @@ screen_compat_strict_refusal(const char *class)
 }
 
 static const char screen_compat_help_text[] =
-	"screen-to-tmux compatibility help (translator 0.4.18)\n"
+	"screen-to-tmux compatibility help (translator 0.4.19)\n"
 	"GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe "
 	"mapping exists.\n"
 	"This is compatibility help, not byte-for-byte native GNU Screen help.\n"
@@ -973,6 +973,7 @@ screen_compat_query(struct screen_compat *sc, int argc, char **argv)
 		    "markers; tmux list-windows reports a different format.",
 
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "number") == 0) {
 		screen_compat_cmd_add(&cmd, "display-message");
@@ -1012,6 +1013,7 @@ screen_compat_query(struct screen_compat *sc, int argc, char **argv)
 
 		    "Executing a useful tmux status summary with explicit format fields.",
 		    &cmd);
+		return;
 	}
 	if (strcmp(name, "lastmsg") == 0) {
 		screen_compat_cmd_add(&cmd, "show-messages");
@@ -1023,6 +1025,7 @@ screen_compat_query(struct screen_compat *sc, int argc, char **argv)
 		    "Executing tmux show-messages; scripts that need exactly one "
 		    "Screen-style message must select the desired entry explicitly.",
 		    &cmd);
+		return;
 	}
 	if (strcmp(name, "echo") == 0) {
 		if (argc == 0)
@@ -1260,6 +1263,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "whereas tmux move-window fails when the destination is occupied.",
 
 		    text2, &cmd);
+		return;
 	}
 	if (strcmp(name, "kill") == 0) {
 		screen_compat_cmd_add(&cmd, "kill-window");
@@ -1301,6 +1305,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "move-window -r starts from the session's base-index option.",
 
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "sort") == 0)
 		screen_compat_unsupported(
@@ -1355,6 +1360,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen split -v creates another display region without creating a "
 			    "new PTY; tmux split-window -h creates a new pane/PTY.",
 			    text, &cmd);
+			return;
 		} else {
 			if (target != NULL)
 				xasprintf(&text,
@@ -1368,6 +1374,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen split creates another display region without creating a new "
 			    "PTY; tmux split-window -v creates a new pane/PTY.",
 			    text, &cmd);
+			return;
 		}
 	}
 	if (strcmp(name, "focus") == 0) {
@@ -1407,6 +1414,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "Screen focus moves among display regions; tmux select-pane moves "
 		    "among PTY panes, so the object model is different.",
 		    text2, &cmd);
+		return;
 	}
 	if (strcmp(name, "only") == 0) {
 		screen_compat_cmd_add(&cmd, "resize-pane");
@@ -1427,6 +1435,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "their windows; tmux zoom merely hides other panes temporarily.",
 
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "remove") == 0)
 		screen_compat_unsupported(
@@ -1523,6 +1532,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen lockscreen locks one Screen display; tmux lock-session locks "
 			    "every client attached to the selected tmux session.",
 			    text, &cmd);
+			return;
 		} else {
 			screen_compat_cmd_add(&cmd, "lock-client");
 			screen_compat_approx_exec(sc,
@@ -1531,6 +1541,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 
 			    "Executing the closest current-client substitute: tmux lock-client.",
 			    &cmd);
+			return;
 		}
 	}
 	if (strcmp(name, "sessionname") == 0) {
@@ -1612,6 +1623,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "one Screen backend; tmux paste buffers are shared by the entire "
 			    "tmux server.",
 			    text2, &cmd);
+			return;
 		} else {
 			xasprintf(&text2,
 			    "Executing with the same session-namespaced compatibility buffer: "
@@ -1621,6 +1633,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen writebuf writes the current Screen user's copy buffer; tmux "
 			    "paste buffers are server-wide and shared by the entire tmux server.",
 			    text2, &cmd);
+			return;
 		}
 	}
 	if (strcmp(name, "removebuf") == 0)
@@ -1652,6 +1665,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "named paste buffers are server-wide and can collide with unrelated "
 		    "sessions.",
 		    text2, &cmd);
+		return;
 	}
 	if (strcmp(name, "paste") == 0) {
 		if (argc == 0)
@@ -1706,6 +1720,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "pipe-pane is a general pane-output pipe and cannot recover a Screen "
 			    "logfile pattern configured in an earlier Screen process.",
 			    text, &cmd);
+			return;
 		}
 		if (strcmp(value, "off") == 0) {
 			screen_compat_cmd_add(&cmd, "pipe-pane");
@@ -1728,6 +1743,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "command closes whatever output pipe the current pane has.",
 
 			    text, &cmd);
+			return;
 		}
 		screen_compat_invalid("log expects on or off in shell translation");
 	}
@@ -1865,6 +1881,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "sessions.",
 
 			    text, &cmd);
+			return;
 		}
 		xasprintf(&text,
 		    "Screen bind command '%s' is valid but command-name/argument "
@@ -1883,6 +1900,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "table.",
 
 		    "Executing tmux unbind-key -a with that broader scope.", &cmd);
+		return;
 	}
 	if (strcmp(name, "truecolor") == 0) {
 		if (argc == 0)
@@ -1932,6 +1950,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "current tmux window rather than all Screen windows.",
 
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "reset") == 0) {
 		screen_compat_cmd_add(&cmd, "send-keys");
@@ -1975,6 +1994,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen hardstatus and tmux status lines overlap in purpose but are "
 			    "not the same terminal facility.",
 			    text, &cmd);
+			return;
 		}
 		if (strcmp(value, "alwayslastline") == 0 ||
 		    strcmp(value, "lastline") == 0 ||
@@ -2000,6 +2020,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen hardstatus placement maps only approximately to tmux's "
 			    "status line.",
 			    text, &cmd);
+			return;
 		}
 		screen_compat_unsupported(
 		    "Screen hardstatus has physical-hardstatus and formatting modes that "
@@ -2038,6 +2059,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "labels pane borders. They are visually similar but attach to "
 			    "different objects.",
 			    text, &cmd);
+			return;
 		}
 		if (strcmp(value, "splitonly") == 0)
 			screen_compat_unsupported(
@@ -2076,6 +2098,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "per command/window; tmux server-access grants access at the entire "
 		    "tmux server level.",
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "acldel") == 0) {
 		if (argc < 1)
@@ -2091,6 +2114,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "Screen acldel removes a user from one Screen session; tmux "
 		    "server-access revokes access to the entire tmux server.",
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "aclchg") == 0 || strcmp(name, "chacl") == 0 ||
 	    strcmp(name, "aclgrp") == 0 || strcmp(name, "aclumask") == 0 ||
@@ -2143,6 +2167,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "list-clients can be scoped to that session but uses different output "
 		    "fields and formatting.",
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "dinfo") == 0) {
 		screen_compat_cmd_add(&cmd, "list-clients");
@@ -2173,6 +2198,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "multiple clients with different terminal/display state.",
 
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "windows") == 0) {
 		screen_compat_cmd_add(&cmd, "list-windows");
@@ -2188,6 +2214,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "Screen windows uses Screen-specific formatting/flags; tmux "
 		    "list-windows is functionally similar but not output-compatible.",
 		    text, &cmd);
+		return;
 	}
 	if (strcmp(name, "help") == 0) {
 		screen_compat_cmd_add(&cmd, "list-keys");
@@ -2197,6 +2224,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "command names and formatting.",
 
 		    "Executing the closest substitute: tmux list-keys.", &cmd);
+		return;
 	}
 	if (strcmp(name, "info") == 0) {
 		screen_compat_cmd_add(&cmd, "display-message");
@@ -2215,6 +2243,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "Executing a useful tmux status summary with explicit format "
 		    "variables.",
 		    &cmd);
+		return;
 	}
 	if (strcmp(name, "lastmsg") == 0) {
 		screen_compat_cmd_add(&cmd, "show-messages");
@@ -2225,6 +2254,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 		    "Executing tmux show-messages; select the desired entry explicitly if "
 		    "exact single-message behavior matters.",
 		    &cmd);
+		return;
 	}
 	if (strcmp(name, "version") == 0)
 		screen_compat_unsupported(
@@ -2255,6 +2285,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    strcmp(value, "next") == 0 ?
 			    "Executing the closest visual substitute: tmux next-layout." :
 			    "Executing the closest visual substitute: tmux previous-layout.", &cmd);
+			return;
 		}
 		if (strcmp(value, "show") == 0) {
 			screen_compat_cmd_add(&cmd, "display-message");
@@ -2275,6 +2306,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen 'layout show' reports the selected saved Screen layout; tmux "
 			    "exposes current pane geometry as an encoded layout string.",
 			    text, &cmd);
+			return;
 		}
 		if (strcmp(value, "select") == 0) {
 			if (argc < 2)
@@ -2297,6 +2329,7 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 			    "Screen selects a saved named/numbered display layout; tmux "
 			    "select-layout selects a pane layout name or encoded geometry.",
 			    text, &cmd);
+			return;
 		}
 		screen_compat_unsupported(
 		    "Screen has persistent named/numbered layout objects; tmux has "
@@ -2672,6 +2705,7 @@ screen_compat_parse(struct screen_compat *sc)
 				    "exact-name existence test.",
 
 				    text, &cmd);
+				return;
 			}
 			screen_compat_cmd_add(&cmd, "has-session");
 			screen_compat_approx_exec(sc,
@@ -2680,6 +2714,7 @@ screen_compat_parse(struct screen_compat *sc)
 			    "for a resolvable tmux session.",
 
 			    "Executing the closest quiet existence check: tmux has-session.", &cmd);
+			return;
 		}
 		if (sc->session != NULL && *sc->session != '\0') {
 			if (screen_compat_session_selector_risky(sc->session))
@@ -2702,6 +2737,7 @@ screen_compat_parse(struct screen_compat *sc)
 			    "state, dead sockets and socket-directory information; tmux "
 			    "list-sessions uses a different session model and output format.",
 			    text, &cmd);
+			return;
 		}
 		screen_compat_cmd_add(&cmd, "list-sessions");
 		screen_compat_approx_exec(sc,
@@ -2710,6 +2746,7 @@ screen_compat_parse(struct screen_compat *sc)
 		    "list-sessions uses a different session model and output format.",
 
 		    "Executing the closest substitute: tmux list-sessions.", &cmd);
+		return;
 	}
 
 	if ((sc->attach || (sc->detach > 0 && !sc->mflag)) &&

@@ -774,6 +774,40 @@ else
 fi
 unset _CFILE
 
+CURRENT_NAME='native executable mappings terminate parser branch after argv install'
+_CFILE=$PROJECT/tmux-integration/screen-compat.c
+if awk '
+BEGIN { in_call = 0; need_stop = 0; bad = 0 }
+{
+    if (need_stop) {
+        if ($0 ~ /^[[:space:]]*$/)
+            next
+        if ($0 !~ /^[[:space:]]*return;[[:space:]]*$/ &&
+            $0 !~ /^[[:space:]]*}[[:space:]]*$/)
+            bad = 1
+        need_stop = 0
+    }
+    if ($0 ~ /^[[:space:]]+screen_compat_(approx_exec|external_exec)\(sc,/) {
+        in_call = 1
+        if ($0 ~ /\);[[:space:]]*$/) {
+            in_call = 0
+            need_stop = 1
+        }
+        next
+    }
+    if (in_call && $0 ~ /\);[[:space:]]*$/) {
+        in_call = 0
+        need_stop = 1
+    }
+}
+END { exit (bad || in_call || need_stop) ? 1 : 0 }
+' "$_CFILE"; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+unset _CFILE
+
 CURRENT_NAME='README ZIP build command removes stale extraction first'
 if grep -F 'rm -rf screen-to-tmux-translator-main && unzip -q stt.zip' "$PROJECT/README.md" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"

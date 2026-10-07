@@ -136,6 +136,7 @@ for SCREEN_BIN do
        HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" NO_COLOR=1 SCREEN2TMUX_COLOR=never \
        "$SCREEN_BIN" -S "$_approx_session" -X hardstatus off >"$RUNTIME/approx.out" 2>"$RUNTIME/approx.err" && \
        grep -F 'screen2tmux: APPROX:' "$RUNTIME/approx.err" >/dev/null 2>&1 && \
+       ! grep -F 'screen2tmux: UNSUPPORTED:' "$RUNTIME/approx.err" >/dev/null 2>&1 && \
        _approx_status=$(HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" show-options -t "$_approx_session" -v status 2>"$RUNTIME/approx-show.err") && \
        [ "$_approx_status" = off ]; then
         PASS=$((PASS + 1))

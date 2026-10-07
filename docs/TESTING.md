@@ -98,7 +98,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.18.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.19.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, both one-line source variants, standalone self-contained `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with the path on the same line in parentheses; paths inside the project are relative to the repository root. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 
@@ -160,7 +160,7 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 ```text
 translation permutations:       683 PASS, 0 FAIL
 syntax oracle base cases:       228 PASS, 0 FAIL
-focused regressions:            141 PASS, 0 FAIL
+focused regressions:            142 PASS, 0 FAIL
 packaged equivalence interfaces: 5 (canonical, minified, two one-line sources, screen.sh)
 equivalence variants/interface: 683
 equivalence command cases:      228 PASS, 0 FAIL
@@ -234,6 +234,6 @@ The shared build driver performs dependency checks before downloading source. It
 
 The automatic-install regression is fully isolated: it supplies both a fake package manager and a fake `sudo` wrapper, so `sh run-tests.sh` never contacts the real package manager or asks the person running the tests for a sudo password.
 
-The patch is intentionally non-adaptive. `patch --fuzz=0` must find the two known `tmux.c` integration locations. If a future master changes enough that this no longer applies, the build stops and reports the branch/commit rather than inserting code heuristically.
+The patch is intentionally non-adaptive. `patch --fuzz=0` must find the known integration hunks in `Makefile.am`, `tmux.h`, and `tmux.c`. If a future tmux tree changes enough that these no longer apply, the build stops and reports the branch/commit rather than inserting code heuristically.
 
-Before `autogen.sh`, the pristine and patched snapshots are compared recursively. A build is rejected unless there are exactly four source differences: modified `Makefile.am`, `tmux.h`, and `tmux.c`, plus added `screen-compat.c`. This keeps the compatibility layer in a normal tmux translation unit instead of directly including a large implementation file from `tmux.c`. The added module is native C: regressions reject an embedded shell payload or runtime shell bridge, and the compiled-hardlink equivalence interface compares its argv/status/diagnostic behavior with the canonical shell interface across the same 683-variant matrix.
+Before `autogen.sh`, the pristine and patched snapshots are compared recursively. A build is rejected unless there are exactly four source differences: modified `Makefile.am`, `tmux.h`, and `tmux.c`, plus added `screen-compat.c`. This keeps the compatibility layer in a normal tmux translation unit instead of directly including a large implementation file from `tmux.c`. The added module is native C: regressions reject an embedded shell payload or runtime shell bridge, and the compiled-hardlink equivalence interface compares its dry-run argv/status/diagnostic behavior with the canonical shell interface across the same 683-variant matrix. Separate compiled-hardlink integration checks exercise the normal in-process argv-rewrite path, including executable APPROX and EXTERNAL mappings, so a native mapping must stop parsing immediately after it installs the tmux argv rather than falling through into another compatibility branch.
