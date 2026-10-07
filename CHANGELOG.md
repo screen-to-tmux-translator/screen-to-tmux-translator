@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.25 — 2026-10-07
+
+- Expanded the top of `tmux-integration/screen-compat.c` into a maintainer-oriented architecture guide with fixed-width control-flow diagrams, a complete one-line-per-function purpose index, and a second complete one-line-per-function usage/caller index. The header also records the mapping-policy and tmux/BSD-C style contracts that future changes should preserve.
+- Split the remaining mixed-purpose native-C command families along semantic boundaries: pane/display operations are separate from session/client lifecycle commands, copy/buffer operations are separate from logging/monitoring, and saved-layout translation is separate from display/status inspection. This keeps the mapping branches flat and auditable while reducing the largest command-family functions.
+- Added small parser helpers for consuming required operands and replacing deferred unsupported-option diagnostics, removing repeated cursor/buffer-management mechanics from the short-option parser without hiding Screen's option grammar behind a generic framework.
+- Strengthened focused regressions so both top-of-file function indexes must exactly cover every `screen_compat_*` definition, and updated the readable-phase regression for the new semantic command families. Focused regressions are now 156 PASS.
+
 ## 0.4.24 — 2026-10-07
 
 - Refactored `tmux-integration/screen-compat.c` for readability without changing the compatibility policy. The former ~1,260-line `screen_compat_xcommand()` is now a small dispatcher over named command families (`window`, `pane`, `data`, `config`, `status`, `access`, and `inspect`), and the former ~760-line top-level parser is separated into option decoding plus list, attach/detach, startup-policy, external-endpoint, and session-creation phases.

@@ -849,11 +849,16 @@ _CFILE=$PROJECT/tmux-integration/screen-compat.c
 if grep -F 'screen_compat_parse_options(struct screen_compat *sc)' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_x_window(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_x_pane(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
-   grep -F 'screen_compat_x_data(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_session(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_buffer(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_logging(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_x_config(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_x_status(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_x_access(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_x_inspect(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_x_layout(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_next_arg(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_set_unsupported(struct screen_compat *sc' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_top_attach(struct screen_compat *sc)' "$_CFILE" >/dev/null 2>&1 && \
    grep -F 'screen_compat_top_create(struct screen_compat *sc)' "$_CFILE" >/dev/null 2>&1 && \
    ! grep -E 'Aflag|Uflag|mflag|xflag|sc->af|sc->pos' "$_CFILE" >/dev/null 2>&1 && \
@@ -864,7 +869,42 @@ else
 fi
 unset _CFILE
 
-CURRENT_NAME='README ZIP build command removes stale extraction first' 
+CURRENT_NAME='native C header documents architecture and every function'
+_CFILE=$PROJECT/tmux-integration/screen-compat.c
+_DEFS=$(awk '
+/^[[:space:]]*screen_compat_[A-Za-z0-9_]+\(/ {
+    name=$1
+    sub(/\(.*/, "", name)
+    print name
+}
+' "$_CFILE" | sort -u)
+_PURPOSES=$(awk '
+/^[[:space:]]*\*[[:space:]]+FUNCTION INDEX/ { in_index=1; next }
+/^[[:space:]]*\*[[:space:]]+USAGE INDEX/ { in_index=0 }
+in_index && /^[[:space:]]*\*[[:space:]]+screen_compat_/ {
+    name=$2
+    print name
+}
+' "$_CFILE" | sort -u)
+_USAGE=$(awk '
+/^[[:space:]]*\*[[:space:]]+USAGE INDEX/ { in_index=1; next }
+in_index && /^[[:space:]]*\*[[:space:]]+screen_compat_/ {
+    name=$2
+    print name
+}
+' "$_CFILE" | sort -u)
+if [ "$_DEFS" = "$_PURPOSES" ] && [ "$_DEFS" = "$_USAGE" ] && \
+   grep -F 'screen_compat_translate()' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'struct screen_compat_cmd' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'Mapping policy is explicit.' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'Style follows tmux/BSD-C conventions' "$_CFILE" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+unset _CFILE _DEFS _PURPOSES _USAGE
+
+CURRENT_NAME='README ZIP build command removes stale extraction first'
 if grep -F 'rm -rf screen-to-tmux-translator-main && unzip -q stt.zip' "$PROJECT/README.md" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else

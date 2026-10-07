@@ -1,17 +1,200 @@
 /*
  * GNU Screen command-line compatibility for tmux.
  *
- * This file intentionally contains the complete compatibility parser. It runs
- * before tmux parses its own command line and rewrites Screen-style argv into
- * tmux argv when a safe mapping exists.
+ * INTERNAL OPERATION
+ * ------------------
  *
- * Keep the implementation in three layers:
- *   1. parse Screen options into struct screen_compat;
- *   2. translate top-level, -Q, or -X operations into screen_compat_cmd;
- *   3. print that command for --dry-run or install it back into argc/argv.
+ * tmux calls screen_compat_translate() before its normal option parser. The
+ * entry point acts only when argv[0] names the installed "screen" hardlink.
+ * Translator-only switches are removed first; Screen options are then parsed
+ * once into struct screen_compat. Translation never shells out: a mapping
+ * builds a tmux argv vector directly and either prints or installs that argv.
  *
- * The shell translator remains the behavioral reference. This C path is kept
- * deliberately straightforward so mappings can be reviewed side by side.
+ *     process argv
+ *         |
+ *         v
+ *   screen_compat_translate()
+ *         |  not "screen" ----------------------> return unchanged
+ *         |
+ *         v
+ *   strip --dry-run / --dryrun / --strict
+ *         |
+ *         v
+ *   screen_compat_parse_options() ---> struct screen_compat
+ *         |
+ *         +----------------+----------------+----------------+
+ *         |                |                |
+ *         v                v                v
+ *      -Q query         -X command       top-level CLI
+ *         |                |                |
+ *         v                v                v
+ *       query()        xcommand()        top_*()
+ *         |                |                |
+ *         +----------------+----------------+
+ *                          |
+ *                          v
+ *                 struct screen_compat_cmd
+ *                          |
+ *                 +--------+---------+
+ *                 |                  |
+ *                 v                  v
+ *              dry-run            execute
+ *                 |                  |
+ *                 v                  v
+ *             print_cmd()       install_cmd()
+ *
+ * Mapping policy is explicit. EXACT mappings install argv directly. APPROX
+ * and EXTERNAL mappings explain the semantic gap and execute unless --strict
+ * makes them advisory. UNSUPPORTED and MOOT terminate with class-specific
+ * status. INVALID syntax is rejected only in --strict; permissive mode exits
+ * without inventing a translation. Selector guards reject ambiguous Screen
+ * PID/name patterns before they can be misread as tmux targets.
+ *
+ *     Screen syntax/state
+ *            |
+ *            +-- EXACT ----------------------> finish()
+ *            +-- APPROX ---- strict? --+----> refuse / finish()
+ *            +-- EXTERNAL -- strict? --+----> refuse / install()
+ *            +-- UNSUPPORTED / MOOT --------> report + exit
+ *            `-- INVALID ---- strict? ------> exit 64 / no action
+ *
+ * Command families are intentionally flat decision lists. A Screen command is
+ * easier to audit beside its tmux mapping when the branch stays visible than
+ * when behavior is hidden behind generic tables or callback frameworks. Large
+ * families are split only where the names expose a real semantic boundary.
+ *
+ * Style follows tmux/BSD-C conventions used by the surrounding tree: tabs for
+ * indentation, braces and return parentheses in tmux form, static helpers,
+ * xmalloc-family allocation, __dead for terminating reporters, and <=80
+ * columns. The module adds no headers beyond ones already used by tmux.
+ *
+ * FUNCTION INDEX (definition order)
+ * ---------------------------------
+ * screen_compat_is_screen              - detect Screen hardlink invocation.
+ * screen_compat_color_enabled          - decide whether diagnostics use ANSI.
+ * screen_compat_class_color            - map result class to ANSI color.
+ * screen_compat_color                  - write optionally colored text.
+ * screen_compat_report                 - emit class/reason/suggestion text.
+ * screen_compat_invalid                - handle invalid Screen syntax.
+ * screen_compat_unsupported            - report unsupported semantics.
+ * screen_compat_approx                 - report advisory approximation.
+ * screen_compat_moot                   - report a no-action Screen command.
+ * screen_compat_external               - report external-helper requirement.
+ * screen_compat_uncertain              - reject ambiguous selector mapping.
+ * screen_compat_note                   - emit an informational note.
+ * screen_compat_strict_refusal         - explain strict advisory blocking.
+ * screen_compat_help                   - print compatibility help.
+ * screen_compat_selector_risky         - test generic selector ambiguity.
+ * screen_compat_session_selector_risky - test session selector ambiguity.
+ * screen_compat_guard_targets          - reject ambiguous session/window use.
+ * screen_compat_target                 - compose tmux session:window target.
+ * screen_compat_format_literal         - escape literal tmux format hashes.
+ * screen_compat_join                   - join argv with single spaces.
+ * screen_compat_quote                  - render shell-safe diagnostic text.
+ * screen_compat_program_exists         - search PATH for helper program.
+ * screen_compat_next_arg               - consume one required Screen operand.
+ * screen_compat_set_unsupported        - replace deferred option warning.
+ * screen_compat_cmd_init               - initialize translated argv builder.
+ * screen_compat_cmd_add                - append one translated argv element.
+ * screen_compat_cmd_add_option         - append option plus optional value.
+ * screen_compat_cmd_addf               - append formatted argv element.
+ * screen_compat_cmd_add_argv           - append an argv tail.
+ * screen_compat_cmd_prepend_u          - prepend tmux -u when requested.
+ * screen_compat_safe_arg               - test if dry-run arg needs quoting.
+ * screen_compat_print_arg              - print one dry-run argv element.
+ * screen_compat_print_cmd              - print complete dry-run tmux command.
+ * screen_compat_install_cmd            - replace process argv with tmux argv.
+ * screen_compat_finish                 - print or install an exact command.
+ * screen_compat_finish_u               - finish after applying tmux -u.
+ * screen_compat_approx_notice          - warn for delayed approximation.
+ * screen_compat_approx_exec            - warn then run approximate mapping.
+ * screen_compat_external_exec          - warn then run helper-backed mapping.
+ * screen_compat_external_launch        - build helper-backed new-session.
+ * screen_compat_known_internal         - recognize valid Screen -X names.
+ * screen_compat_query                  - translate Screen -Q commands.
+ * screen_compat_x_window               - translate window-management -X.
+ * screen_compat_x_pane                 - translate pane/region/display -X.
+ * screen_compat_x_session              - translate session/client lifecycle -X.
+ * screen_compat_x_buffer               - translate buffer/copy/hardcopy -X.
+ * screen_compat_x_logging              - translate logging/monitoring -X.
+ * screen_compat_x_config               - translate config/environment/key -X.
+ * screen_compat_x_status               - translate status/caption -X.
+ * screen_compat_x_access               - translate ACL/serial-control -X.
+ * screen_compat_x_inspect              - translate display/status info -X.
+ * screen_compat_x_layout               - translate saved-layout -X.
+ * screen_compat_xcommand               - dispatch one Screen -X command.
+ * screen_compat_parse_options          - parse Screen startup CLI options.
+ * screen_compat_top_list               - translate list/wipe requests.
+ * screen_compat_top_attach             - translate attach/detach requests.
+ * screen_compat_check_startup_policy   - validate startup-only policies.
+ * screen_compat_top_external           - translate serial/telnet startup.
+ * screen_compat_top_create             - translate new session/window startup.
+ * screen_compat_parse                  - dispatch parsed Screen request.
+ * screen_compat_translate              - tmux entry point; rewrite argc/argv.
+ *
+ * USAGE INDEX (function -> primary caller/use)
+ * --------------------------------------------
+ * screen_compat_is_screen              - called by screen_compat_translate.
+ * screen_compat_color_enabled          - called by screen_compat_color.
+ * screen_compat_class_color            - called by screen_compat_report.
+ * screen_compat_color                  - used by diagnostic emitters.
+ * screen_compat_report                 - used by class-report helpers.
+ * screen_compat_invalid                - used by parser and translators.
+ * screen_compat_unsupported            - used by parser and translators.
+ * screen_compat_approx                 - used by advisory-only mappings.
+ * screen_compat_moot                   - called by screen_compat_top_list.
+ * screen_compat_external               - used by external-only mappings.
+ * screen_compat_uncertain              - used by selector guards/query.
+ * screen_compat_note                   - called by screen_compat_external_exec.
+ * screen_compat_strict_refusal         - used by executable advisory paths.
+ * screen_compat_help                   - called by screen_compat_parse_options.
+ * screen_compat_selector_risky         - used by selector-risk checks.
+ * screen_compat_session_selector_risky - used by guards and list path.
+ * screen_compat_guard_targets          - used before target-sensitive mapping.
+ * screen_compat_target                 - used by -Q and -X dispatchers.
+ * screen_compat_format_literal         - used for tmux format-safe names.
+ * screen_compat_join                   - used where Screen accepts text argv.
+ * screen_compat_quote                  - used in diagnostic command examples.
+ * screen_compat_program_exists         - called by screen_compat_external_exec.
+ * screen_compat_next_arg               - called by screen_compat_parse_options.
+ * screen_compat_set_unsupported        - called by screen_compat_parse_options.
+ * screen_compat_cmd_init               - used by all command builders.
+ * screen_compat_cmd_add                - used by all command builders.
+ * screen_compat_cmd_add_option         - used by target-aware builders.
+ * screen_compat_cmd_addf               - used by formatted query/window argv.
+ * screen_compat_cmd_add_argv           - used by passthrough argv builders.
+ * screen_compat_cmd_prepend_u          - used by UTF-8 execution paths.
+ * screen_compat_safe_arg               - called by screen_compat_print_arg.
+ * screen_compat_print_arg              - called by screen_compat_print_cmd.
+ * screen_compat_print_cmd              - used by dry-run execution paths.
+ * screen_compat_install_cmd            - used by normal execution paths.
+ * screen_compat_finish                 - used by exact/executable mappings.
+ * screen_compat_finish_u               - used by top attach/create paths.
+ * screen_compat_approx_notice          - used by delayed advisory mappings.
+ * screen_compat_approx_exec            - used by executable APPROX mappings.
+ * screen_compat_external_exec          - called by external launch builder.
+ * screen_compat_external_launch        - called by top external path.
+ * screen_compat_known_internal         - used by -Q/-X unknown handling.
+ * screen_compat_query                  - called by screen_compat_parse.
+ * screen_compat_x_window               - called by screen_compat_xcommand.
+ * screen_compat_x_pane                 - called by screen_compat_xcommand.
+ * screen_compat_x_session              - called by screen_compat_xcommand.
+ * screen_compat_x_buffer               - called by screen_compat_xcommand.
+ * screen_compat_x_logging              - called by screen_compat_xcommand.
+ * screen_compat_x_config               - called by screen_compat_xcommand.
+ * screen_compat_x_status               - called by screen_compat_xcommand.
+ * screen_compat_x_access               - called by screen_compat_xcommand.
+ * screen_compat_x_inspect              - called by screen_compat_xcommand.
+ * screen_compat_x_layout               - called by screen_compat_xcommand.
+ * screen_compat_xcommand               - called by screen_compat_parse.
+ * screen_compat_parse_options          - called by screen_compat_parse.
+ * screen_compat_top_list               - called by screen_compat_parse.
+ * screen_compat_top_attach             - called by screen_compat_parse.
+ * screen_compat_check_startup_policy   - called by screen_compat_parse.
+ * screen_compat_top_external           - called by screen_compat_parse.
+ * screen_compat_top_create             - called by screen_compat_parse.
+ * screen_compat_parse                  - called by screen_compat_translate.
+ * screen_compat_translate              - called by tmux.c before CLI parsing.
  */
 
 #include <sys/types.h>
@@ -22,7 +205,7 @@
 
 #include "tmux.h"
 
-#define SCREEN_COMPAT_VERSION "0.4.24"
+#define SCREEN_COMPAT_VERSION "0.4.25"
 
 struct screen_compat_cmd {
 	char	**argv;
@@ -114,6 +297,9 @@ static char	*screen_compat_format_literal(const char *);
 static char	*screen_compat_join(int, char **);
 static char	*screen_compat_quote(const char *);
 static int	 screen_compat_program_exists(const char *);
+static const char	*screen_compat_next_arg(struct screen_compat *, const char *);
+static void	 screen_compat_set_unsupported(struct screen_compat *,
+    const char *);
 
 static void	 screen_compat_cmd_init(struct screen_compat_cmd *);
 static void	 screen_compat_cmd_add(struct screen_compat_cmd *, const char *);
@@ -147,7 +333,11 @@ static int	 screen_compat_x_window(struct screen_compat *, const char *, int,
     char **, const char *);
 static int	 screen_compat_x_pane(struct screen_compat *, const char *, int,
     char **, const char *);
-static int	 screen_compat_x_data(struct screen_compat *, const char *, int,
+static int	 screen_compat_x_session(struct screen_compat *, const char *, int,
+    char **);
+static int	 screen_compat_x_buffer(struct screen_compat *, const char *, int,
+    char **, const char *);
+static int	 screen_compat_x_logging(struct screen_compat *, const char *, int,
     char **, const char *);
 static int	 screen_compat_x_config(struct screen_compat *, const char *, int,
     char **, const char *);
@@ -155,7 +345,9 @@ static int	 screen_compat_x_status(struct screen_compat *, const char *, int,
     char **, const char *);
 static int	 screen_compat_x_access(struct screen_compat *, const char *, int,
     char **);
-static int	 screen_compat_x_inspect(struct screen_compat *, const char *, int,
+static int	 screen_compat_x_inspect(struct screen_compat *, const char *,
+    const char *);
+static int	 screen_compat_x_layout(struct screen_compat *, const char *, int,
     char **, const char *);
 static void	 screen_compat_xcommand(struct screen_compat *, int, char **);
 static void	 screen_compat_parse_options(struct screen_compat *);
@@ -327,7 +519,7 @@ static const char screen_compat_info_format[] =
     "#{pane_width}x#{pane_height} #{pane_current_command}";
 
 static const char screen_compat_help_text[] =
-	"screen-to-tmux compatibility help (translator 0.4.24)\n"
+	"screen-to-tmux compatibility help (translator 0.4.25)\n"
 	"GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe "
 	"mapping exists.\n"
 	"This is compatibility help, not byte-for-byte native GNU Screen help.\n"
@@ -687,6 +879,22 @@ screen_compat_program_exists(const char *program)
 		start = end + 1;
 	}
 	return (0);
+}
+
+/* Small parser helpers keep argv cursor and owned strings consistent. */
+static const char *
+screen_compat_next_arg(struct screen_compat *sc, const char *error)
+{
+	if (sc->arg_index >= sc->argc)
+		screen_compat_invalid(sc, error);
+	return (sc->argv[sc->arg_index++]);
+}
+
+static void
+screen_compat_set_unsupported(struct screen_compat *sc, const char *text)
+{
+	free(sc->unsupported_opt);
+	sc->unsupported_opt = xstrdup(text);
 }
 
 /* Small argv builder used by every translation path. */
@@ -1375,13 +1583,13 @@ screen_compat_x_window(struct screen_compat *sc, const char *name,
 	return (0);
 }
 
-/* Pane input/layout operations and session lifecycle commands. */
+/* Pane input, region/layout, and display-local operations. */
 static int
 screen_compat_x_pane(struct screen_compat *sc, const char *name, int argc,
     char **argv, const char *target)
 {
 	struct screen_compat_cmd	 cmd;
-	char			*text, *text2, *joined, *name_tmux;
+	char			*text, *text2, *joined;
 
 	screen_compat_cmd_init(&cmd);
 	if (strcmp(name, "stuff") == 0) {
@@ -1539,6 +1747,18 @@ screen_compat_x_pane(struct screen_compat *sc, const char *name, int argc,
 		    "From the intended tmux client use: tmux refresh-client. Otherwise "
 		    "choose a concrete client from 'tmux list-clients -t SESSION' and use "
 		    "refresh-client -t CLIENT.");
+	return (0);
+}
+
+/* Session/client lifecycle operations exposed through Screen -X. */
+static int
+screen_compat_x_session(struct screen_compat *sc, const char *name, int argc,
+    char **argv)
+{
+	struct screen_compat_cmd	 cmd;
+	char			*text, *name_tmux;
+
+	screen_compat_cmd_init(&cmd);
 	if (strcmp(name, "detach") == 0)
 		screen_compat_approx(
 		    "Screen's internal detach command requires one concrete Display and "
@@ -1619,15 +1839,13 @@ screen_compat_x_pane(struct screen_compat *sc, const char *name, int argc,
 	return (0);
 }
 
-/* Buffers, hardcopy, logging, and monitoring. */
+/* Copy buffers, hardcopy, and copy-mode operations. */
 static int
-screen_compat_x_data(struct screen_compat *sc, const char *name, int argc,
+screen_compat_x_buffer(struct screen_compat *sc, const char *name, int argc,
     char **argv, const char *target)
 {
 	struct screen_compat_cmd	 cmd;
 	char			*text, *text2, *joined, *quoted;
-	const char		*value, *state;
-	int			 i;
 
 	screen_compat_cmd_init(&cmd);
 	if (strcmp(name, "hardcopy") == 0) {
@@ -1763,6 +1981,20 @@ screen_compat_x_data(struct screen_compat *sc, const char *name, int argc,
 		screen_compat_finish(sc, &cmd);
 		return (1);
 	}
+	return (0);
+}
+
+/* Logging, activity monitoring, silence, and visual-bell policy. */
+static int
+screen_compat_x_logging(struct screen_compat *sc, const char *name, int argc,
+    char **argv, const char *target)
+{
+	struct screen_compat_cmd	 cmd;
+	char			*text;
+	const char		*value, *state;
+	int			 i;
+
+	screen_compat_cmd_init(&cmd);
 	if (strcmp(name, "log") == 0) {
 		value = argc > 0 ? argv[0] : "";
 		if (strcmp(value, "on") == 0) {
@@ -2252,14 +2484,13 @@ screen_compat_x_access(struct screen_compat *sc, const char *name,
 	return (0);
 }
 
-/* Display inspection and Screen saved-layout commands. */
+/* Display, client, and status inspection commands. */
 static int
 screen_compat_x_inspect(struct screen_compat *sc, const char *name,
-    int argc, char **argv, const char *target)
+    const char *target)
 {
 	struct screen_compat_cmd	 cmd;
 	char			*text;
-	const char		*value;
 
 	screen_compat_cmd_init(&cmd);
 	if (strcmp(name, "displays") == 0) {
@@ -2375,78 +2606,90 @@ screen_compat_x_inspect(struct screen_compat *sc, const char *name,
 		    "license text as a runtime command.",
 
 		    "Read tmux's COPYING file from the source/package.");
-	if (strcmp(name, "layout") == 0) {
-		value = argc > 0 ? argv[0] : "";
-		if (strcmp(value, "next") == 0 || strcmp(value, "prev") == 0) {
-			screen_compat_cmd_add(&cmd,
-			    strcmp(value, "next") == 0 ? "next-layout" : "previous-layout");
-			screen_compat_approx_exec(sc,
-			    strcmp(value, "next") == 0 ?
-			    "Screen 'layout next' switches among saved display-region layouts; "
-			    "tmux next-layout cycles pane-layout algorithms/history, not Screen "
-			    "layout objects." :
-			    "Screen 'layout prev' switches among saved display-region layouts; "
-			    "tmux previous-layout operates on pane layouts.",
-
-			    strcmp(value, "next") == 0 ?
-			    "Executing the closest visual substitute: tmux next-layout." :
-			    "Executing the closest visual substitute: tmux previous-layout.", &cmd);
-			return (1);
-		}
-		if (strcmp(value, "show") == 0) {
-			screen_compat_cmd_add(&cmd, "display-message");
-			screen_compat_cmd_add(&cmd, "-p");
-			if (target != NULL) {
-				screen_compat_cmd_add(&cmd, "-t");
-				screen_compat_cmd_add(&cmd, target);
-				xasprintf(&text,
-				    "Executing the closest inspection command: tmux display-message -p "
-				    "-t %s '#{window_layout}'.",
-				    target);
-			} else
-				text = xstrdup(
-				    "Executing the closest inspection command: tmux display-message -p "
-				    "'#{window_layout}'.");
-			screen_compat_cmd_add(&cmd, "#{window_layout}");
-			screen_compat_approx_exec(sc,
-			    "Screen 'layout show' reports the selected saved Screen layout; tmux "
-			    "exposes current pane geometry as an encoded layout string.",
-			    text, &cmd);
-			return (1);
-		}
-		if (strcmp(value, "select") == 0) {
-			if (argc < 2)
-				screen_compat_invalid(sc, "layout select requires a layout");
-			screen_compat_cmd_add(&cmd, "select-layout");
-			if (target != NULL) {
-				screen_compat_cmd_add(&cmd, "-t");
-				screen_compat_cmd_add(&cmd, target);
-				xasprintf(&text,
-				    "Executing tmux select-layout -t %s '%s'; this works only when the "
-				    "Screen layout argument is meaningful to tmux.",
-				    target, argv[1]);
-			} else
-				xasprintf(&text,
-				    "Executing tmux select-layout '%s'; this works only when the Screen "
-				    "layout argument is meaningful to tmux.",
-				    argv[1]);
-			screen_compat_cmd_add(&cmd, argv[1]);
-			screen_compat_approx_exec(sc,
-			    "Screen selects a saved named/numbered display layout; tmux "
-			    "select-layout selects a pane layout name or encoded geometry.",
-			    text, &cmd);
-			return (1);
-		}
-		screen_compat_unsupported(
-		    "Screen has persistent named/numbered layout objects; tmux has "
-		    "current/encoded pane layouts but not the same saved-layout "
-		    "collection.",
-
-		    "Use #{window_layout} to capture an encoded tmux layout and "
-		    "select-layout to restore it, or store names in user options/scripts.");
-	}
-
 	return (0);
+}
+
+/* Screen saved-layout commands and their tmux visual substitutes. */
+static int
+screen_compat_x_layout(struct screen_compat *sc, const char *name, int argc,
+    char **argv, const char *target)
+{
+	struct screen_compat_cmd	 cmd;
+	char			*text;
+	const char		*value;
+
+	if (strcmp(name, "layout") != 0)
+		return (0);
+	screen_compat_cmd_init(&cmd);
+	value = argc > 0 ? argv[0] : "";
+	if (strcmp(value, "next") == 0 || strcmp(value, "prev") == 0) {
+		screen_compat_cmd_add(&cmd,
+		    strcmp(value, "next") == 0 ? "next-layout" : "previous-layout");
+		screen_compat_approx_exec(sc,
+		    strcmp(value, "next") == 0 ?
+		    "Screen 'layout next' switches among saved display-region layouts; "
+		    "tmux next-layout cycles pane-layout algorithms/history, not Screen "
+		    "layout objects." :
+		    "Screen 'layout prev' switches among saved display-region layouts; "
+		    "tmux previous-layout operates on pane layouts.",
+
+		    strcmp(value, "next") == 0 ?
+		    "Executing the closest visual substitute: tmux next-layout." :
+		    "Executing the closest visual substitute: tmux previous-layout.", &cmd);
+		return (1);
+	}
+	if (strcmp(value, "show") == 0) {
+		screen_compat_cmd_add(&cmd, "display-message");
+		screen_compat_cmd_add(&cmd, "-p");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+			xasprintf(&text,
+			    "Executing the closest inspection command: tmux display-message -p "
+			    "-t %s '#{window_layout}'.",
+			    target);
+		} else
+			text = xstrdup(
+			    "Executing the closest inspection command: tmux display-message -p "
+			    "'#{window_layout}'.");
+		screen_compat_cmd_add(&cmd, "#{window_layout}");
+		screen_compat_approx_exec(sc,
+		    "Screen 'layout show' reports the selected saved Screen layout; tmux "
+		    "exposes current pane geometry as an encoded layout string.",
+		    text, &cmd);
+		return (1);
+	}
+	if (strcmp(value, "select") == 0) {
+		if (argc < 2)
+			screen_compat_invalid(sc, "layout select requires a layout");
+		screen_compat_cmd_add(&cmd, "select-layout");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+			xasprintf(&text,
+			    "Executing tmux select-layout -t %s '%s'; this works only when the "
+			    "Screen layout argument is meaningful to tmux.",
+			    target, argv[1]);
+		} else
+			xasprintf(&text,
+			    "Executing tmux select-layout '%s'; this works only when the Screen "
+			    "layout argument is meaningful to tmux.",
+			    argv[1]);
+		screen_compat_cmd_add(&cmd, argv[1]);
+		screen_compat_approx_exec(sc,
+		    "Screen selects a saved named/numbered display layout; tmux "
+		    "select-layout selects a pane layout name or encoded geometry.",
+		    text, &cmd);
+		return (1);
+	}
+	screen_compat_unsupported(
+	    "Screen has persistent named/numbered layout objects; tmux has "
+	    "current/encoded pane layouts but not the same saved-layout "
+	    "collection.",
+
+	    "Use #{window_layout} to capture an encoded tmux layout and "
+	    "select-layout to restore it, or store names in user options/scripts.");
+	return (1);
 }
 
 static void
@@ -2466,11 +2709,14 @@ screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 	target = screen_compat_target(sc);
 	if (screen_compat_x_window(sc, name, argc, argv, target) ||
 	    screen_compat_x_pane(sc, name, argc, argv, target) ||
-	    screen_compat_x_data(sc, name, argc, argv, target) ||
+	    screen_compat_x_session(sc, name, argc, argv) ||
+	    screen_compat_x_buffer(sc, name, argc, argv, target) ||
+	    screen_compat_x_logging(sc, name, argc, argv, target) ||
 	    screen_compat_x_config(sc, name, argc, argv, target) ||
 	    screen_compat_x_status(sc, name, argc, argv, target) ||
 	    screen_compat_x_access(sc, name, argc, argv) ||
-	    screen_compat_x_inspect(sc, name, argc, argv, target))
+	    screen_compat_x_inspect(sc, name, target) ||
+	    screen_compat_x_layout(sc, name, argc, argv, target))
 		return;
 
 	if (screen_compat_known_internal(name)) {
@@ -2523,9 +2769,8 @@ screen_compat_parse_options(struct screen_compat *sc)
 		}
 		if (strcmp(arg, "-Logfile") == 0) {
 			sc->arg_index++;
-			if (sc->arg_index >= sc->argc)
-				screen_compat_invalid(sc, "-Logfile requires a filename");
-			sc->logfile = sc->argv[sc->arg_index++];
+			sc->logfile = screen_compat_next_arg(sc,
+			    "-Logfile requires a filename");
 			continue;
 		}
 		if (arg[0] == '-' && arg[1] != '\0') {
@@ -2540,8 +2785,7 @@ screen_compat_parse_options(struct screen_compat *sc)
 					opt = rest;
 					break;
 				case 'a':
-					free(sc->unsupported_opt);
-					sc->unsupported_opt = xstrdup(
+					screen_compat_set_unsupported(sc,
 					    "Screen -a capability-forcing has no exact tmux CLI equivalent");
 					opt = rest;
 					break;
@@ -2554,15 +2798,13 @@ screen_compat_parse_options(struct screen_compat *sc)
 						sc->window = rest;
 						opt = rest + strlen(rest);
 					} else {
-						if (sc->arg_index >= sc->argc)
-							screen_compat_invalid(sc, "-p requires a window");
-						sc->window = sc->argv[sc->arg_index++];
+						sc->window = screen_compat_next_arg(sc,
+						    "-p requires a window");
 						opt = rest;
 					}
 					break;
 				case 'P':
-					free(sc->unsupported_opt);
-					sc->unsupported_opt = xstrdup(
+					screen_compat_set_unsupported(sc,
 					    "Screen -P enables Screen-managed authentication; tmux uses Unix "
 					    "socket permissions/server-access");
 					opt = rest;
@@ -2572,9 +2814,8 @@ screen_compat_parse_options(struct screen_compat *sc)
 						sc->screenrc = rest;
 						opt = rest + strlen(rest);
 					} else {
-						if (sc->arg_index >= sc->argc)
-							screen_compat_invalid(sc, "-c requires a file");
-						sc->screenrc = sc->argv[sc->arg_index++];
+						sc->screenrc = screen_compat_next_arg(sc,
+						    "-c requires a file");
 						opt = rest;
 					}
 					break;
@@ -2583,9 +2824,8 @@ screen_compat_parse_options(struct screen_compat *sc)
 						sc->escape = rest;
 						opt = rest + strlen(rest);
 					} else {
-						if (sc->arg_index >= sc->argc)
-							screen_compat_invalid(sc, "-e requires two command characters");
-						sc->escape = sc->argv[sc->arg_index++];
+						sc->escape = screen_compat_next_arg(sc,
+						    "-e requires two command characters");
 						opt = rest;
 					}
 					break;
@@ -2606,14 +2846,12 @@ screen_compat_parse_options(struct screen_compat *sc)
 				case 'h':
 					if (*rest != '\0')
 						screen_compat_invalid(sc, "-h requires its argument as the next word");
-					if (sc->arg_index >= sc->argc)
-						screen_compat_invalid(sc, "-h requires a history size");
-					sc->hist = sc->argv[sc->arg_index++];
+					sc->hist = screen_compat_next_arg(sc,
+					    "-h requires a history size");
 					opt = rest;
 					break;
 				case 'i':
-					free(sc->unsupported_opt);
-					sc->unsupported_opt = xstrdup(
+					screen_compat_set_unsupported(sc,
 					    "Screen -i changes XON/XOFF interrupt behavior; tmux has no "
 					    "equivalent multiplexer policy");
 					opt = rest;
@@ -2621,9 +2859,8 @@ screen_compat_parse_options(struct screen_compat *sc)
 				case 't':
 					if (*rest != '\0')
 						screen_compat_invalid(sc, "-t requires its argument as the next word");
-					if (sc->arg_index >= sc->argc)
-						screen_compat_invalid(sc, "-t requires a title");
-					sc->title = sc->argv[sc->arg_index++];
+					sc->title = screen_compat_next_arg(sc,
+					    "-t requires a title");
 					opt = rest;
 					break;
 				case 'l':
@@ -2633,8 +2870,7 @@ screen_compat_parse_options(struct screen_compat *sc)
 					} else if (*rest == '\0' || strcmp(rest, "n") == 0 ||
 					    strcmp(rest, "0") == 0 || strcmp(rest, "y") == 0 ||
 					    strcmp(rest, "1") == 0 || strcmp(rest, "a") == 0) {
-						free(sc->unsupported_opt);
-						sc->unsupported_opt = xstrdup(
+						screen_compat_set_unsupported(sc,
 						    "Screen login/utmp mode has no tmux pane equivalent");
 						opt = rest + strlen(rest);
 					} else {
@@ -2644,9 +2880,8 @@ screen_compat_parse_options(struct screen_compat *sc)
 					break;
 				case 'L':
 					if (strcmp(rest, "ogfile") == 0) {
-						if (sc->arg_index >= sc->argc)
-							screen_compat_invalid(sc, "-Logfile requires a filename");
-						sc->logfile = sc->argv[sc->arg_index++];
+						sc->logfile = screen_compat_next_arg(sc,
+						    "-Logfile requires a filename");
 						opt = rest + strlen(rest);
 					} else if (*rest == '\0') {
 						sc->logging = 1;
@@ -2661,8 +2896,7 @@ screen_compat_parse_options(struct screen_compat *sc)
 					opt = rest;
 					break;
 				case 'O':
-					free(sc->unsupported_opt);
-					sc->unsupported_opt = xstrdup(
+					screen_compat_set_unsupported(sc,
 					    "Screen -O is a legacy VT100 output-compatibility mode; tmux uses "
 					    "terminfo/terminal-features instead");
 					opt = rest;
@@ -2670,9 +2904,7 @@ screen_compat_parse_options(struct screen_compat *sc)
 				case 'T':
 					if (*rest != '\0')
 						screen_compat_invalid(sc, "-T requires its argument as the next word");
-					if (sc->arg_index >= sc->argc)
-						screen_compat_invalid(sc, "-T requires TERM");
-					sc->term = sc->argv[sc->arg_index++];
+					sc->term = screen_compat_next_arg(sc, "-T requires TERM");
 					opt = rest;
 					break;
 				case 'q':
@@ -2711,17 +2943,14 @@ screen_compat_parse_options(struct screen_compat *sc)
 				case 's':
 					if (*rest != '\0')
 						screen_compat_invalid(sc, "-s requires its argument as the next word");
-					if (sc->arg_index >= sc->argc)
-						screen_compat_invalid(sc, "-s requires a shell");
-					sc->shell = sc->argv[sc->arg_index++];
+					sc->shell = screen_compat_next_arg(sc, "-s requires a shell");
 					opt = rest;
 					break;
 				case 'S':
 					if (*rest != '\0')
 						screen_compat_invalid(sc, "-S requires its argument as the next word");
-					if (sc->arg_index >= sc->argc)
-						screen_compat_invalid(sc, "-S requires a session name");
-					sc->session = sc->argv[sc->arg_index++];
+					sc->session = screen_compat_next_arg(sc,
+					    "-S requires a session name");
 					opt = rest;
 					break;
 				case 'X':
