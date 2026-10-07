@@ -208,7 +208,7 @@ fi
 if [ "${SCREEN2TMUX_DEPENDENCY_CHECK_ONLY:-0}" = 1 ]; then printf 'Dependency check complete.\n'; exit 0; fi
 if [ "$PATCHED" -eq 1 ]; then
     [ -r "$INTEGRATION" ] || { printf 'ERROR: missing integration source: %s\n' "$INTEGRATION" >&2; exit 2; }
-    [ -r "$TMUX_C_PATCH" ] || { printf 'ERROR: missing tmux.c patch: %s\n' "$TMUX_C_PATCH" >&2; exit 2; }
+    [ -r "$TMUX_PATCH" ] || { printf 'ERROR: missing tmux integration patch: %s\n' "$TMUX_PATCH" >&2; exit 2; }
 fi
 
 mkdir -p "$SOURCE_PARENT" "$BUILD_PARENT"

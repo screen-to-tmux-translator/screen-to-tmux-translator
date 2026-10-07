@@ -26,7 +26,7 @@ static int	screen_compat_wait(pid_t);
 
 static const char screen_compat_shell_source[] =
 	"#!/bin/sh\n"
-	"# screen-to-tmux-translator 0.4.14\n"
+	"# screen-to-tmux-translator 0.4.15\n"
 	"# POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.\n"
 	"#\n"
 	"# Source this file to define:\n"
@@ -53,7 +53,7 @@ static const char screen_compat_shell_source[] =
 	"# unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct\n"
 	"# tmux -s NAME creation when your deployment enforces unique Screen labels.\n"
 	"\n"
-	"SCREEN2TMUX_VERSION=0.4.14\n"
+	"SCREEN2TMUX_VERSION=0.4.15\n"
 	"\n"
 	"# This file is intentionally a shell-function source file, not a standalone\n"
 	"# command. POSIX shells execute `sh FILE` in a child shell, so functions defined\n"

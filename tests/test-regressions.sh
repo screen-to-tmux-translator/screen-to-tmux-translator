@@ -739,7 +739,9 @@ if [ -r "$PROJECT/tmux-integration/screen-compat.c" ] && \
    ! grep -F '#include "screen-to-tmux-translator"' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
    grep -F 'INTEGRATION=$PROJECT/tmux-integration/screen-compat.c' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
    grep -F 'TMUX_PATCH=$PROJECT/tmux-integration/tmux-screen-compat.patch' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F "[ \"\$_diff_count\" -ne 4 ]" "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+   grep -F '[ -r "$TMUX_PATCH" ]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   ! grep -F 'TMUX_C_PATCH' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'if [ "$_diff_count" -ne 4 ]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"

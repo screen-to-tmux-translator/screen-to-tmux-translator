@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.15 — 2026-10-06
+
+- Fixed the patched-tmux builder preflight after the 0.4.14 native-module refactor: the stale `TMUX_C_PATCH` reference is replaced with the defined `TMUX_PATCH` path, so `set -u` no longer aborts before checkout/build. The diagnostic now names the missing tmux integration patch rather than the retired tmux.c-only patch.
+- Strengthened the native C module regression to require the real `TMUX_PATCH` preflight and to fail if `TMUX_C_PATCH` appears anywhere in `scripts/build-tmux-one.sh`, directly covering the release failure reported by an ordinary-user `sh run-tests.sh --build`.
+
 ## 0.4.14 — 2026-10-06
 
 - Refactored the patched-tmux integration into a normal tmux-style C module, `screen-compat.c`, instead of directly including an extensionless implementation file from `tmux.c`. The zero-fuzz patch now makes small conventional edits to `Makefile.am`, `tmux.h`, and `tmux.c`: compile the module, declare `screen_compat_translate()`, and invoke it before tmux command-line parsing.
