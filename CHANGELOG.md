@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.13 — 2026-10-06
+
+- Rebuilt `bin/screen-function-source-minified.oneliner.sh` as a literal one-line POSIX shell program containing real function definitions instead of an `eval "$(printf ... )"` reconstruction wrapper. Its translator-extension argv filtering also uses direct POSIX positional-parameter rotation instead of `eval "set -- ..."`. The artifact now contains an actual `screen () { screen2tmux "$@"; }` definition and real helper/`screen2tmux` functions while remaining one physical line and paste-to-run.
+- Kept the one-liner behavior equivalent to the canonical translator, including direct-execution sourcing guidance, `SCREEN2TMUX_NO_SCREEN_FUNCTION`, dry-run/strict semantics, and all translation classes.
+- Added regression coverage requiring the minified one-liner to contain a literal POSIX `screen ()` function, contain no eval-based shell reconstruction path, and expose both callable `screen` and `screen2tmux` entry points after sourcing.
+
 ## 0.4.12 — 2026-10-06
 
 - Changed the equivalence-interface banner to print each interface and its path on one line, with project-local paths rendered relative to the repository root (for example `screen-function-source.sh (reference) (bin/screen-function-source.sh)` and `tmux-3.7c screen hardlink (build/tmux-3.7c-patched/install/bin/screen)`). Detailed equivalence logs continue to retain the absolute paths used for execution.

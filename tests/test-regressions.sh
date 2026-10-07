@@ -658,6 +658,27 @@ for _s2t_one in screen-function-source.oneliner.sh screen-function-source-minifi
     fi
 done
 
+CURRENT_NAME='minified one-liner is a literal POSIX function definition without shell eval reconstruction'
+_s2t_literal_one=$PROJECT/bin/screen-function-source-minified.oneliner.sh
+OUT=$(NO_COLOR=1 sh -c '. "$1"; screen2tmux --dryrun -d -m bash; screen --dryrun -d -m bash' sh "$_s2t_literal_one" 2>&1)
+RC=$?
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && \
+   grep -F 'screen () {' "$_s2t_literal_one" >/dev/null 2>&1 && \
+   ! grep -F 'eval "$(printf' "$_s2t_literal_one" >/dev/null 2>&1 && \
+   ! grep -F 'eval "set --' "$_s2t_literal_one" >/dev/null 2>&1 && \
+   [ "$OUT" = "tmux new-session -d bash
+tmux new-session -d bash" ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
 CURRENT_NAME='standalone screen.sh executes tmux by default'
 _s2t_stub_dir=${TMPDIR:-/tmp}/screen2tmux-wrapper-$$
 rm -rf "$_s2t_stub_dir"

@@ -6,7 +6,7 @@
  * file modified by this integration.
  *
  * The translation policy and command mapping are the screen-to-tmux
- * translator 0.4.12 implementation.  When argv[0] has basename "screen", the
+ * translator 0.4.13 implementation.  When argv[0] has basename "screen", the
  * POSIX-shell translator is run before tmux's own getopt/command parser.
  *
  * For executable translations (EXACT, concrete APPROX mappings, and helper-backed EXTERNAL mappings),
@@ -21,7 +21,7 @@
 
 static const char screen_to_tmux_shell_source[] =
 	"#!/bin/sh\n"
-	"# screen-to-tmux-translator 0.4.12\n"
+	"# screen-to-tmux-translator 0.4.13\n"
 	"# POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.\n"
 	"#\n"
 	"# Source this file to define:\n"
@@ -48,7 +48,7 @@ static const char screen_to_tmux_shell_source[] =
 	"# unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct\n"
 	"# tmux -s NAME creation when your deployment enforces unique Screen labels.\n"
 	"\n"
-	"SCREEN2TMUX_VERSION=0.4.12\n"
+	"SCREEN2TMUX_VERSION=0.4.13\n"
 	"\n"
 	"# This file is intentionally a shell-function source file, not a standalone\n"
 	"# command. POSIX shells execute `sh FILE` in a child shell, so functions defined\n"
