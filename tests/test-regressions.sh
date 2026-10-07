@@ -868,6 +868,17 @@ else
     fail "$CURRENT_NAME"
 fi
 
+CURRENT_NAME='invalid test series is hidden unless explicitly requested'
+if grep -F -- '--show-invalid-test-series' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'SHOW_INVALID_TEST_SERIES=0' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'SCREEN2TMUX_SHOW_INVALID_TEST_SERIES="$SHOW_INVALID_TEST_SERIES"' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'SHOW_INVALID_TEST_SERIES=${SCREEN2TMUX_SHOW_INVALID_TEST_SERIES:-0}' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F '[ "$_current_class" != invalid ] || [ "$SHOW_INVALID_TEST_SERIES" -eq 1 ]' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
 CURRENT_NAME='run-tests exposes opt-in integration and behavior display flags'
 if grep -F -- '--show-integration-checks' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
    grep -F -- '--show-behavior-test' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \

@@ -19,6 +19,7 @@ LIST_EQUIV=0
 SHOW_REGRESSION_PASS=0
 SHOW_INTEGRATION_CHECKS=0
 SHOW_BEHAVIOR_TEST=0
+SHOW_INVALID_TEST_SERIES=0
 TAB=$(printf '\t')
 
 usage()
@@ -44,6 +45,9 @@ Usage: sh run-tests.sh [options]
   --show-behavior-test        Show successful tmux behavior tests. By default
                               behavior sections are hidden when all checks pass;
                               failures are always shown.
+  --show-invalid-test-series  Show successful INVALID-series (Z001-Z010) rows.
+                              By default they still run but stay hidden; failures
+                              are always shown.
   --truncate-lines N          Limit terminal display lines to N columns. Full logs
                               are never truncated. --trunkate-lines is an alias.
   --equivalence NAME          Restrict interface equivalence to NAME. Repeatable.
@@ -93,6 +97,7 @@ while [ "$#" -gt 0 ]; do
         --show-regression-test-pass) SHOW_REGRESSION_PASS=1; shift ;;
         --show-integration-checks) SHOW_INTEGRATION_CHECKS=1; shift ;;
         --show-behavior-test) SHOW_BEHAVIOR_TEST=1; shift ;;
+        --show-invalid-test-series) SHOW_INVALID_TEST_SERIES=1; shift ;;
         --equivalence|--equivalence-only)
             [ "$#" -ge 2 ] || { printf 'ERROR: %s requires an interface name.\n' "$1" >&2; exit 64; }
             if [ "$EQUIV_CUSTOM" -eq 0 ]; then EQUIV_REQUEST=$2; EQUIV_CUSTOM=1; else EQUIV_REQUEST="$EQUIV_REQUEST,$2"; fi
@@ -383,7 +388,7 @@ if [ "$LIST_EQUIV" -eq 1 ]; then
     exit 0
 fi
 
-if run_component 'Screen CLI/oracle + interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" SCREEN2TMUX_EQUIV_INTERFACES="$EQUIV_REQUEST" SCREEN2TMUX_EQUIV_BUILT_REGISTRY="$EQUIV_BUILT_REGISTRY" sh "$HERE/tests/test-interface-equivalence.sh"; then :; else suite_rc=1; fi
+if run_component 'Screen CLI/oracle + interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" SCREEN2TMUX_EQUIV_INTERFACES="$EQUIV_REQUEST" SCREEN2TMUX_EQUIV_BUILT_REGISTRY="$EQUIV_BUILT_REGISTRY" SCREEN2TMUX_SHOW_INVALID_TEST_SERIES="$SHOW_INVALID_TEST_SERIES" sh "$HERE/tests/test-interface-equivalence.sh"; then :; else suite_rc=1; fi
 if run_component 'focused regressions' env REG_LOG="$REG_LOG" SCREEN2TMUX_SHOW_REGRESSION_TEST_PASS="$SHOW_REGRESSION_PASS" sh "$HERE/tests/test-regressions.sh"; then :; else suite_rc=1; fi
 
 # With built patched tmux binaries available, test behavior once per requested

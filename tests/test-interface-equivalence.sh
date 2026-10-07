@@ -17,6 +17,8 @@ RUN_TIMESTAMP=${SCREEN2TMUX_RUN_TIMESTAMP:-$(date '+%Y%m%d-%H%M%S')}
 EQUIV_LOG=${EQUIV_LOG:-$PROJECT/logs/test-interface-equivalence-$RUN_TIMESTAMP.log}
 REQUESTED=${SCREEN2TMUX_EQUIV_INTERFACES:-all}
 EXTERNAL_BUILT_REGISTRY=${SCREEN2TMUX_EQUIV_BUILT_REGISTRY:-}
+SHOW_INVALID_TEST_SERIES=${SCREEN2TMUX_SHOW_INVALID_TEST_SERIES:-0}
+case "$SHOW_INVALID_TEST_SERIES" in 0|1) : ;; *) printf 'ERROR: SCREEN2TMUX_SHOW_INVALID_TEST_SERIES must be 0 or 1.\n' >&2; exit 64 ;; esac
 
 for _f in "$CANONICAL" "$WORKER" "$CASES" "$ORACLE"; do
     [ -r "$_f" ] || { printf 'ERROR: cannot read equivalence input: %s\n' "$_f" >&2; exit 2; }
@@ -233,7 +235,9 @@ flush_case()
     _mtmux=$(_s2t_test_rhs_for_class "$_current_class" "$_mout")
     if [ "$_current_ok" -eq 1 ]; then
         CASE_PASS=$((CASE_PASS + 1)); _display_class=$_current_class; [ "$_display_class" = approx-run ] && _display_class=approx; [ "$_display_class" = external-run ] && _display_class=external; _prefix=$(printf '[PASS] %s %s' "$_current_id" "$_display_class")
-        _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux" "$_current_class"
+        if [ "$_current_class" != invalid ] || [ "$SHOW_INVALID_TEST_SERIES" -eq 1 ]; then
+            _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux" "$_current_class"
+        fi
     else
         CASE_FAIL=$((CASE_FAIL + 1)); _display_class=$_current_class; [ "$_display_class" = approx-run ] && _display_class=approx; [ "$_display_class" = external-run ] && _display_class=external; _prefix=$(printf '[FAIL] %s %s' "$_current_id" "$_display_class")
         _s2t_test_print_case "$_prefix" "$_current_desc" "$_current_screen" "$_mtmux" "$_current_class"; cat "$_current_div"

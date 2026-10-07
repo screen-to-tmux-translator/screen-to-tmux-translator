@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.23 — 2026-10-07
+
+- Hide successful INVALID-series (`Z001`-`Z010`) rows from the aggregate interface-equivalence console by default while continuing to execute the full strict validity corpus and include it in summaries, exit status, and detailed equivalence logs.
+- Add `--show-invalid-test-series` to restore the successful INVALID rows. A failed INVALID-series case is always surfaced even when the success rows are hidden so validation failures cannot disappear from the terminal.
+- Added a focused regression that locks the runner flag, environment handoff, and equivalence-display filtering contract. Focused regressions are now 154 PASS.
+
 ## 0.4.22 — 2026-10-07
 
 - Hide successful built patched tmux integration-check sections by default. `--show-integration-checks` restores the full section; any failure automatically reveals the section banner, failed check row, and its indented diagnostics while the complete integration log is still written.
