@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.18 — 2026-10-06
+
+- Fixed the native tmux module's printf-format annotation to use tmux's own `printflike(a, b)` macro and placement style. The 0.4.17 module used the nonexistent `__printflike`, which caused `screen-compat.c` to fail at its first annotated declaration under the real tmux 3.7c headers and produced a cascade of parser errors.
+- Strengthened regression coverage to require `static void printflike(2, 3)` and reject any `__printflike` use in `screen-compat.c`. The validation harness now mirrors tmux's actual annotation macro instead of defining the incorrect spelling.
+- Made the native-module layout regression tolerant of harmless legacy files left behind by overlaying a newer GitHub ZIP onto an older extracted tree. The active patch/builder paths are still required to use only the native `screen-compat.c` integration.
+- Updated the README's one-command ZIP workflow to remove an existing `screen-to-tmux-translator-main` directory before extraction, preventing removed files from older releases from surviving a repeated download/build cycle.
+
 ## 0.4.17 — 2026-10-06
 
 - Replaced the compiled tmux hardlink's embedded POSIX-shell payload and fork/pipe shell bridge with a self-contained native C translator in `tmux-integration/screen-compat.c`. Screen-style argv is now parsed and rewritten entirely in-process before tmux parses its own command line; the compiled path no longer invokes `/bin/sh` or shell helper utilities.

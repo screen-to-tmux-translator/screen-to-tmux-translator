@@ -14,7 +14,7 @@
 
 #include "tmux.h"
 
-#define SCREEN_COMPAT_VERSION "0.4.17"
+#define SCREEN_COMPAT_VERSION "0.4.18"
 
 struct screen_compat_cmd {
 	char	**argv;
@@ -86,8 +86,7 @@ static int	 screen_compat_program_exists(const char *);
 static void	 screen_compat_cmd_init(struct screen_compat_cmd *);
 static void	 screen_compat_cmd_add(struct screen_compat_cmd *, const char *);
 static void	 screen_compat_cmd_addf(struct screen_compat_cmd *, const char *,
-	    ...)
-	    __printflike(2, 3);
+	    ...);
 static void	 screen_compat_cmd_add_argv(struct screen_compat_cmd *, int,
 	    char **);
 static void	 screen_compat_cmd_prepend_u(struct screen_compat *,
@@ -265,7 +264,7 @@ screen_compat_strict_refusal(const char *class)
 }
 
 static const char screen_compat_help_text[] =
-	"screen-to-tmux compatibility help (translator 0.4.17)\n"
+	"screen-to-tmux compatibility help (translator 0.4.18)\n"
 	"GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe "
 	"mapping exists.\n"
 	"This is compatibility help, not byte-for-byte native GNU Screen help.\n"
@@ -642,7 +641,7 @@ screen_compat_cmd_add(struct screen_compat_cmd *cmd, const char *value)
 	cmd->argv[cmd->argc] = NULL;
 }
 
-static void
+static void printflike(2, 3)
 screen_compat_cmd_addf(struct screen_compat_cmd *cmd, const char *fmt, ...)
 {
 	va_list	 ap;

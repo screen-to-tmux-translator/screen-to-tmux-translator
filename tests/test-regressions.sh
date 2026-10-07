@@ -750,8 +750,6 @@ fi
 CURRENT_NAME='tmux integration uses native C module layout'
 if [ -r "$PROJECT/tmux-integration/screen-compat.c" ] && \
    [ -r "$PROJECT/tmux-integration/tmux-screen-compat.patch" ] && \
-   [ ! -e "$PROJECT/tmux-integration/screen-to-tmux-translator" ] && \
-   [ ! -e "$PROJECT/tmux-integration/tmux.c-screen-compat.patch" ] && \
    grep -F 'screen-compat.c' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
    grep -F 'screen_compat_translate(int *, char ***)' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
    grep -F 'screen_compat_translate(&argc, &argv);' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
@@ -761,6 +759,23 @@ if [ -r "$PROJECT/tmux-integration/screen-compat.c" ] && \
    grep -F '[ -r "$TMUX_PATCH" ]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
    ! grep -F 'TMUX_C_PATCH' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
    grep -F 'if [ "$_diff_count" -ne 4 ]' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='native C integration uses tmux printflike annotation'
+_CFILE=$PROJECT/tmux-integration/screen-compat.c
+if grep -F 'static void printflike(2, 3)' "$_CFILE" >/dev/null 2>&1 && \
+   ! grep -F '__printflike' "$_CFILE" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+unset _CFILE
+
+CURRENT_NAME='README ZIP build command removes stale extraction first'
+if grep -F 'rm -rf screen-to-tmux-translator-main && unzip -q stt.zip' "$PROJECT/README.md" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
