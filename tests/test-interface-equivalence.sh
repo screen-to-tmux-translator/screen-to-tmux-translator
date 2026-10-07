@@ -190,7 +190,11 @@ fi
 INTERFACE_COUNT=$(wc -l < "$REGISTRY" | tr -d ' ')
 printf '%bEquivalence interfaces (%s):%b\n' "$C" "$INTERFACE_COUNT" "$Z"
 while IFS="$TAB" read -r _iname _imode _ipath _ilabel; do
-    printf '  %s\n    %s\n' "$_ilabel" "$_ipath"
+    case $_ipath in
+        "$PROJECT"/*) _idisplay_path=${_ipath#"$PROJECT"/} ;;
+        *) _idisplay_path=$_ipath ;;
+    esac
+    printf '  %s (%s)\n' "$_ilabel" "$_idisplay_path"
     printf 'INTERFACE\t%s\t%s\t%s\t%s\n' "$_iname" "$_imode" "$_ipath" "$_ilabel" >> "$EQUIV_LOG"
 done < "$REGISTRY"
 

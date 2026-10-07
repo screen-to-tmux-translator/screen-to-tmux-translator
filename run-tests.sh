@@ -155,6 +155,7 @@ colorize_stream()
     if [ "$COLOR_ENABLED" -ne 1 ]; then cat; return; fi
     awk -v G="$(printf '\033[32m')" -v R="$(printf '\033[31m')" -v Y="$(printf '\033[33m')" -v C="$(printf '\033[36m')" -v M="$(printf '\033[35m')" -v Z="$(printf '\033[0m')" '
     function color_token(s, token, col, p) { p=index(s,token); if (!p) return s; return substr(s,1,p-1) col token Z substr(s,p+length(token)) }
+    function color_rhs(s, col, p) { p=index(s," -> "); if (!p) return s; return substr(s,1,p+3) col substr(s,p+4) Z }
     {
         line=$0
         if (line ~ /^Configure yes:/) {
@@ -174,12 +175,14 @@ colorize_stream()
         }
         cfg=""
         if (line ~ /^\[(PASS|FAIL)\].*\|/) {
-            if (line ~ / exact( |[ ]*\|)/) line=color_token(line,"exact",G)
-            else if (line ~ / approx( |[ ]*\|)/) line=color_token(line,"approx",Y)
-            else if (line ~ / unsupported( |[ ]*\|)/) line=color_token(line,"unsupported",R)
-            else if (line ~ / moot( |[ ]*\|)/) line=color_token(line,"moot",C)
-            else if (line ~ / external( |[ ]*\|)/) line=color_token(line,"external",M)
-            else if (line ~ / invalid( |[ ]*\|)/) line=color_token(line,"invalid",R)
+            classcol=""
+            if (line ~ / exact( |[ ]*\|)/) { line=color_token(line,"exact",G); classcol=G }
+            else if (line ~ / approx( |[ ]*\|)/) { line=color_token(line,"approx",Y); classcol=Y }
+            else if (line ~ / unsupported( |[ ]*\|)/) { line=color_token(line,"unsupported",R); classcol=R }
+            else if (line ~ / moot( |[ ]*\|)/) { line=color_token(line,"moot",C); classcol=C }
+            else if (line ~ / external( |[ ]*\|)/) { line=color_token(line,"external",M); classcol=M }
+            else if (line ~ / invalid( |[ ]*\|)/) { line=color_token(line,"invalid",R); classcol=R }
+            if (classcol != "") line=color_rhs(line,classcol)
         }
         gsub(/\[PASS\]/,G "[PASS]" Z,line); gsub(/\[OK\]/,G "[OK]" Z,line)
         gsub(/\[FAIL\]/,R "[FAIL]" Z,line); gsub(/\[SKIP\]/,Y "[SKIP]" Z,line); gsub(/\[DIVERGED\]/,R "[DIVERGED]" Z,line)

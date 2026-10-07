@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.12 — 2026-10-06
+
+- Changed the equivalence-interface banner to print each interface and its path on one line, with project-local paths rendered relative to the repository root (for example `screen-function-source.sh (reference) (bin/screen-function-source.sh)` and `tmux-3.7c screen hardlink (build/tmux-3.7c-patched/install/bin/screen)`). Detailed equivalence logs continue to retain the absolute paths used for execution.
+- Fixed aggregate `run-tests.sh` terminal colorization so the complete right-hand mapping result after `->` is repainted with the semantic class color after the plain-text log has been written: exact green, approx yellow, unsupported/invalid red, moot cyan, and external magenta. This fixes the real runner path that 0.4.8's lower-level formatter regression did not exercise.
+- Added a focused regression against the parent runner's actual terminal colorizer, covering all six result classes. Focused regressions are now 135 PASS.
+
 ## 0.4.11 — 2026-10-06
 
 - Changed translator dry-run command rendering to omit unnecessary single quotes. Ordinary shell-safe argv words now print bare (for example `tmux attach-session`), while empty arguments, whitespace, shell metacharacters, `#`, and control bytes remain quoted/escaped so the displayed command stays copy-pasteable.

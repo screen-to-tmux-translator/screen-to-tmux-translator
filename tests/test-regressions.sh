@@ -857,6 +857,29 @@ else
     fail "$CURRENT_NAME (hex=$_FMT_HEX)"
 fi
 
+CURRENT_NAME='aggregate terminal colorizer colorizes complete result by class'
+_COLOR_FUNC=${TMPDIR:-/tmp}/screen2tmux-colorize-$$.sh
+sed -n '/^colorize_stream()$/,/^terminal_stream()/p' "$PROJECT/run-tests.sh" | sed '$d' > "$_COLOR_FUNC"
+_AGG_FMT_OUT=$(sh -c 'COLOR_ENABLED=1; . "$1"; printf "%s\n" \
+    "[PASS] C001 exact          | one | screen -> tmux new-session" \
+    "[PASS] C002 approx         | two | screen -S work -> tmux new-session -s work" \
+    "[PASS] P013 unsupported    | three | screen -fn -> <UNSUPPORTED>" \
+    "[PASS] C027 moot           | four | screen -wipe -> <MOOT: no tmux action>" \
+    "[PASS] X009 external       | five | screen //telnet example.com -> tmux new-session telnet example.com" \
+    "[PASS] Z001 invalid        | six | screen -Z -> <INVALID Screen syntax>" | colorize_stream' sh "$_COLOR_FUNC")
+rm -f "$_COLOR_FUNC"
+_ESC=$(printf '\033')
+if printf '%s\n' "$_AGG_FMT_OUT" | grep -F "${_ESC}[32mtmux new-session${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_AGG_FMT_OUT" | grep -F "${_ESC}[33mtmux new-session -s work${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_AGG_FMT_OUT" | grep -F "${_ESC}[31m<UNSUPPORTED>${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_AGG_FMT_OUT" | grep -F "${_ESC}[36m<MOOT: no tmux action>${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_AGG_FMT_OUT" | grep -F "${_ESC}[35mtmux new-session telnet example.com${_ESC}[0m" >/dev/null 2>&1 && \
+   printf '%s\n' "$_AGG_FMT_OUT" | grep -F "${_ESC}[31m<INVALID Screen syntax>${_ESC}[0m" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
 CURRENT_NAME='mapping formatter puts description before command mapping'
 _FMT_OUT=$(SCREEN2TMUX_TEST_QUIET=0 SCREEN2TMUX_MAP_LEFT_WIDTH=26 SCREEN2TMUX_MAP_DESC_WIDTH=52 SCREEN2TMUX_MAP_SCREEN_WIDTH=49 sh -c '. "$1"; _s2t_test_print_case "[PASS] C001 exact" "start a new session" "screen" "tmux new-session"' sh "$PROJECT/tests/output-format.sh")
 case "$_FMT_OUT" in
@@ -900,7 +923,8 @@ fi
 CURRENT_NAME='equivalence harness combines oracle and all selected interfaces per case'
 if grep -F 'Equivalence interfaces (' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    grep -F 'screen_syntax_oracle "$@"' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
-   grep -F "printf '  %s\\n    %s\\n' \"\$_ilabel\" \"\$_ipath\"" "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F "printf '  %s (%s)\\n' \"\$_ilabel\" \"\$_idisplay_path\"" "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
+   grep -F '_idisplay_path=${_ipath#"$PROJECT"/}' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    grep -F 'screen-function-source.oneliner.sh' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    grep -F 'screen-function-source-minified.oneliner.sh' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
    grep -F '[DIVERGED]' "$PROJECT/tests/test-interface-equivalence.sh" >/dev/null 2>&1 && \
