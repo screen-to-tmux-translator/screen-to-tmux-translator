@@ -27,8 +27,8 @@ INSTALL_DIR=$BUILD_DIR/install
 GIT_URL=${TMUX_GIT_URL:-https://github.com/tmux/tmux.git}
 TMUX_3_7C_PIN=${SCREEN2TMUX_TMUX_3_7C_PIN:-refs/tags/3.7c}
 TMUX_3_7D_PIN=${SCREEN2TMUX_TMUX_3_7D_PIN:-e9634d40749a5ae330aabf5aa46a81505b094a6b}
-INTEGRATION=$PROJECT/tmux-integration/screen-to-tmux-translator
-TMUX_C_PATCH=$PROJECT/tmux-integration/tmux.c-screen-compat.patch
+INTEGRATION=$PROJECT/tmux-integration/screen-compat.c
+TMUX_PATCH=$PROJECT/tmux-integration/tmux-screen-compat.patch
 CC_BIN=${CC:-cc}
 
 case "$CC_BIN" in
@@ -289,18 +289,24 @@ if [ "$PATCHED" -eq 1 ]; then
     _pristine=$BUILD_DIR/.pristine-source
     mkdir -p "$_pristine"
     cp -R "$SOURCE_DIR"/. "$_pristine"/
-    cp "$INTEGRATION" "$SOURCE_DIR/screen-to-tmux-translator"
-    if ! patch -d "$SOURCE_DIR" -p1 --fuzz=0 --batch < "$TMUX_C_PATCH" > "$BUILD_DIR/patch.log" 2>&1; then
+    cp "$INTEGRATION" "$SOURCE_DIR/screen-compat.c"
+    if ! patch -d "$SOURCE_DIR" -p1 --fuzz=0 --batch < "$TMUX_PATCH" > "$BUILD_DIR/patch.log" 2>&1; then
         cat "$BUILD_DIR/patch.log" >&2
         printf 'ERROR: Screen compatibility patch does not apply cleanly to tmux %s commit %s.\n' "$REQUESTED_REF" "$COMMIT" >&2
-        printf 'Refusing to guess at a new tmux.c insertion point.\n' >&2
+        printf 'Refusing to guess at new tmux source integration points.\n' >&2
         exit 65
     fi
-    [ -e "$_pristine/tmux.c.orig" ] || rm -f "$SOURCE_DIR/tmux.c.orig"
+    for _patched_file in Makefile.am tmux.h tmux.c; do
+        [ -e "$_pristine/$_patched_file.orig" ] || rm -f "$SOURCE_DIR/$_patched_file.orig"
+    done
     diff -qr "$_pristine" "$SOURCE_DIR" > "$BUILD_DIR/source-diff.txt" || :
     _diff_count=$(wc -l < "$BUILD_DIR/source-diff.txt" | awk '{print $1}')
-    if [ "$_diff_count" -ne 2 ] || ! grep -q 'tmux.c differ' "$BUILD_DIR/source-diff.txt" || ! grep -q 'screen-to-tmux-translator' "$BUILD_DIR/source-diff.txt"; then
-        printf 'ERROR: patched source footprint is not exactly one changed file plus one added translator file.\n' >&2
+    if [ "$_diff_count" -ne 4 ] || \
+       ! grep -q 'Makefile.am differ' "$BUILD_DIR/source-diff.txt" || \
+       ! grep -q 'tmux.c differ' "$BUILD_DIR/source-diff.txt" || \
+       ! grep -q 'tmux.h differ' "$BUILD_DIR/source-diff.txt" || \
+       ! grep -q 'screen-compat.c' "$BUILD_DIR/source-diff.txt"; then
+        printf 'ERROR: patched source footprint is not exactly three changed tmux files plus screen-compat.c.\n' >&2
         cat "$BUILD_DIR/source-diff.txt" >&2
         exit 65
     fi

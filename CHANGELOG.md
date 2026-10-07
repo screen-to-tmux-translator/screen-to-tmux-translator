@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.14 — 2026-10-06
+
+- Refactored the patched-tmux integration into a normal tmux-style C module, `screen-compat.c`, instead of directly including an extensionless implementation file from `tmux.c`. The zero-fuzz patch now makes small conventional edits to `Makefile.am`, `tmux.h`, and `tmux.c`: compile the module, declare `screen_compat_translate()`, and invoke it before tmux command-line parsing.
+- Reworked the C bridge to follow tmux coding conventions: `screen_compat_*` names, tmux-style declaration/indentation, `err(3)`/`errx(3)` for the pre-parser fatal path, `sigaction(2)` for SIGPIPE handling, `_PATH_BSHELL` for the system shell, and `strtonum(3)` for bounded argv-count parsing. The canonical POSIX translator remains embedded as generated data, preserving translator behavior rather than maintaining a second independent C mapping implementation.
+- Updated the source-footprint contract to exactly three modified upstream files plus one added `screen-compat.c`, and added regression/syntax coverage for the native module layout.
+
 ## 0.4.13 — 2026-10-06
 
 - Rebuilt `bin/screen-function-source-minified.oneliner.sh` as a literal one-line POSIX shell program containing real function definitions instead of an `eval "$(printf ... )"` reconstruction wrapper. Its translator-extension argv filtering also uses direct POSIX positional-parameter rotation instead of `eval "set -- ..."`. The artifact now contains an actual `screen () { screen2tmux "$@"; }` definition and real helper/`screen2tmux` functions while remaining one physical line and paste-to-run.

@@ -728,6 +728,23 @@ else
     fail "$CURRENT_NAME"
 fi
 
+CURRENT_NAME='tmux integration uses native C module layout'
+if [ -r "$PROJECT/tmux-integration/screen-compat.c" ] && \
+   [ -r "$PROJECT/tmux-integration/tmux-screen-compat.patch" ] && \
+   [ ! -e "$PROJECT/tmux-integration/screen-to-tmux-translator" ] && \
+   [ ! -e "$PROJECT/tmux-integration/tmux.c-screen-compat.patch" ] && \
+   grep -F 'screen-compat.c' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_translate(int *, char ***)' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_translate(&argc, &argv);' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
+   ! grep -F '#include "screen-to-tmux-translator"' "$PROJECT/tmux-integration/tmux-screen-compat.patch" >/dev/null 2>&1 && \
+   grep -F 'INTEGRATION=$PROJECT/tmux-integration/screen-compat.c' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'TMUX_PATCH=$PROJECT/tmux-integration/tmux-screen-compat.patch' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F "[ \"\$_diff_count\" -ne 4 ]" "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
 CURRENT_NAME='3.7c default builder uses pinned release tag'
 if grep -F 'TMUX_3_7C_PIN=${SCREEN2TMUX_TMUX_3_7C_PIN:-refs/tags/3.7c}' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
    grep -F '3.7c|release_3.7c)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
