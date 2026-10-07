@@ -69,6 +69,10 @@ case_()
 {
     _iw_id=$1; _iw_expected=$2; _iw_desc=$3
     shift 3
+    # Runtime INVALID rejection is strict-only. Keep the validity corpus fully
+    # exercised by enabling strict validation internally for invalid cases; the
+    # displayed Screen command remains the original user-facing argv.
+    [ "$_iw_expected" = invalid ] && set -- "$@" --strict
     case "$MODE" in
         source-full|standalone-full)
             emit "$_iw_id" "$_iw_desc" first --dry-run "$@"

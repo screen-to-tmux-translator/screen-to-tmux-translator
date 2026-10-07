@@ -525,6 +525,30 @@ else
 fi
 rm -rf "$_DEP_TMP"
 
+CURRENT_NAME='invalid syntax rejection is strict-only'
+OUT=$(NO_COLOR=1 SCREEN2TMUX_COLOR=never sh -c '. "$1"; screen -Z --dry-run' sh "$PROJECT/bin/screen-function-source.sh" 2>&1)
+RC=$?
+if [ "$RC" -eq 0 ] && [ -z "$OUT" ]; then pass "$CURRENT_NAME"; else fail "$CURRENT_NAME"; fi
+
+CURRENT_NAME='strict mode still rejects invalid syntax'
+OUT=$(NO_COLOR=1 SCREEN2TMUX_COLOR=never sh -c '. "$1"; screen -Z --dry-run --strict' sh "$PROJECT/bin/screen-function-source.sh" 2>&1)
+RC=$?
+if [ "$RC" -eq 64 ] && printf '%s\n' "$OUT" | grep -F 'invalid/unknown Screen syntax' >/dev/null 2>&1; then pass "$CURRENT_NAME"; else fail "$CURRENT_NAME"; fi
+
+CURRENT_NAME='invalid equivalence cases enable strict validation internally'
+if grep -F '[ "$_iw_expected" = invalid ] && set -- "$@" --strict' "$PROJECT/tests/interface-equivalence-worker.sh" >/dev/null 2>&1; then pass "$CURRENT_NAME"; else fail "$CURRENT_NAME"; fi
+
+CURRENT_NAME='built integration formatter aligns both pipe columns'
+_BUILT_FMT=$(NO_COLOR=1 SCREEN2TMUX_MAP_LEFT_WIDTH=32 SCREEN2TMUX_MAP_DESC_WIDTH=60 SCREEN2TMUX_MAP_SCREEN_WIDTH=70 sh -c '
+. "$1"
+_s2t_test_print_case "[PASS] tmux-3.7c DRYRUN" "compiled screen hardlink translation smoke test" "screen -d -m bash" "tmux new-session -d bash"
+_s2t_test_print_case "[PASS] tmux-3.7c STRICT-EXTERNAL" "compiled strict mode blocks helper-backed EXTERNAL execution" "screen --strict -d -m //telnet example.com 23" "<EXTERNAL: advisory only>"
+' sh "$PROJECT/tests/output-format.sh")
+_BUILT_POS=$(printf '%s\n' "$_BUILT_FMT" | awk '''{ first=index($0,"|"); rest=substr($0,first+1); second=first+index(rest,"|"); print first ":" second }''')
+if [ "$_BUILT_POS" = "34:97
+34:97" ] && \
+   grep -F 'SCREEN2TMUX_MAP_LEFT_WIDTH=${SCREEN2TMUX_BUILT_LEFT_WIDTH:-32}' "$PROJECT/tests/test-built-tmux-screen.sh" >/dev/null 2>&1; then pass "$CURRENT_NAME"; else fail "$CURRENT_NAME ($_BUILT_POS)"; fi
+
 CURRENT_NAME='standalone screen.sh accepts --dryrun alias'
 OUT=$(NO_COLOR=1 sh "$PROJECT/bin/screen.sh" --dryrun -d -m bash 2>&1)
 RC=$?

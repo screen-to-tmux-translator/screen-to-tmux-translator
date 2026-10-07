@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.21 — 2026-10-07
+
+- Make translator INVALID/unknown-syntax rejection strict-only. Normal mode now stops an unrecognized validation path successfully without emitting INVALID or executing a guessed tmux command; `--strict` preserves the explicit INVALID diagnostic and exit status 64.
+- Keep the invalid-syntax oracle/equivalence corpus active by adding `--strict` internally for invalid test cases while leaving the displayed Screen command unchanged.
+- Align both pipe columns in the built patched tmux integration table by reserving widths for the longest labels, descriptions, and Screen invocations.
+- Added regressions for permissive normal-mode validity handling, strict INVALID retention, hidden strict validation in the equivalence corpus, and built-integration column widths. Focused regressions are now 149 PASS.
+
+
 ## 0.4.20 — 2026-10-07
 
 - Changed focused-regression console output to show failures only by default. `--show-regression-test-pass` restores individual `[PASS]` rows; the regression log continues to record every PASS/FAIL result regardless of console filtering.

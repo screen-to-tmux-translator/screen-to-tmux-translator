@@ -1,5 +1,5 @@
 #!/bin/sh
-SCREEN2TMUX_VERSION=0.4.20
+SCREEN2TMUX_VERSION=0.4.21
 case ${0##*/} in
     screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)
         _s2t_source_name=${0##*/}
@@ -201,7 +201,7 @@ _s2t_help()
     _s2t_help_row VARIES      '-X command [args]'     'Screen commands are translated individually; see common command groups below.'
     _s2t_help_heading 'Translator extensions'
     _s2t_help_row EXTENSION   '--dry-run / --dryrun'  'Print the translated tmux argv or diagnostic instead of executing it.'
-    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX or EXTERNAL mappings; APPROX returns 3 and EXTERNAL returns 5.'
+    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX or EXTERNAL mappings and enable INVALID rejection; APPROX returns 3, EXTERNAL 5, INVALID 64.'
     _s2t_help_row EXTENSION   '--help'                'Show this compatibility-aware help page.'
     _s2t_help_heading 'Common -X / -Q command coverage'
     _s2t_help_row EXACT       'stuff/select/title/kill' 'Direct pane/window operations for safe targets; literal data is protected from tmux format expansion.'
@@ -231,11 +231,12 @@ _s2t_help()
     printf '%s\n' '  SCREEN2TMUX_COLOR=auto|always|never          control selective diagnostic/help color.'
     printf '%s\n' '  NO_COLOR=1                                  disable ANSI color unconditionally.'
     _s2t_help_heading 'Exit status'
-    printf '%s\n' '  0 exact/help success or successful executable APPROX/EXTERNAL mapping; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 advisory/missing-helper external; 64 invalid syntax.'
-    printf '%s\n' '  Executed mappings return the underlying tmux command status in normal mode; --strict never executes APPROX or EXTERNAL.'
+    printf '%s\n' '  0 exact/help success, successful executable APPROX/EXTERNAL mapping, or permissive validity skip; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 advisory/missing-helper external; 64 invalid syntax under --strict.'
+    printf '%s\n' '  Executed mappings return the underlying tmux command status in normal mode; --strict never executes APPROX or EXTERNAL and enables INVALID syntax rejection.'
 }
 _s2t_invalid()
 {
+    [ "$_s2t_strict" -eq 1 ] || return 0
     _s2t_inv_label=$(_s2t_color_token red "invalid/unknown Screen syntax")
     printf 'screen2tmux: %s: %s\n' "$_s2t_inv_label" "$*" >&2
     return 64

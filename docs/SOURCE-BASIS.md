@@ -182,3 +182,7 @@ The same minimal integration patch was checked locally against the supplied pinn
 ### 0.4.2 build layout
 
 The generic build integration stores preserved source trees beneath `src/tmux-*` and out-of-tree build/install products beneath `build/tmux-*`. `build_tmux_patched.sh` builds only patched variants and is what `run-tests.sh --build` uses by default. `build_tmux.sh` remains the explicit original+patched builder, and `run-tests.sh --compile-original` selects that paired build path. Patched builds modify only upstream `Makefile.am`, `tmux.h`, and `tmux.c`, and add `screen-compat.c`; original trees remain unpatched. When an original variant is requested and succeeds first, the patched counterpart is pinned to the same source commit for a directly comparable pair. `run-tests.sh` discovers successful builds dynamically from their `BUILD-INFO` records instead of assuming only 3.7c/3.7d/latest.
+
+### Strict-only syntax validation
+
+Validity rejection is strict-only in 0.4.21. When the compatibility parser reaches an invalid/unknown syntax path without `--strict`, it stops translation successfully and does not execute a guessed tmux command. With `--strict`, the same path emits the explicit INVALID diagnostic and exits 64. The test corpus still validates all INVALID cases by enabling strict validation internally.

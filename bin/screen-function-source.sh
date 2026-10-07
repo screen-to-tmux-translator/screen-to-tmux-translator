@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.4.20
+# screen-to-tmux-translator 0.4.21
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
@@ -10,15 +10,16 @@
 # removed before Screen parsing and cause the equivalent tmux command (or
 # unsupported message) to be printed instead of executed.
 # --strict is also translator-owned. It keeps APPROX and executable EXTERNAL
-# mappings advisory: only exact mappings may execute automatically.
+# mappings advisory, and enables INVALID syntax rejection. Without --strict,
+# parser-validity failures stop translation quietly instead of rejecting argv.
 #
 # Exit status:
-#   0   EXACT, executable APPROX, or executable EXTERNAL whose translated command succeeds
+#   0   EXACT, executable APPROX/EXTERNAL success, or permissive validity skip
 #   2   UNSUPPORTED: valid Screen operation with no safe tmux translation
 #   3   APPROX advisory, including every APPROX mapping under --strict
 #   4   MOOT: Screen operation is unnecessary under tmux architecture; not executed
 #   5   EXTERNAL advisory/missing helper, including every EXTERNAL mapping under --strict
-#   64  INVALID: invalid/unknown Screen syntax for this translator
+#   64  INVALID under --strict: invalid/unknown Screen syntax for this translator
 #   other status may be returned by tmux for executable mappings outside dry-run/strict mode.
 #
 # By default, creation with -S NAME is classified APPROX because GNU Screen may
@@ -26,7 +27,7 @@
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.4.20
+SCREEN2TMUX_VERSION=0.4.21
 
 # This file is intentionally a shell-function source file, not a standalone
 # command. POSIX shells execute `sh FILE` in a child shell, so functions defined
@@ -258,7 +259,7 @@ _s2t_help()
 
     _s2t_help_heading 'Translator extensions'
     _s2t_help_row EXTENSION   '--dry-run / --dryrun'  'Print the translated tmux argv or diagnostic instead of executing it.'
-    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX or EXTERNAL mappings; APPROX returns 3 and EXTERNAL returns 5.'
+    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX or EXTERNAL mappings and enable INVALID rejection; APPROX returns 3, EXTERNAL 5, INVALID 64.'
     _s2t_help_row EXTENSION   '--help'                'Show this compatibility-aware help page.'
 
     _s2t_help_heading 'Common -X / -Q command coverage'
@@ -292,12 +293,18 @@ _s2t_help()
     printf '%s\n' '  NO_COLOR=1                                  disable ANSI color unconditionally.'
 
     _s2t_help_heading 'Exit status'
-    printf '%s\n' '  0 exact/help success or successful executable APPROX/EXTERNAL mapping; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 advisory/missing-helper external; 64 invalid syntax.'
-    printf '%s\n' '  Executed mappings return the underlying tmux command status in normal mode; --strict never executes APPROX or EXTERNAL.'
+    printf '%s\n' '  0 exact/help success, successful executable APPROX/EXTERNAL mapping, or permissive validity skip; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 advisory/missing-helper external; 64 invalid syntax under --strict.'
+    printf '%s\n' '  Executed mappings return the underlying tmux command status in normal mode; --strict never executes APPROX or EXTERNAL and enables INVALID syntax rejection.'
 }
 
 _s2t_invalid()
 {
+    # Parser validity is intentionally opt-in. Normal mode is permissive so a
+    # future or unusually complex Screen command line is not rejected solely
+    # because this translator's grammar does not recognize it. In that case,
+    # stop this translation path successfully without executing a guessed tmux
+    # command. --strict retains the explicit INVALID diagnostic and status 64.
+    [ "$_s2t_strict" -eq 1 ] || return 0
     _s2t_inv_label=$(_s2t_color_token red "invalid/unknown Screen syntax")
     printf 'screen2tmux: %s: %s\n' "$_s2t_inv_label" "$*" >&2
     return 64

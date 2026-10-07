@@ -20,6 +20,11 @@ fi
 [ -r "$CANONICAL" ] || { printf 'ERROR: canonical translator missing: %s\n' "$CANONICAL" >&2; exit 2; }
 # shellcheck disable=SC1090
 . "$CANONICAL"
+# These checks use longer labels than the main mapping matrix. Reserve enough
+# width so both pipe columns stay fixed, including STRICT-EXTERNAL.
+SCREEN2TMUX_MAP_LEFT_WIDTH=${SCREEN2TMUX_BUILT_LEFT_WIDTH:-32}
+SCREEN2TMUX_MAP_DESC_WIDTH=${SCREEN2TMUX_BUILT_DESC_WIDTH:-60}
+SCREEN2TMUX_MAP_SCREEN_WIDTH=${SCREEN2TMUX_BUILT_SCREEN_WIDTH:-70}
 # shellcheck disable=SC1090
 . "$HERE/output-format.sh"
 
