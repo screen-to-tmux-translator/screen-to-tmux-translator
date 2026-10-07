@@ -98,7 +98,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.15.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.16.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, both one-line source variants, standalone self-contained `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with the path on the same line in parentheses; paths inside the project are relative to the repository root. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 

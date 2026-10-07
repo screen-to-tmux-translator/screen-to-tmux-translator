@@ -658,6 +658,25 @@ for _s2t_one in screen-function-source.oneliner.sh screen-function-source-minifi
     fi
 done
 
+CURRENT_NAME='minified one-liner starts with the primary screen function body'
+_s2t_literal_one=$PROJECT/bin/screen-function-source-minified.oneliner.sh
+_s2t_literal_prefix=$(head -c 240 "$_s2t_literal_one")
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'PREFIX: %s\n' "$_s2t_literal_prefix"
+} >> "$REG_LOG"
+case "$_s2t_literal_prefix" in
+    'screen () { _s2t_dry_run=0;'*)
+        if ! printf '%s\n' "$_s2t_literal_prefix" | grep -F 'screen2tmux "$@"' >/dev/null 2>&1; then
+            pass "$CURRENT_NAME"
+        else
+            fail "$CURRENT_NAME (screen is still only a wrapper)"
+        fi
+        ;;
+    *) fail "$CURRENT_NAME (prefix=$_s2t_literal_prefix)" ;;
+esac
+
 CURRENT_NAME='minified one-liner is a literal POSIX function definition without shell eval reconstruction'
 _s2t_literal_one=$PROJECT/bin/screen-function-source-minified.oneliner.sh
 OUT=$(NO_COLOR=1 sh -c '. "$1"; screen2tmux --dryrun -d -m bash; screen --dryrun -d -m bash' sh "$_s2t_literal_one" 2>&1)

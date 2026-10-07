@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.16 — 2026-10-06
+
+- Reworked `bin/screen-function-source-minified.oneliner.sh` so its first token is a literal `screen () { ... }` POSIX shell function containing the main Screen-to-tmux translation/parser body. Helper functions follow afterward on the same physical line, and `screen2tmux () { screen "$@"; }` is now the small compatibility entry point instead of the main implementation.
+- Kept the one-liner free of eval-based reconstruction while preserving its one-physical-line paste-to-run form, direct-execution sourcing guidance, dry-run/strict behavior, and equivalence with the other packaged interfaces for the supported test matrix.
+- Added regression coverage requiring the minified one-liner to begin with the `screen ()` definition and to keep the main parser body there rather than delegating `screen` immediately to `screen2tmux`.
+
 ## 0.4.15 — 2026-10-06
 
 - Fixed the patched-tmux builder preflight after the 0.4.14 native-module refactor: the stale `TMUX_C_PATCH` reference is replaced with the defined `TMUX_PATCH` path, so `set -u` no longer aborts before checkout/build. The diagnostic now names the missing tmux integration patch rather than the retired tmux.c-only patch.

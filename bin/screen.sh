@@ -6,7 +6,7 @@ SCREEN2TMUX_NO_SCREEN_FUNCTION=1
 export SCREEN2TMUX_NO_SCREEN_FUNCTION
 
 #!/bin/sh
-# screen-to-tmux-translator 0.4.15
+# screen-to-tmux-translator 0.4.16
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
@@ -33,7 +33,7 @@ export SCREEN2TMUX_NO_SCREEN_FUNCTION
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.4.15
+SCREEN2TMUX_VERSION=0.4.16
 
 # This file is intentionally a shell-function source file, not a standalone
 # command. POSIX shells execute `sh FILE` in a child shell, so functions defined
