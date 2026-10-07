@@ -1,1587 +1,3125 @@
 /*
  * GNU Screen command-line compatibility for tmux.
  *
- * The shell program below is generated from the project's canonical POSIX
- * translator.  It is kept in this separate translation unit so tmux.c only
- * needs a normal subsystem call before its own command-line parsing begins.
+ * This file intentionally contains the complete compatibility parser.  It
+ * runs before tmux parses its own command line and rewrites Screen-style argv
+ * into the corresponding tmux argv when a safe mapping exists.
  */
 
 #include <sys/types.h>
-#include <sys/wait.h>
 
-#include <errno.h>
-#include <limits.h>
-#include <paths.h>
-#include <signal.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "tmux.h"
 
-static int	screen_compat_is_screen(const char *);
-static int	screen_compat_has_dry_run(int, char **);
-static int	screen_compat_write(int, const char *, size_t);
-static int	screen_compat_wait(pid_t);
+#define SCREEN_COMPAT_VERSION "0.4.17"
 
-static const char screen_compat_shell_source[] =
-	"#!/bin/sh\n"
-	"# screen-to-tmux-translator 0.4.16\n"
-	"# POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.\n"
-	"#\n"
-	"# Source this file to define:\n"
-	"#   screen2tmux ...     explicit translator entry point\n"
-	"#   screen ...          drop-in function (unless SCREEN2TMUX_NO_SCREEN_FUNCTION=1)\n"
-	"#\n"
-	"# --dry-run or --dryrun may appear anywhere after the function name. They are\n"
-	"# removed before Screen parsing and cause the equivalent tmux command (or\n"
-	"# unsupported message) to be printed instead of executed.\n"
-	"# --strict is also translator-owned. It keeps APPROX and executable EXTERNAL\n"
-	"# mappings advisory: only exact mappings may execute automatically.\n"
-	"#\n"
-	"# Exit status:\n"
-	"#   0   EXACT, executable APPROX, or executable EXTERNAL whose translated command succeeds\n"
-	"#   2   UNSUPPORTED: valid Screen operation with no safe tmux translation\n"
-	"#   3   APPROX advisory, including every APPROX mapping under --strict\n"
-	"#   4   MOOT: Screen operation is unnecessary under tmux architecture; not executed\n"
-	"#   5   EXTERNAL advisory/missing helper, including every EXTERNAL mapping under --strict\n"
-	"#   64  INVALID: invalid/unknown Screen syntax for this translator\n"
-	"#   other status may be returned by tmux for executable mappings outside dry-run/strict mode.\n"
-	"#\n"
-	"# By default, creation with -S NAME is classified APPROX because GNU Screen may\n"
-	"# have multiple sessions with the same user label while tmux session names are\n"
-	"# unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct\n"
-	"# tmux -s NAME creation when your deployment enforces unique Screen labels.\n"
-	"\n"
-	"SCREEN2TMUX_VERSION=0.4.16\n"
-	"\n"
-	"# This file is intentionally a shell-function source file, not a standalone\n"
-	"# command. POSIX shells execute `sh FILE` in a child shell, so functions defined\n"
-	"# there cannot remain available in the caller. Catch the common mistake and\n"
-	"# print the portable dot-command needed to load screen() into the current shell.\n"
-	"case ${0##*/} in\n"
-	"    screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)\n"
-	"        _s2t_source_name=${0##*/}\n"
-	"        printf '%s\\n' \"$_s2t_source_name: this file must be sourced into the current shell.\" >&2\n"
-	"        printf '%s\\n' \"Use: . ./bin/$_s2t_source_name\" >&2\n"
-	"        exit 2\n"
-	"        ;;\n"
-	"esac\n"
-	"\n"
-	"_s2t_shell_quote()\n"
-	"{\n"
-	"    # Shell-safe single-quoted word used internally to rebuild argv after\n"
-	"    # removing --dry-run/--dryrun.  This preserves embedded control characters.\n"
-	"    _s2t_q=$(printf '%s' \"$1\" | sed \"s/'/'\\\\\\\\''/g\")\n"
-	"    printf \"'%s'\" \"$_s2t_q\"\n"
-	"}\n"
-	"\n"
-	"_s2t_display_quote()\n"
-	"{\n"
-	"    # Single-line diagnostic representation for dry-run/log output. Control\n"
-	"    # bytes are rendered as \\r, \\n, \\t or \\xHH so output cannot be corrupted.\n"
-	"    printf \"'\"\n"
-	"    printf '%s' \"$1\" | od -An -v -tu1 | awk '\n"
-	"        BEGIN { ORS=\"\" }\n"
-	"        {\n"
-	"            for (i = 1; i <= NF; i++) {\n"
-	"                n = $i + 0\n"
-	"                if (n == 39)\n"
-	"                    printf \"%c%c%c%c\", 39, 92, 39, 39\n"
-	"                else if (n == 13)\n"
-	"                    printf \"\\\\r\"\n"
-	"                else if (n == 10)\n"
-	"                    printf \"\\\\n\"\n"
-	"                else if (n == 9)\n"
-	"                    printf \"\\\\t\"\n"
-	"                else if (n >= 32 && n <= 126)\n"
-	"                    printf \"%c\", n\n"
-	"                else\n"
-	"                    printf \"\\\\x%02x\", n\n"
-	"            }\n"
-	"        }'\n"
-	"    printf \"'\"\n"
-	"}\n"
-	"\n"
-	"_s2t_display_arg()\n"
-	"{\n"
-	"    # Human-readable, shell-safe dry-run rendering. Ordinary argv words stay\n"
-	"    # bare; quote only words that need shell protection. This keeps output\n"
-	"    # copy-pasteable without the visual noise of quoting every argument.\n"
-	"    case \"$1\" in\n"
-	"        '') printf \"''\" ;;\n"
-	"        *[!A-Za-z0-9_@%+=:,./-]*) _s2t_display_quote \"$1\" ;;\n"
-	"        *) printf '%s' \"$1\" ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"_s2t_print_command()\n"
-	"{\n"
-	"    _s2t_sep=\n"
-	"    for _s2t_arg do\n"
-	"        printf '%s' \"$_s2t_sep\"\n"
-	"        _s2t_display_arg \"$_s2t_arg\"\n"
-	"        _s2t_sep=' '\n"
-	"    done\n"
-	"    printf '\\n'\n"
-	"}\n"
-	"\n"
-	"_s2t_run()\n"
-	"{\n"
-	"    if [ \"${_s2t_strict_blocked:-0}\" -eq 1 ]; then\n"
-	"        if [ \"${_s2t_dry_run:-0}\" -eq 1 ]; then _s2t_print_command \"$@\"; fi\n"
-	"        return 3\n"
-	"    fi\n"
-	"    if [ \"${_s2t_dry_run:-0}\" -eq 1 ]; then\n"
-	"        _s2t_print_command \"$@\"\n"
-	"        return 0\n"
-	"    fi\n"
-	"    command \"$@\"\n"
-	"}\n"
-	"\n"
-	"_s2t_tmux()\n"
-	"{\n"
-	"    _s2t_run tmux \"$@\"\n"
-	"}\n"
-	"\n"
-	"_s2t_tmux_with_u()\n"
-	"{\n"
-	"    if [ \"${_s2t_Uflag:-0}\" -eq 1 ]; then\n"
-	"        _s2t_tmux -u \"$@\"\n"
-	"    else\n"
-	"        _s2t_tmux \"$@\"\n"
-	"    fi\n"
-	"}\n"
-	"\n"
-	"_s2t_color_enabled()\n"
-	"{\n"
-	"    [ -z \"${NO_COLOR:-}\" ] || return 1\n"
-	"    case \"${SCREEN2TMUX_COLOR:-auto}\" in\n"
-	"        always) return 0 ;;\n"
-	"        never) return 1 ;;\n"
-	"        auto|'') [ -t 2 ] && [ \"${TERM:-}\" != dumb ] ;;\n"
-	"        *) return 1 ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"_s2t_color_token()\n"
-	"{\n"
-	"    _s2t_ct_color=$1\n"
-	"    _s2t_ct_text=$2\n"
-	"    if _s2t_color_enabled; then\n"
-	"        case \"$_s2t_ct_color\" in\n"
-	"            green)   _s2t_ct_code='\\033[32m' ;;\n"
-	"            red)     _s2t_ct_code='\\033[31m' ;;\n"
-	"            yellow)  _s2t_ct_code='\\033[33m' ;;\n"
-	"            cyan)    _s2t_ct_code='\\033[36m' ;;\n"
-	"            magenta) _s2t_ct_code='\\033[35m' ;;\n"
-	"            *)       _s2t_ct_code= ;;\n"
-	"        esac\n"
-	"        printf '%b%s%b' \"$_s2t_ct_code\" \"$_s2t_ct_text\" '\\033[0m'\n"
-	"    else\n"
-	"        printf '%s' \"$_s2t_ct_text\"\n"
-	"    fi\n"
-	"}\n"
-	"\n"
-	"_s2t_class_color()\n"
-	"{\n"
-	"    case \"$1\" in\n"
-	"        EXACT)       printf green ;;\n"
-	"        APPROX)      printf yellow ;;\n"
-	"        UNSUPPORTED) printf red ;;\n"
-	"        MOOT)        printf cyan ;;\n"
-	"        EXTERNAL)    printf magenta ;;\n"
-	"        INVALID)     printf red ;;\n"
-	"        *)           printf cyan ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"_s2t_help_heading()\n"
-	"{\n"
-	"    printf '\\n'\n"
-	"    _s2t_color_token cyan \"$1\"\n"
-	"    printf '\\n'\n"
-	"}\n"
-	"\n"
-	"_s2t_help_status_color()\n"
-	"{\n"
-	"    case \"$1\" in\n"
-	"        EXACT)       printf green ;;\n"
-	"        APPROX)      printf yellow ;;\n"
-	"        UNSUPPORTED) printf red ;;\n"
-	"        MOOT)        printf cyan ;;\n"
-	"        EXTERNAL)    printf magenta ;;\n"
-	"        VARIES)      printf cyan ;;\n"
-	"        EXTENSION)   printf cyan ;;\n"
-	"        *)           printf cyan ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"_s2t_help_row()\n"
-	"{\n"
-	"    _s2t_hr_status=$1\n"
-	"    _s2t_hr_syntax=$2\n"
-	"    _s2t_hr_text=$3\n"
-	"    printf '  %-24s ' \"$_s2t_hr_syntax\"\n"
-	"    _s2t_color_token \"$(_s2t_help_status_color \"$_s2t_hr_status\")\" \"[$_s2t_hr_status]\"\n"
-	"    printf ' %s\\n' \"$_s2t_hr_text\"\n"
-	"}\n"
-	"\n"
-	"_s2t_help()\n"
-	"{\n"
-	"    _s2t_color_token cyan \"screen-to-tmux compatibility help\"\n"
-	"    printf ' (translator %s)\\n' \"$SCREEN2TMUX_VERSION\"\n"
-	"    printf '%s\\n' 'GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe mapping exists.'\n"
-	"    printf '%s\\n' 'This is compatibility help, not byte-for-byte native GNU Screen help.'\n"
-	"\n"
-	"    _s2t_help_heading 'Usage'\n"
-	"    printf '%s\\n' '  screen [options] [command [args]]'\n"
-	"    printf '%s\\n' '  screen -r [session]'\n"
-	"    printf '%s\\n' '  screen -S session -X command [args]'\n"
-	"    printf '%s\\n' '  screen -S session -Q command [args]'\n"
-	"    printf '%s\\n' '  screen [--dry-run|--dryrun] [--strict] ...'\n"
-	"\n"
-	"    _s2t_help_heading 'Translation classes'\n"
-	"    _s2t_help_row EXACT       'EXACT'       'Safe mapping; executes tmux automatically (or prints it in dry-run mode).'\n"
-	"    _s2t_help_row APPROX      'APPROX'      'Semantics differ; concrete one-command substitutes execute after a warning, otherwise translation stays advisory.'\n"
-	"    _s2t_help_row UNSUPPORTED 'UNSUPPORTED' 'Valid Screen behavior has no safe tmux equivalent; no emulation is invented.'\n"
-	"    _s2t_help_row MOOT        'MOOT'        'Screen-only maintenance/architecture is unnecessary under tmux.'\n"
-	"    _s2t_help_row EXTERNAL    'EXTERNAL'    'Closest substitute needs another program; concrete helper-backed mappings run when that helper is installed (unless --strict).'\n"
-	"    _s2t_help_row VARIES      'VARIES'      'Depends on subcommand, selector, runtime state, or invocation context.'\n"
-	"\n"
-	"    _s2t_help_heading 'Top-level Screen options'\n"
-	"    _s2t_help_row VARIES      '-4 / -6'              'Only meaningful for Screen built-in network forms; external-client substitution may be required.'\n"
-	"    _s2t_help_row UNSUPPORTED '-a'                   'Screen termcap capability forcing has no matching tmux CLI operation.'\n"
-	"    _s2t_help_row VARIES      '-A'                   'Inert for a fresh tmux session; Screen attach-time resize semantics are different.'\n"
-	"    _s2t_help_row UNSUPPORTED '-c file'              'screenrc syntax is not tmux.conf syntax; the same file is never passed to tmux -f.'\n"
-	"    _s2t_help_row EXACT       '-d [session]'          'Detach the selected session clients for supported unambiguous targets.'\n"
-	"    _s2t_help_row EXACT       '-D [session]'          'Power-detach style top-level operation for supported unambiguous targets.'\n"
-	"    _s2t_help_row APPROX      '-dmS name'             'Detached named tmux session is close, but tmux names are unique while Screen labels need not be.'\n"
-	"    _s2t_help_row UNSUPPORTED '-e xy'                 'Screen command-character pair is not silently rewritten into tmux prefix configuration.'\n"
-	"    _s2t_help_row UNSUPPORTED '-f / -fn / -fa'        'Screen flow-control policy has no direct tmux equivalent.'\n"
-	"    _s2t_help_row UNSUPPORTED '-h lines'              'Screen per-invocation initial history semantics do not map safely to tmux history-limit.'\n"
-	"    _s2t_help_row UNSUPPORTED '-i'                    'Screen XON/XOFF interrupt policy has no tmux equivalent.'\n"
-	"    _s2t_help_row UNSUPPORTED '-l / -ln'              'Screen utmp login accounting is not a tmux pane feature.'\n"
-	"    _s2t_help_row APPROX      '-ls / -list [match]'   'tmux list-sessions is useful, but output/state/exit-code semantics differ.'\n"
-	"    _s2t_help_row APPROX      '-L'                    'tmux pipe-pane can log panes, but Screen startup/future-window logging policy differs.'\n"
-	"    _s2t_help_row VARIES      '-Logfile file'         'Unsupported alone; with -L, pipe-pane is only an approximation.'\n"
-	"    _s2t_help_row VARIES      '-m'                    'Forces a new session; inside tmux, the tmux nesting safeguard can make this non-equivalent.'\n"
-	"    _s2t_help_row UNSUPPORTED '-O'                    'Legacy Screen VT-output mode is not mapped to tmux terminal-features automatically.'\n"
-	"    _s2t_help_row VARIES      '-p window'             'Safe simple selectors are preserved; ambiguous/tmux-significant selectors produce a warning.'\n"
-	"    _s2t_help_row UNSUPPORTED '-P'                    'Screen-managed authentication differs from tmux socket/server-access security.'\n"
-	"    _s2t_help_row VARIES      '-q'                    'Quiet behavior is command-specific; Screen quiet-list exit codes are not tmux-compatible.'\n"
-	"    _s2t_help_row VARIES      '-Q command'            'Queries are translated per command; some output is exact and some only approximate.'\n"
-	"    _s2t_help_row APPROX      '-r [session]'          'Screen requires a detached session; tmux normally permits another client.'\n"
-	"    _s2t_help_row APPROX      '-R / -RR [session]'    'Screen attach-or-create matching/state rules differ from tmux new-session -A.'\n"
-	"    _s2t_help_row UNSUPPORTED '-s shell'              'Screen default-shell override is not applied as a tmux-global side effect.'\n"
-	"    _s2t_help_row APPROX      '-S sockname'           'Screen allows duplicate PID.label sockets; tmux session names are unique.'\n"
-	"    _s2t_help_row EXACT       '-t title'              'Initial window title is preserved; tmux format metacharacters are escaped literally.'\n"
-	"    _s2t_help_row UNSUPPORTED '-T term'               'Screen virtual TERM selection is not silently converted into tmux terminal configuration.'\n"
-	"    _s2t_help_row APPROX      '-U'                    'Screen changes client/output and new-window encoding semantics; tmux -u is not equivalent.'\n"
-	"    _s2t_help_row UNSUPPORTED '-v / --version'        'A tmux-backed binary cannot truthfully report itself as native GNU Screen.'\n"
-	"    _s2t_help_row MOOT        '-wipe [match]'         'tmux does not leave one stale filesystem socket per session.'\n"
-	"    _s2t_help_row EXACT       '-x [session]'          'tmux natively supports multiple clients; safe unambiguous targets attach directly.'\n"
-	"    _s2t_help_row VARIES      '-X command [args]'     'Screen commands are translated individually; see common command groups below.'\n"
-	"\n"
-	"    _s2t_help_heading 'Translator extensions'\n"
-	"    _s2t_help_row EXTENSION   '--dry-run / --dryrun'  'Print the translated tmux argv or diagnostic instead of executing it.'\n"
-	"    _s2t_help_row EXTENSION   '--strict'              'Never execute APPROX or EXTERNAL mappings; APPROX returns 3 and EXTERNAL returns 5.'\n"
-	"    _s2t_help_row EXTENSION   '--help'                'Show this compatibility-aware help page.'\n"
-	"\n"
-	"    _s2t_help_heading 'Common -X / -Q command coverage'\n"
-	"    _s2t_help_row EXACT       'stuff/select/title/kill' 'Direct pane/window operations for safe targets; literal data is protected from tmux format expansion.'\n"
-	"    _s2t_help_row EXACT       'next/prev/other/quit'    'Straightforward tmux window/session operations for supported targets.'\n"
-	"    _s2t_help_row EXACT       'setenv/unsetenv'         'Mapped to tmux environment operations in the selected session context.'\n"
-	"    _s2t_help_row EXACT       'monitor/silence/vbell'   'Mapped to the corresponding tmux window/session monitoring options.'\n"
-	"    _s2t_help_row EXACT       'copy/xon/xoff/reset'     'Mapped to tmux copy/input/reset operations where source semantics align.'\n"
-	"    _s2t_help_row APPROX      'split/focus/resize'      'Screen display regions and tmux panes are different object models.'\n"
-	"    _s2t_help_row APPROX      'hardcopy FILE / log'     'capture-pane/pipe-pane are useful substitutes but output/log policy differs.'\n"
-	"    _s2t_help_row APPROX      'truecolor/altscreen'     'tmux has related capabilities/options, but scope and terminal model differ.'\n"
-	"    _s2t_help_row APPROX      'layout/displays/info'    'Useful tmux inspection/layout commands exist; Screen object/output formats differ.'\n"
-	"    _s2t_help_row APPROX      'bind/unbindall/ACL'       'tmux key tables and server access have broader server-wide scope.'\n"
-	"    _s2t_help_row UNSUPPORTED 'source/chdir/auth'        'No unsafe config-language/backend/security emulation is attempted.'\n"
-	"    _s2t_help_row UNSUPPORTED 'multiuser/writelock'      'Screen per-session/per-window security model is not recreated on top of tmux.'\n"
-	"    _s2t_help_row UNSUPPORTED 'encoding/charset'         'Screen character-set machinery is not reprogrammed in the translator.'\n"
-	"    _s2t_help_row UNSUPPORTED 'paste/removebuf'          'Screen register/exchange-file semantics differ from tmux server-wide buffers.'\n"
-	"    _s2t_help_row EXTERNAL    '/dev/tty*, //telnet'      'Concrete mappings launch picocom/telnet inside tmux when installed; tmux itself is not a serial/telnet engine.'\n"
-	"\n"
-	"    _s2t_help_heading 'Important tmux-underneath differences'\n"
-	"    printf '%s\\n' '  * tmux multi-client attachment is native and often simpler, but that makes Screen -r semantics only approximate.'\n"
-	"    printf '%s\\n' '  * tmux uses unique session names; Screen socket labels can repeat because the PID is part of the socket name.'\n"
-	"    printf '%s\\n' '  * tmux panes are PTYs; Screen display regions can show layers/windows without creating another PTY.'\n"
-	"    printf '%s\\n' '  * tmux paste buffers and key tables are server-wide, so the translator refuses to pretend they are Screen-session-local.'\n"
-	"    printf '%s\\n' '  * tmux has one server socket rather than one staleable socket per session, so Screen -wipe is unnecessary.'\n"
-	"    printf '%s\\n' '  * When an argument can be interpreted differently by Screen and tmux, translation stops with a specific WARNING.'\n"
-	"\n"
-	"    _s2t_help_heading 'Environment controls'\n"
-	"    printf '%s\\n' '  SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1  allow direct -S NAME creation when your deployment guarantees uniqueness.'\n"
-	"    printf '%s\\n' '  SCREEN2TMUX_COLOR=auto|always|never          control selective diagnostic/help color.'\n"
-	"    printf '%s\\n' '  NO_COLOR=1                                  disable ANSI color unconditionally.'\n"
-	"\n"
-	"    _s2t_help_heading 'Exit status'\n"
-	"    printf '%s\\n' '  0 exact/help success or successful executable APPROX/EXTERNAL mapping; 2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 advisory/missing-helper external; 64 invalid syntax.'\n"
-	"    printf '%s\\n' '  Executed mappings return the underlying tmux command status in normal mode; --strict never executes APPROX or EXTERNAL.'\n"
-	"}\n"
-	"\n"
-	"_s2t_invalid()\n"
-	"{\n"
-	"    _s2t_inv_label=$(_s2t_color_token red \"invalid/unknown Screen syntax\")\n"
-	"    printf 'screen2tmux: %s: %s\\n' \"$_s2t_inv_label\" \"$*\" >&2\n"
-	"    return 64\n"
-	"}\n"
-	"\n"
-	"_s2t_report()\n"
-	"{\n"
-	"    _s2t_class=$1\n"
-	"    _s2t_rc=$2\n"
-	"    _s2t_reason=$3\n"
-	"    _s2t_suggestion=${4-}\n"
-	"    _s2t_class_label=$(_s2t_color_token \"$(_s2t_class_color \"$_s2t_class\")\" \"$_s2t_class\")\n"
-	"    printf 'screen2tmux: %s: %s\\n' \"$_s2t_class_label\" \"$_s2t_reason\" >&2\n"
-	"    if [ -n \"$_s2t_suggestion\" ]; then\n"
-	"        _s2t_suggestion_label=$(_s2t_color_token cyan suggestion)\n"
-	"        printf 'screen2tmux: %s: %s\\n' \"$_s2t_suggestion_label\" \"$_s2t_suggestion\" >&2\n"
-	"    fi\n"
-	"    return \"$_s2t_rc\"\n"
-	"}\n"
-	"\n"
-	"_s2t_unsupported()\n"
-	"{\n"
-	"    _s2t_report UNSUPPORTED 2 \"$1\" \"${2-}\"\n"
-	"}\n"
-	"\n"
-	"_s2t_approx()\n"
-	"{\n"
-	"    _s2t_report APPROX 3 \"$1\" \"${2-}\"\n"
-	"}\n"
-	"\n"
-	"_s2t_strict_refusal()\n"
-	"{\n"
-	"    _s2t_strict_label=$(_s2t_color_token yellow STRICT)\n"
-	"    printf 'screen2tmux: %s: --strict keeps APPROX mappings advisory; tmux was not executed.\\n' \"$_s2t_strict_label\" >&2\n"
-	"}\n"
-	"\n"
-	"_s2t_approx_exec()\n"
-	"{\n"
-	"    # Preserve APPROX classification visibly, but execute a concrete tmux\n"
-	"    # substitute when we can express the useful inexact mapping as one tmux\n"
-	"    # command. --strict turns every such mapping back into an advisory result.\n"
-	"    _s2t_ae_reason=$1\n"
-	"    _s2t_ae_suggestion=$2\n"
-	"    shift 2\n"
-	"    _s2t_report APPROX 0 \"$_s2t_ae_reason\" \"$_s2t_ae_suggestion\" || return $?\n"
-	"    if [ \"${_s2t_strict:-0}\" -eq 1 ]; then\n"
-	"        _s2t_strict_refusal\n"
-	"        if [ \"${_s2t_dry_run:-0}\" -eq 1 ]; then _s2t_print_command tmux \"$@\"; fi\n"
-	"        return 3\n"
-	"    fi\n"
-	"    _s2t_tmux \"$@\"\n"
-	"}\n"
-	"\n"
-	"_s2t_approx_notice()\n"
-	"{\n"
-	"    # Warning-only helper for an approximate semantic modifier whose closest\n"
-	"    # command is assembled later in the current translation path. In strict\n"
-	"    # mode the central command runner refuses that later command.\n"
-	"    _s2t_report APPROX 0 \"$1\" \"${2-}\"\n"
-	"    if [ \"${_s2t_strict:-0}\" -eq 1 ]; then\n"
-	"        _s2t_strict_blocked=1\n"
-	"        _s2t_strict_refusal\n"
-	"    fi\n"
-	"    return 0\n"
-	"}\n"
-	"\n"
-	"_s2t_moot()\n"
-	"{\n"
-	"    _s2t_report MOOT 4 \"$1\" \"${2-}\"\n"
-	"}\n"
-	"\n"
-	"_s2t_external()\n"
-	"{\n"
-	"    _s2t_report EXTERNAL 5 \"$1\" \"${2-}\"\n"
-	"}\n"
-	"\n"
-	"_s2t_external_exec()\n"
-	"{\n"
-	"    # EXTERNAL means tmux can host the operation, but another program must do\n"
-	"    # the protocol/device work. Dry-run always shows the concrete tmux argv.\n"
-	"    # Normal mode executes only when the named helper is available. --strict\n"
-	"    # keeps every EXTERNAL mapping advisory, just as it does for APPROX.\n"
-	"    _s2t_ee_helper=$1\n"
-	"    _s2t_ee_reason=$2\n"
-	"    _s2t_ee_suggestion=$3\n"
-	"    shift 3\n"
-	"    _s2t_report EXTERNAL 0 \"$_s2t_ee_reason\" \"$_s2t_ee_suggestion\" || return $?\n"
-	"    if [ \"${_s2t_strict:-0}\" -eq 1 ]; then\n"
-	"        _s2t_strict_label=$(_s2t_color_token yellow STRICT)\n"
-	"        printf 'screen2tmux: %s: --strict keeps EXTERNAL mappings advisory; tmux was not executed.\\n' \"$_s2t_strict_label\" >&2\n"
-	"        if [ \"${_s2t_dry_run:-0}\" -eq 1 ]; then\n"
-	"            _s2t_print_command tmux \"$@\"\n"
-	"        fi\n"
-	"        return 5\n"
-	"    fi\n"
-	"    if [ \"${_s2t_dry_run:-0}\" -eq 1 ]; then\n"
-	"        _s2t_print_command tmux \"$@\"\n"
-	"        return 0\n"
-	"    fi\n"
-	"    if ! command -v \"$_s2t_ee_helper\" >/dev/null 2>&1; then\n"
-	"        _s2t_note \"external helper '$_s2t_ee_helper' is not installed; tmux was not executed.\"\n"
-	"        return 5\n"
-	"    fi\n"
-	"    _s2t_tmux \"$@\"\n"
-	"}\n"
-	"\n"
-	"_s2t_external_tmux_call()\n"
-	"{\n"
-	"    _s2t_etc_helper=$1\n"
-	"    _s2t_etc_reason=$2\n"
-	"    _s2t_etc_suggestion=$3\n"
-	"    shift 3\n"
-	"    if [ \"${_s2t_Uflag:-0}\" -eq 1 ]; then\n"
-	"        _s2t_external_exec \"$_s2t_etc_helper\" \"$_s2t_etc_reason\" \"$_s2t_etc_suggestion\" -u \"$@\"\n"
-	"    else\n"
-	"        _s2t_external_exec \"$_s2t_etc_helper\" \"$_s2t_etc_reason\" \"$_s2t_etc_suggestion\" \"$@\"\n"
-	"    fi\n"
-	"}\n"
-	"\n"
-	"_s2t_external_launch()\n"
-	"{\n"
-	"    _s2t_el_helper=$1\n"
-	"    _s2t_el_reason=$2\n"
-	"    _s2t_el_suggestion=$3\n"
-	"    shift 3\n"
-	"\n"
-	"    if [ -n \"${TMUX:-}\" ] && [ \"${_s2t_mflag:-0}\" -eq 0 ] && [ -z \"${_s2t_session:-}\" ]; then\n"
-	"        if [ -n \"${_s2t_title:-}\" ]; then\n"
-	"            _s2t_tmux_format_literal \"$_s2t_title\"\n"
-	"            _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-window -n \"$_s2t_format_literal\" \"$@\"\n"
-	"        else\n"
-	"            _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-window \"$@\"\n"
-	"        fi\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    if [ -n \"${_s2t_session:-}\" ]; then _s2t_tmux_format_literal \"$_s2t_session\"; _s2t_el_session=$_s2t_format_literal; else _s2t_el_session=; fi\n"
-	"    if [ -n \"${_s2t_title:-}\" ]; then _s2t_tmux_format_literal \"$_s2t_title\"; _s2t_el_title=$_s2t_format_literal; else _s2t_el_title=; fi\n"
-	"    if [ \"${_s2t_detach:-0}\" -eq 1 ] && [ \"${_s2t_mflag:-0}\" -eq 1 ]; then _s2t_el_detached=1; else _s2t_el_detached=0; fi\n"
-	"\n"
-	"    if [ \"$_s2t_el_detached\" -eq 1 ] && [ -n \"$_s2t_el_session\" ] && [ -n \"$_s2t_el_title\" ]; then\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session -d -s \"$_s2t_el_session\" -n \"$_s2t_el_title\" \"$@\"\n"
-	"    elif [ \"$_s2t_el_detached\" -eq 1 ] && [ -n \"$_s2t_el_session\" ]; then\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session -d -s \"$_s2t_el_session\" \"$@\"\n"
-	"    elif [ \"$_s2t_el_detached\" -eq 1 ] && [ -n \"$_s2t_el_title\" ]; then\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session -d -n \"$_s2t_el_title\" \"$@\"\n"
-	"    elif [ \"$_s2t_el_detached\" -eq 1 ]; then\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session -d \"$@\"\n"
-	"    elif [ -n \"$_s2t_el_session\" ] && [ -n \"$_s2t_el_title\" ]; then\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session -s \"$_s2t_el_session\" -n \"$_s2t_el_title\" \"$@\"\n"
-	"    elif [ -n \"$_s2t_el_session\" ]; then\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session -s \"$_s2t_el_session\" \"$@\"\n"
-	"    elif [ -n \"$_s2t_el_title\" ]; then\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session -n \"$_s2t_el_title\" \"$@\"\n"
-	"    else\n"
-	"        _s2t_external_tmux_call \"$_s2t_el_helper\" \"$_s2t_el_reason\" \"$_s2t_el_suggestion\" new-session \"$@\"\n"
-	"    fi\n"
-	"}\n"
-	"\n"
-	"_s2t_note()\n"
-	"{\n"
-	"    _s2t_note_label=$(_s2t_color_token cyan note)\n"
-	"    printf 'screen2tmux: %s: %s\\n' \"$_s2t_note_label\" \"$*\" >&2\n"
-	"}\n"
-	"\n"
-	"_s2t_uncertain_arg()\n"
-	"{\n"
-	"    _s2t_arg_desc=$1\n"
-	"    _s2t_reason=$2\n"
-	"    _s2t_suggestion=${3-}\n"
-	"    _s2t_warning_label=$(_s2t_color_token yellow WARNING)\n"
-	"    printf 'screen2tmux: %s: uncertain translation of argument %s: %s\\n' \"$_s2t_warning_label\" \"$_s2t_arg_desc\" \"$_s2t_reason\" >&2\n"
-	"    if [ -n \"$_s2t_suggestion\" ]; then\n"
-	"        _s2t_suggestion_label=$(_s2t_color_token cyan suggestion)\n"
-	"        printf 'screen2tmux: %s: %s\\n' \"$_s2t_suggestion_label\" \"$_s2t_suggestion\" >&2\n"
-	"    fi\n"
-	"    return 3\n"
-	"}\n"
-	"\n"
-	"_s2t_tmux_format_literal()\n"
-	"{\n"
-	"    # tmux format strings use ## for a literal #.  A number of tmux commands\n"
-	"    # format-expand names before storing them (new-session -s/-n, new-window\n"
-	"    # -n, rename-session, rename-window).  Escape only that documented format\n"
-	"    # metacharacter; do not invent a more general quoting language.\n"
-	"    _s2t_format_literal=$(printf '%s' \"$1\" | sed 's/#/##/g')\n"
-	"}\n"
-	"\n"
-	"_s2t_selector_is_risky()\n"
-	"{\n"
-	"    # Generic tmux target strings reserve separators, IDs, braces and glob\n"
-	"    # metacharacters that Screen selectors do not interpret the same way.\n"
-	"    case \"$1\" in\n"
-	"        ''|*[!A-Za-z0-9_-]*) return 0 ;;\n"
-	"        *) return 1 ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"_s2t_session_selector_is_risky()\n"
-	"{\n"
-	"    # Screen FindSocket() has additional session matching rules: a selector\n"
-	"    # beginning with digits may match a socket PID prefix, PID prefixes are\n"
-	"    # otherwise skipped, and the tty prefix is optional. tmux session targets\n"
-	"    # do not have those rules. Stop instead of guessing these arguments.\n"
-	"    case \"$1\" in\n"
-	"        ''|[0-9]*|tty*|*[!A-Za-z0-9_-]*) return 0 ;;\n"
-	"        *) return 1 ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"_s2t_guard_target_arguments()\n"
-	"{\n"
-	"    if [ -n \"${_s2t_session:-}\" ] && _s2t_session_selector_is_risky \"$_s2t_session\"; then\n"
-	"        _s2t_uncertain_arg \"Screen session selector '$_s2t_session'\" \"Screen socket matching may interpret leading digits as a PID, may strip PID prefixes, treats a tty prefix specially, and otherwise uses Screen-specific prefix rules; tmux target syntax has different ID, separator, and pattern rules.\" \"Choose the intended tmux session explicitly and rewrite the target; this translator will not guess how that Screen selector should be interpreted.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    if [ -n \"${_s2t_window:-}\" ] && _s2t_selector_is_risky \"$_s2t_window\"; then\n"
-	"        _s2t_uncertain_arg \"Screen window selector '$_s2t_window'\" \"tmux window/pane targets have a different selector grammar from Screen window names and numbers.\" \"Choose the intended tmux window explicitly and rewrite the target; this translator will not guess how that Screen selector should be interpreted.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    return 0\n"
-	"}\n"
-	"\n"
-	"# Backward-compatible internal name: callers not yet classified more narrowly\n"
-	"# are conservatively UNSUPPORTED.\n"
-	"_s2t_cannot()\n"
-	"{\n"
-	"    _s2t_unsupported \"$@\"\n"
-	"}\n"
-	"\n"
-	"_s2t_need_arg()\n"
-	"{\n"
-	"    [ \"$#\" -gt 0 ] || return 1\n"
-	"    return 0\n"
-	"}\n"
-	"\n"
-	"_s2t_make_target()\n"
-	"{\n"
-	"    if [ -n \"${_s2t_session:-}\" ] && [ -n \"${_s2t_window:-}\" ]; then\n"
-	"        _s2t_target=$_s2t_session:$_s2t_window\n"
-	"    elif [ -n \"${_s2t_session:-}\" ]; then\n"
-	"        _s2t_target=$_s2t_session\n"
-	"    elif [ -n \"${_s2t_window:-}\" ]; then\n"
-	"        _s2t_target=\":$_s2t_window\"\n"
-	"    else\n"
-	"        _s2t_target=\n"
-	"    fi\n"
-	"}\n"
-	"\n"
-	"_s2t_screen_target()\n"
-	"{\n"
-	"    _s2t_make_target\n"
-	"    if [ -n \"$_s2t_target\" ]; then\n"
-	"        printf '%s\\n' \"$_s2t_target\"\n"
-	"    fi\n"
-	"}\n"
-	"\n"
-	"_s2t_known_internal()\n"
-	"{\n"
-	"    case \"$1\" in\n"
-	"        acladd|aclchg|acldel|aclgrp|aclumask|activity|addacl|allpartial|altscreen|at|auth|autodetach|autonuke|backtick|bce|bell|bell_msg|bind|bindkey|blanker|blankerprg|break|breaktype|bufferfile|bumpleft|bumpright|c1|caption|chacl|charset|chdir|cjkwidth|clear|collapse|colon|command|compacthist|console|copy|crlf|defautonuke|defbce|defbreaktype|defc1|defcharset|defdynamictitle|defencoding|defescape|defflow|defgr|defhstatus|defkanji|deflog|deflogin|defmode|defmonitor|defmousetrack|defnonblock|defobuflimit|defscrollback|defshell|defsilence|defslowpaste|defutf8|defwrap|defwritelock|detach|digraph|dinfo|displays|dumptermcap|dynamictitle|echo|encoding|escape|eval|exec|fit|flow|focus|focusminsize|gr|group|hardcopy|hardcopy_append|hardcopydir|hardstatus|height|help|history|hstatus|idle|ignorecase|info|kanji|kill|lastmsg|layout|license|lockscreen|log|logfile|login|logtstamp|mapdefault|mapnotnext|maptimeout|markkeys|meta|monitor|mousetrack|msgminwait|msgwait|multiinput|multiuser|next|nonblock|number|obuflimit|only|other|parent|partial|paste|pastefont|pow_break|pow_detach|pow_detach_msg|prev|printcmd|process|quit|readbuf|readreg|redisplay|register|remove|removebuf|rendition|reset|resize|screen|scrollback|select|sessionname|setenv|setsid|shell|shelltitle|silence|silencewait|sleep|slowpaste|sorendition|sort|source|split|startup_message|status|stuff|su|suspend|term|termcap|termcapinfo|terminfo|title|truecolor|umask|unbindall|unsetenv|utf8|vbell|vbell_msg|vbellwait|verbose|version|wall|width|windowlist|windows|wrap|writebuf|writelock|xoff|xon|zmodem|zombie|zombie_timeout)\n"
-	"            return 0 ;;\n"
-	"    esac\n"
-	"    return 1\n"
-	"}\n"
-	"\n"
-	"_s2t_query()\n"
-	"{\n"
-	"    _s2t_cmd=${1-}\n"
-	"    [ -n \"$_s2t_cmd\" ] || { _s2t_invalid \"-Q requires a query command\"; return $?; }\n"
-	"    shift\n"
-	"    _s2t_guard_target_arguments || return $?\n"
-	"    _s2t_make_target\n"
-	"    case \"$_s2t_cmd\" in\n"
-	"        windows)\n"
-	"            if [ -n \"$_s2t_session\" ]; then\n"
-	"                _s2t_approx_exec \"Screen -Q windows has Screen-specific window-list formatting and markers; tmux list-windows reports a different format.\" \"Executing closest substitute; use -F to build output compatible with the consumer if exact formatting matters: tmux list-windows -t $_s2t_session\" list-windows -t \"$_s2t_session\"\n"
-	"            else\n"
-	"                _s2t_approx_exec \"Screen -Q windows has Screen-specific window-list formatting and markers; tmux list-windows reports a different format.\" \"Executing closest substitute; use -F to build output compatible with the consumer if exact formatting matters: tmux list-windows\" list-windows\n"
-	"            fi ;;\n"
-	"        number)\n"
-	"            if [ -n \"$_s2t_target\" ]; then _s2t_tmux display-message -p -t \"$_s2t_target\" '#{window_index} (#{window_name})'; else _s2t_tmux display-message -p '#{window_index} (#{window_name})'; fi ;;\n"
-	"        title)\n"
-	"            if [ -n \"$_s2t_target\" ]; then _s2t_tmux display-message -p -t \"$_s2t_target\" '#W'; else _s2t_tmux display-message -p '#W'; fi ;;\n"
-	"        info)\n"
-	"            _s2t_info_format='#{session_name}:#{window_index}.#{pane_index} #{pane_width}x#{pane_height} #{pane_current_command}'\n"
-	"            if [ -n \"$_s2t_target\" ]; then\n"
-	"                _s2t_approx_exec \"Screen -Q info emits Screen's own fixed status summary; tmux has no byte-compatible equivalent.\" \"Executing a useful tmux status summary with explicit format fields.\" display-message -p -t \"$_s2t_target\" \"$_s2t_info_format\"\n"
-	"            else\n"
-	"                _s2t_approx_exec \"Screen -Q info emits Screen's own fixed status summary; tmux has no byte-compatible equivalent.\" \"Executing a useful tmux status summary with explicit format fields.\" display-message -p \"$_s2t_info_format\"\n"
-	"            fi ;;\n"
-	"        lastmsg)\n"
-	"            _s2t_approx_exec \"Screen -Q lastmsg returns Screen's single most recent message; tmux show-messages returns a message history with different formatting and scope.\" \"Executing tmux show-messages; scripts that need exactly one Screen-style message must select the desired entry explicitly.\" show-messages ;;\n"
-	"        echo)\n"
-	"            if [ \"$#\" -eq 0 ]; then\n"
-	"                _s2t_invalid \"echo requires a string\"\n"
-	"            elif [ \"$#\" -eq 1 ]; then\n"
-	"                _s2t_tmux display-message -pl \"$1\"\n"
-	"            elif [ \"$#\" -eq 2 ] && [ \"$1\" = -n ]; then\n"
-	"                _s2t_tmux display-message -pl \"$2\"\n"
-	"            elif [ \"$#\" -eq 2 ] && [ \"$1\" = -p ]; then\n"
-	"                _s2t_unsupported \"Screen echo -p expands Screen's own % status-format language; tmux formats use a different #{} language.\" \"Translate the Screen format deliberately instead of passing it to tmux display-message.\"\n"
-	"            else\n"
-	"                _s2t_uncertain_arg \"echo arguments '$*'\" \"Screen accepts a narrow one/two-argument form and extra argument interpretation is not safely representable as a tmux display-message invocation.\" \"Use Screen's documented 'echo [-n] [-p] string' form and translate the intended formatting explicitly.\"\n"
-	"            fi ;;\n"
-	"        select)\n"
-	"            if [ \"$#\" -gt 0 ]; then\n"
-	"                _s2t_sel=$1\n"
-	"                if [ -n \"$_s2t_session\" ]; then _s2t_tmux select-window -t \"$_s2t_session:$_s2t_sel\"; else _s2t_tmux select-window -t \":$_s2t_sel\"; fi\n"
-	"            else\n"
-	"                if [ -n \"$_s2t_target\" ]; then _s2t_tmux display-message -p -t \"$_s2t_target\" '#I #W'; else _s2t_tmux display-message -p '#I #W'; fi\n"
-	"            fi ;;\n"
-	"        *)\n"
-	"            if _s2t_known_internal \"$_s2t_cmd\"; then\n"
-	"                _s2t_cannot \"Screen command '$_s2t_cmd' is recognized, but Screen only permits a subset of commands to return useful -Q results.\" \"Use tmux list-*, show-*, or display-message -p with format variables.\"\n"
-	"            else\n"
-	"                _s2t_invalid \"unknown -Q command '$_s2t_cmd'\"\n"
-	"            fi ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"_s2t_xcommand()\n"
-	"{\n"
-	"    _s2t_cmd=${1-}\n"
-	"    [ -n \"$_s2t_cmd\" ] || { _s2t_invalid \"-X requires a Screen command\"; return $?; }\n"
-	"    shift\n"
-	"    _s2t_guard_target_arguments || return $?\n"
-	"    _s2t_make_target\n"
-	"    case \"$_s2t_cmd\" in\n"
-	"        screen)\n"
-	"            _s2t_nw_name=\n"
-	"            _s2t_nw_index=\n"
-	"            _s2t_nw_hist=\n"
-	"            while [ \"$#\" -gt 0 ]; do\n"
-	"                case \"$1\" in\n"
-	"                    -t) shift; [ \"$#\" -gt 0 ] || { _s2t_invalid \"screen -t requires a title\"; return $?; }; _s2t_nw_name=$1; shift ;;\n"
-	"                    -h) shift; [ \"$#\" -gt 0 ] || { _s2t_invalid \"screen -h requires a history size\"; return $?; }; _s2t_nw_hist=$1; shift ;;\n"
-	"                    --) shift; break ;;\n"
-	"                    -*) _s2t_cannot \"internal Screen 'screen' option '$1' has no safe generic tmux translation in this release.\" \"Create the window with tmux new-window and configure the corresponding tmux option explicitly.\"; return $? ;;\n"
-	"                    [0-9]*:* ) _s2t_nw_index=${1%%:*}; _s2t_nw_name=${1#*:}; shift; break ;;\n"
-	"                    [0-9]* ) _s2t_nw_index=$1; shift; break ;;\n"
-	"                    *) break ;;\n"
-	"                esac\n"
-	"            done\n"
-	"            if [ -n \"$_s2t_nw_hist\" ]; then\n"
-	"                _s2t_cannot \"Screen can choose scrollback size while creating this window; tmux history-limit is an option whose creation-time semantics are server/session scoped.\" \"Set 'history-limit $_s2t_nw_hist' in tmux.conf before creating panes, then use tmux new-window.\"\n"
-	"                return $?\n"
-	"            fi\n"
-	"            if [ -n \"$_s2t_nw_index\" ]; then\n"
-	"                _s2t_approx_notice \"Screen treats window number '$_s2t_nw_index' as StartAt and chooses the first free number at or above it; tmux -t :N addresses exact index N and fails if that index is occupied.\" \"Executing the closest exact-index tmux new-window mapping. If index $_s2t_nw_index is occupied, tmux may fail where Screen would search upward.\"\n"
-	"            fi\n"
-	"            if [ -n \"$_s2t_session\" ] && [ -n \"$_s2t_nw_index\" ]; then _s2t_nw_target=$_s2t_session:$_s2t_nw_index\n"
-	"            elif [ -n \"$_s2t_session\" ]; then _s2t_nw_target=$_s2t_session\n"
-	"            elif [ -n \"$_s2t_nw_index\" ]; then _s2t_nw_target=:$_s2t_nw_index\n"
-	"            else _s2t_nw_target=; fi\n"
-	"            if [ -n \"$_s2t_nw_name\" ]; then _s2t_tmux_format_literal \"$_s2t_nw_name\"; _s2t_nw_name_tmux=$_s2t_format_literal; else _s2t_nw_name_tmux=; fi\n"
-	"            if [ -n \"$_s2t_nw_target\" ] && [ -n \"$_s2t_nw_name_tmux\" ]; then _s2t_tmux new-window -t \"$_s2t_nw_target\" -n \"$_s2t_nw_name_tmux\" \"$@\"\n"
-	"            elif [ -n \"$_s2t_nw_target\" ]; then _s2t_tmux new-window -t \"$_s2t_nw_target\" \"$@\"\n"
-	"            elif [ -n \"$_s2t_nw_name_tmux\" ]; then _s2t_tmux new-window -n \"$_s2t_nw_name_tmux\" \"$@\"\n"
-	"            else _s2t_tmux new-window \"$@\"; fi ;;\n"
-	"        select)\n"
-	"            if [ \"$#\" -gt 0 ]; then _s2t_sel=$1; else _s2t_sel=${_s2t_window:-}; fi\n"
-	"            [ -n \"$_s2t_sel\" ] || { _s2t_invalid \"select requires a target window in noninteractive translation\"; return $?; }\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_tmux select-window -t \"$_s2t_session:$_s2t_sel\"; else _s2t_tmux select-window -t \":$_s2t_sel\"; fi ;;\n"
-	"        title)\n"
-	"            [ \"$#\" -gt 0 ] || { _s2t_invalid \"title requires a title in shell translation\"; return $?; }\n"
-	"            _s2t_tmux_format_literal \"$1\"\n"
-	"            if [ -n \"$_s2t_target\" ]; then _s2t_tmux rename-window -t \"$_s2t_target\" \"$_s2t_format_literal\"; else _s2t_tmux rename-window \"$_s2t_format_literal\"; fi ;;\n"
-	"        number)\n"
-	"            [ \"$#\" -gt 0 ] || { if [ -n \"$_s2t_target\" ]; then _s2t_tmux display-message -p -t \"$_s2t_target\" '#I'; else _s2t_tmux display-message -p '#I'; fi; return $?; }\n"
-	"            _s2t_dest=$1\n"
-	"            if [ -z \"$_s2t_target\" ]; then _s2t_cannot \"renumbering requires a determinate Screen window target.\" \"Use screen -S session -p window -X number N and inspect the destination before choosing a tmux operation.\"; return $?; fi\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_dest_target=\"$_s2t_session:$_s2t_dest\"; else _s2t_dest_target=\":$_s2t_dest\"; fi\n"
-	"            _s2t_approx_exec \"Screen number swaps window numbers when the destination is occupied, whereas tmux move-window fails when the destination is occupied.\" \"Executing the non-destructive closest substitute: tmux move-window -s $_s2t_target -t $_s2t_dest_target. If the destination is occupied, tmux will fail instead of replacing it; use swap-window explicitly when Screen's occupied-slot behavior is required.\" move-window -s \"$_s2t_target\" -t \"$_s2t_dest_target\" ;;\n"
-	"        kill)\n"
-	"            if [ -n \"$_s2t_target\" ]; then _s2t_tmux kill-window -t \"$_s2t_target\"; else _s2t_tmux kill-window; fi ;;\n"
-	"        next) if [ -n \"$_s2t_session\" ]; then _s2t_tmux next-window -t \"$_s2t_session\"; else _s2t_tmux next-window; fi ;;\n"
-	"        prev) if [ -n \"$_s2t_session\" ]; then _s2t_tmux previous-window -t \"$_s2t_session\"; else _s2t_tmux previous-window; fi ;;\n"
-	"        other) if [ -n \"$_s2t_session\" ]; then _s2t_tmux last-window -t \"$_s2t_session\"; else _s2t_tmux last-window; fi ;;\n"
-	"        collapse)\n"
-	"            if [ -n \"$_s2t_session\" ]; then\n"
-	"                _s2t_approx_exec \"Screen collapse always renumbers windows consecutively from 0; tmux move-window -r starts from the session's base-index option.\" \"Executing tmux move-window -r -t $_s2t_session; the result is Screen-compatible only when tmux base-index is 0.\" move-window -r -t \"$_s2t_session\"\n"
-	"            else\n"
-	"                _s2t_approx_exec \"Screen collapse always renumbers windows consecutively from 0; tmux move-window -r starts from the session's base-index option.\" \"Executing tmux move-window -r; the result is Screen-compatible only when tmux base-index is 0.\" move-window -r\n"
-	"            fi ;;\n"
-	"        sort) _s2t_cannot \"Screen mutates window numbers by sorting actual windows alphabetically; tmux can sort list/chooser views but has no direct mutating sort command.\" \"Script list-windows plus move-window if persistent alphabetical indices are required.\" ;;\n"
-	"        stuff)\n"
-	"            [ \"$#\" -gt 0 ] || { _s2t_invalid \"stuff requires text\"; return $?; }\n"
-	"            if [ -n \"$_s2t_target\" ]; then _s2t_tmux send-keys -l -t \"$_s2t_target\" \"$*\"; else _s2t_tmux send-keys -l \"$*\"; fi ;;\n"
-	"        xon) if [ -n \"$_s2t_target\" ]; then _s2t_tmux send-keys -t \"$_s2t_target\" C-q; else _s2t_tmux send-keys C-q; fi ;;\n"
-	"        xoff) if [ -n \"$_s2t_target\" ]; then _s2t_tmux send-keys -t \"$_s2t_target\" C-s; else _s2t_tmux send-keys C-s; fi ;;\n"
-	"        split)\n"
-	"            if [ \"${1-}\" = \"-v\" ]; then\n"
-	"                if [ -n \"$_s2t_target\" ]; then _s2t_approx_exec \"Screen split -v creates another display region without creating a new PTY; tmux split-window -h creates a new pane/PTY.\" \"Executing the closest visual substitute: tmux split-window -h -t $_s2t_target.\" split-window -h -t \"$_s2t_target\"\n"
-	"                else _s2t_approx_exec \"Screen split -v creates another display region without creating a new PTY; tmux split-window -h creates a new pane/PTY.\" \"Executing the closest visual substitute: tmux split-window -h.\" split-window -h; fi\n"
-	"            else\n"
-	"                if [ -n \"$_s2t_target\" ]; then _s2t_approx_exec \"Screen split creates another display region without creating a new PTY; tmux split-window -v creates a new pane/PTY.\" \"Executing the closest visual substitute: tmux split-window -v -t $_s2t_target.\" split-window -v -t \"$_s2t_target\"\n"
-	"                else _s2t_approx_exec \"Screen split creates another display region without creating a new PTY; tmux split-window -v creates a new pane/PTY.\" \"Executing the closest visual substitute: tmux split-window -v.\" split-window -v; fi\n"
-	"            fi ;;\n"
-	"        focus)\n"
-	"            _s2t_focus_base=\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_focus_base=\"$_s2t_session:\"; fi\n"
-	"            case \"${1-next}\" in\n"
-	"                next|'') _s2t_focus_target=\"${_s2t_focus_base}.+\" ;;\n"
-	"                prev) _s2t_focus_target=\"${_s2t_focus_base}.-\" ;;\n"
-	"                up) _s2t_focus_target=\"${_s2t_focus_base}.{up-of}\" ;;\n"
-	"                down) _s2t_focus_target=\"${_s2t_focus_base}.{down-of}\" ;;\n"
-	"                left) _s2t_focus_target=\"${_s2t_focus_base}.{left-of}\" ;;\n"
-	"                right) _s2t_focus_target=\"${_s2t_focus_base}.{right-of}\" ;;\n"
-	"                top) _s2t_focus_target=\"${_s2t_focus_base}.{top}\" ;;\n"
-	"                bottom) _s2t_focus_target=\"${_s2t_focus_base}.{bottom}\" ;;\n"
-	"                *) _s2t_invalid \"unknown focus direction '$1'\"; return $? ;;\n"
-	"            esac\n"
-	"            _s2t_approx_exec \"Screen focus moves among display regions; tmux select-pane moves among PTY panes, so the object model is different.\" \"Executing the closest substitute: tmux select-pane -t $_s2t_focus_target\" select-pane -t \"$_s2t_focus_target\" ;;\n"
-	"        only)\n"
-	"            if [ -n \"$_s2t_target\" ]; then _s2t_approx_exec \"Screen 'only' removes the other display regions while preserving their windows; tmux zoom merely hides other panes temporarily.\" \"Executing the closest non-destructive substitute: tmux resize-pane -Z -t $_s2t_target.\" resize-pane -Z -t \"$_s2t_target\"\n"
-	"            else _s2t_approx_exec \"Screen 'only' removes the other display regions while preserving their windows; tmux zoom merely hides other panes temporarily.\" \"Executing the closest non-destructive substitute: tmux resize-pane -Z.\" resize-pane -Z; fi ;;\n"
-	"        remove) _s2t_cannot \"Screen removes a display region without killing its window; tmux has no separate region object because a pane is both the PTY and the layout object.\" \"Use resize-pane -Z to zoom, or break-pane before kill-pane if you need to preserve the process.\" ;;\n"
-	"        fit) _s2t_cannot \"Screen fits a window layer to a display region; tmux automatically sizes pane PTYs to their layout cells.\" \"Usually no command is needed; use resize-pane/resize-window if explicit geometry is required.\" ;;\n"
-	"        resize)\n"
-	"            _s2t_amount=${1-}\n"
-	"            case \"$_s2t_amount\" in\n"
-	"                '') _s2t_unsupported \"Interactive Screen resize without an amount has no safe noninteractive one-command mapping.\" \"Use tmux resize-pane -L/-R/-U/-D N or resize-pane -x/-y.\" ;;\n"
-	"                *) _s2t_approx \"Screen resize changes a display-region boundary according to Screen's region orientation; mapping '+/-' to a fixed tmux direction would be wrong.\" \"Choose the appropriate tmux resize-pane direction explicitly for the pane layout; requested Screen amount was '$_s2t_amount'.\" ;;\n"
-	"            esac ;;\n"
-	"        redisplay)\n"
-	"            _s2t_approx \"Screen redisplay acts on a particular attached Display; a Screen session selector does not identify one unique tmux client when several clients are attached.\" \"From the intended tmux client use: tmux refresh-client. Otherwise choose a concrete client from 'tmux list-clients -t SESSION' and use refresh-client -t CLIENT.\" ;;\n"
-	"        detach)\n"
-	"            _s2t_approx \"Screen's internal detach command requires one concrete Display and detaches that Display only; tmux detach-client -s SESSION would detach every client attached to the session.\" \"From the intended tmux client use: tmux detach-client. Otherwise identify one client with tmux list-clients -t SESSION and use tmux detach-client -t CLIENT.\" ;;\n"
-	"        pow_detach)\n"
-	"            _s2t_approx \"Screen's internal pow_detach acts on one concrete Display and also signals that attacher's parent; a session-wide tmux detach would broaden the operation.\" \"From the intended client use tmux detach-client -P, or select one concrete client and use tmux detach-client -P -t CLIENT.\" ;;\n"
-	"        suspend)\n"
-	"            _s2t_approx \"Screen suspend operates on the invoking/selected Display; an external Screen session selector does not uniquely identify a tmux client.\" \"From the intended tmux client use: tmux suspend-client. Otherwise choose a concrete target-client explicitly.\" ;;\n"
-	"        quit) if [ -n \"$_s2t_session\" ]; then _s2t_tmux kill-session -t \"$_s2t_session\"; else _s2t_cannot \"Screen 'quit' kills its one Screen session, while tmux may hold many sessions in one server.\" \"Specify screen -S name -X quit so it can map to tmux kill-session -t name; use tmux kill-server only if you truly want every tmux session.\"; fi ;;\n"
-	"        lockscreen)\n"
-	"            if [ -n \"$_s2t_session\" ]; then\n"
-	"                _s2t_approx_exec \"Screen lockscreen locks one Screen display; tmux lock-session locks every client attached to the selected tmux session.\" \"Executing the closest selectable substitute with that broader scope: tmux lock-session -t $_s2t_session.\" lock-session -t \"$_s2t_session\"\n"
-	"            else\n"
-	"                _s2t_approx_exec \"Screen lockscreen locks the current Screen display; tmux lock-client locks the current tmux client.\" \"Executing the closest current-client substitute: tmux lock-client.\" lock-client\n"
-	"            fi ;;\n"
-	"        sessionname)\n"
-	"            [ \"$#\" -gt 0 ] || { _s2t_invalid \"sessionname requires a new name in shell translation\"; return $?; }\n"
-	"            _s2t_tmux_format_literal \"$1\"\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_tmux rename-session -t \"$_s2t_session\" \"$_s2t_format_literal\"; else _s2t_tmux rename-session \"$_s2t_format_literal\"; fi ;;\n"
-	"        hardcopy)\n"
-	"            _s2t_hist=0\n"
-	"            if [ \"${1-}\" = \"-h\" ]; then _s2t_hist=1; shift; fi\n"
-	"            _s2t_file=${1-}\n"
-	"            if [ \"$_s2t_hist\" -eq 1 ]; then\n"
-	"                if [ -n \"$_s2t_target\" ]; then _s2t_cap=\"tmux capture-pane -p -S - -t $( _s2t_shell_quote \"$_s2t_target\" )\"; else _s2t_cap='tmux capture-pane -p -S -'; fi\n"
-	"            else\n"
-	"                if [ -n \"$_s2t_target\" ]; then _s2t_cap=\"tmux capture-pane -p -t $( _s2t_shell_quote \"$_s2t_target\" )\"; else _s2t_cap='tmux capture-pane -p'; fi\n"
-	"            fi\n"
-	"            if [ -n \"$_s2t_file\" ]; then\n"
-	"                _s2t_approx \"Screen hardcopy and tmux capture-pane are close but not byte-for-byte equivalent in whitespace/history/rendering details, so automatic execution could change saved output.\" \"Closest substitute: $_s2t_cap > $( _s2t_shell_quote \"$_s2t_file\" ).\"\n"
-	"            else\n"
-	"                _s2t_cannot \"Screen hardcopy without a filename writes to Screen's hardcopy naming convention; tmux capture-pane normally writes to stdout.\" \"Use an explicit file with tmux capture-pane -p > file after reviewing the formatting differences.\"\n"
-	"            fi ;;\n"
-	"        scrollback)\n"
-	"            [ \"$#\" -gt 0 ] || { _s2t_invalid \"scrollback requires a line count\"; return $?; }\n"
-	"            _s2t_cannot \"Changing Screen scrollback on an existing window does not map exactly to tmux history-limit for an already-created pane.\" \"Set tmux history-limit before pane creation (usually in tmux.conf).\" ;;\n"
-	"        readbuf)\n"
-	"            [ \"$#\" -gt 0 ] || { _s2t_invalid \"readbuf requires a filename for noninteractive translation\"; return $?; }\n"
-	"            _s2t_buf_name=\"screen2tmux:${_s2t_session:-default}:copy\"\n"
-	"            _s2t_approx_exec \"Screen readbuf loads the current Screen user's copy buffer inside one Screen backend; tmux paste buffers are shared by the entire tmux server.\" \"Executing with a session-namespaced tmux buffer: tmux load-buffer -b $_s2t_buf_name '$1'.\" load-buffer -b \"$_s2t_buf_name\" \"$1\" ;;\n"
-	"        writebuf)\n"
-	"            [ \"$#\" -gt 0 ] || { _s2t_invalid \"writebuf requires a filename for noninteractive translation\"; return $?; }\n"
-	"            _s2t_buf_name=\"screen2tmux:${_s2t_session:-default}:copy\"\n"
-	"            _s2t_approx_exec \"Screen writebuf writes the current Screen user's copy buffer; tmux paste buffers are server-wide and shared by the entire tmux server.\" \"Executing with the same session-namespaced compatibility buffer: tmux save-buffer -b $_s2t_buf_name '$1'.\" save-buffer -b \"$_s2t_buf_name\" \"$1\" ;;\n"
-	"        removebuf) _s2t_unsupported \"Screen removebuf deletes Screen's exchange file (BufferFile); it does not delete the in-memory copy buffer, so tmux delete-buffer would perform a different operation.\" \"If you intended to remove Screen's exchange file, remove that file explicitly. If you intended to clear a tmux paste buffer, use tmux delete-buffer deliberately.\" ;;\n"
-	"        register)\n"
-	"            [ \"$#\" -ge 2 ] || { _s2t_invalid \"register requires a register name and string\"; return $?; }\n"
-	"            _s2t_buf=$1; shift\n"
-	"            _s2t_buf_name=\"screen2tmux:${_s2t_session:-default}:reg:$_s2t_buf\"\n"
-	"            _s2t_approx_exec \"Screen named registers belong to the Screen backend, while tmux named paste buffers are server-wide and can collide with unrelated sessions.\" \"Executing with a session-namespaced tmux buffer: tmux set-buffer -b $_s2t_buf_name TEXT.\" set-buffer -b \"$_s2t_buf_name\" \"$*\" ;;\n"
-	"        paste)\n"
-	"            if [ \"$#\" -eq 0 ]; then\n"
-	"                _s2t_unsupported \"Screen paste with no register argument enters Screen's interactive register prompt; tmux paste-buffer immediately pastes a server-wide buffer, so the previous mapping was not equivalent.\" \"Specify the intended Screen register and translate it to a session-namespaced tmux buffer, or enter tmux copy-mode/paste-buffer explicitly.\"\n"
-	"            else\n"
-	"                _s2t_approx \"Screen paste can concatenate Screen registers/copy buffers with Screen-specific encoding semantics; tmux paste-buffer uses server-wide named buffers and a different model.\" \"Translate the requested registers into session-namespaced tmux buffers and paste the intended buffer explicitly.\"\n"
-	"            fi ;;\n"
-	"        copy) if [ -n \"$_s2t_target\" ]; then _s2t_tmux copy-mode -t \"$_s2t_target\"; else _s2t_tmux copy-mode; fi ;;\n"
-	"        log)\n"
-	"            case \"${1-}\" in\n"
-	"                on)\n"
-	"                    _s2t_log_pipe='cat >>screenlog.#{window_index}'\n"
-	"                    if [ -n \"$_s2t_target\" ]; then\n"
-	"                        _s2t_approx_exec \"Screen 'log on' uses Screen's configured logfile policy; tmux pipe-pane is a general pane-output pipe and cannot recover a Screen logfile pattern configured in an earlier Screen process.\" \"Executing the closest default-policy substitute: tmux pipe-pane -o -t $_s2t_target 'cat >>screenlog.#{window_index}'. If the Screen session used a custom logfile pattern, choose that destination explicitly.\" pipe-pane -o -t \"$_s2t_target\" \"$_s2t_log_pipe\"\n"
-	"                    else\n"
-	"                        _s2t_approx_exec \"Screen 'log on' uses Screen's configured logfile policy; tmux pipe-pane is a general pane-output pipe and cannot recover a Screen logfile pattern configured in an earlier Screen process.\" \"Executing the closest default-policy substitute: tmux pipe-pane -o 'cat >>screenlog.#{window_index}'. If the Screen session used a custom logfile pattern, choose that destination explicitly.\" pipe-pane -o \"$_s2t_log_pipe\"\n"
-	"                    fi ;;\n"
-	"                off)\n"
-	"                    if [ -n \"$_s2t_target\" ]; then\n"
-	"                        _s2t_approx_exec \"Screen 'log off' disables Screen's logger; tmux pipe-pane without a command closes whatever output pipe the pane currently has.\" \"Executing tmux pipe-pane -t $_s2t_target. This may also close a non-logging pipe installed by other tmux configuration.\" pipe-pane -t \"$_s2t_target\"\n"
-	"                    else\n"
-	"                        _s2t_approx_exec \"Screen 'log off' disables Screen's logger; tmux pipe-pane without a command closes whatever output pipe the current pane has.\" \"Executing tmux pipe-pane. This may also close a non-logging pipe installed by other tmux configuration.\" pipe-pane\n"
-	"                    fi ;;\n"
-	"                *) _s2t_invalid \"log expects on or off in shell translation\" ;;\n"
-	"            esac ;;\n"
-	"        logfile) _s2t_cannot \"Screen has a built-in logfile naming/flush subsystem; tmux logging is implemented with pipe-pane to an external process.\" \"Use tmux pipe-pane -o 'cat >>file'; put tmux format variables such as #{session_name}, #{window_index}, and #{pane_index} in the shell command.\" ;;\n"
-	"        logtstamp) _s2t_cannot \"Screen can insert inactivity timestamps into its built-in logs; tmux has no equivalent logging filter.\" \"Pipe the pane through an external timestamping program using tmux pipe-pane.\" ;;\n"
-	"        monitor)\n"
-	"            _s2t_state=${1-on}\n"
-	"            case \"$_s2t_state\" in on|off) if [ -n \"$_s2t_target\" ]; then _s2t_tmux set-option -wt \"$_s2t_target\" monitor-activity \"$_s2t_state\"; else _s2t_tmux set-option -w monitor-activity \"$_s2t_state\"; fi ;; *) _s2t_invalid \"monitor expects on/off\" ;; esac ;;\n"
-	"        silence)\n"
-	"            _s2t_val=${1-on}\n"
-	"            case \"$_s2t_val\" in off) _s2t_val=0 ;; on) _s2t_val=30 ;; esac\n"
-	"            case \"$_s2t_val\" in *[!0-9]*) _s2t_invalid \"silence expects on/off/seconds\" ;; *) if [ -n \"$_s2t_target\" ]; then _s2t_tmux set-option -wt \"$_s2t_target\" monitor-silence \"$_s2t_val\"; else _s2t_tmux set-option -w monitor-silence \"$_s2t_val\"; fi ;; esac ;;\n"
-	"        vbell)\n"
-	"            case \"${1-}\" in on|off) if [ -n \"$_s2t_session\" ]; then _s2t_tmux set-option -t \"$_s2t_session\" visual-bell \"$1\"; else _s2t_tmux set-option -g visual-bell \"$1\"; fi ;; *) _s2t_invalid \"vbell expects on/off\" ;; esac ;;\n"
-	"        source)\n"
-	"            [ \"$#\" -gt 0 ] || { _s2t_invalid \"source requires a filename\"; return $?; }\n"
-	"            _s2t_unsupported \"Screen 'source' reads Screen command syntax, which tmux source-file cannot parse.\" \"Translate the screenrc fragment to tmux.conf syntax first, then use tmux source-file on the translated file.\" ;;\n"
-	"        setenv)\n"
-	"            [ \"$#\" -ge 2 ] || { _s2t_invalid \"setenv requires NAME VALUE in noninteractive translation\"; return $?; }\n"
-	"            _s2t_name=$1; shift; if [ -n \"$_s2t_session\" ]; then _s2t_tmux set-environment -t \"$_s2t_session\" \"$_s2t_name\" \"$*\"; else _s2t_tmux set-environment \"$_s2t_name\" \"$*\"; fi ;;\n"
-	"        unsetenv)\n"
-	"            [ \"$#\" -ge 1 ] || { _s2t_invalid \"unsetenv requires NAME\"; return $?; }\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_tmux set-environment -u -t \"$_s2t_session\" \"$1\"; else _s2t_tmux set-environment -u \"$1\"; fi ;;\n"
-	"        chdir) _s2t_cannot \"Screen changes a backend-wide default directory for future windows; tmux normally chooses a directory at new-session/new-window/split-window time.\" \"Use tmux new-window -c DIR or split-window -c DIR.\" ;;\n"
-	"        escape) _s2t_cannot \"Screen 'escape' encodes both command and literal-prefix characters as a two-character pair; tmux exposes prefix and prefix2 as independent key options.\" \"Use tmux set-option prefix KEY and, if desired, set-option prefix2 KEY.\" ;;\n"
-	"        bind)\n"
-	"            [ \"$#\" -ge 2 ] || { _s2t_invalid \"bind requires key and command\"; return $?; }\n"
-	"            _s2t_key=$1; shift\n"
-	"            case \"$1\" in\n"
-	"                screen) _s2t_approx_exec \"Screen key bindings belong to one Screen backend/session; tmux key tables are server-wide, so bind-key can affect unrelated tmux sessions.\" \"Executing the closest substitute with that broader scope: tmux bind-key $_s2t_key new-window.\" bind-key \"$_s2t_key\" new-window ;;\n"
-	"                kill) _s2t_approx_exec \"Screen key bindings belong to one Screen backend/session; tmux key tables are server-wide, so bind-key can affect unrelated tmux sessions.\" \"Executing the closest substitute with that broader scope: tmux bind-key $_s2t_key kill-window.\" bind-key \"$_s2t_key\" kill-window ;;\n"
-	"                *) _s2t_cannot \"Screen bind command '$1' is valid but command-name/argument translation is not automatically safe.\" \"Bind the corresponding tmux command explicitly with tmux bind-key after reviewing server-wide scope.\" ;;\n"
-	"            esac ;;\n"
-	"        unbindall) _s2t_approx_exec \"Screen unbindall affects only the current Screen backend/session, while tmux unbind-key -a removes bindings from the server-wide key table.\" \"Executing tmux unbind-key -a with that broader scope.\" unbind-key -a ;;\n"
-	"        truecolor)\n"
-	"            case \"${1-}\" in on) _s2t_approx \"Screen truecolor toggles Screen's handling, while tmux terminal-features is server/terminal-capability configuration.\" \"If detection is wrong, use tmux set-option -as terminal-features ',TERM:RGB' for the actual terminal type rather than '*'.\" ;; off) _s2t_cannot \"Removing RGB from tmux terminal feature detection globally is not a safe equivalent of Screen truecolor off.\" \"Override terminal-features/terminal-overrides for the specific client terminal if required.\" ;; *) _s2t_invalid \"truecolor expects on/off\" ;; esac ;;\n"
-	"        altscreen)\n"
-	"            case \"${1-}\" in\n"
-	"                on|off)\n"
-	"                    if [ -n \"$_s2t_target\" ]; then\n"
-	"                        _s2t_approx_exec \"Screen altscreen changes one backend-wide use_altscreen switch; tmux alternate-screen is a window option, so this affects only the selected/current tmux window rather than all Screen windows.\" \"Executing the closest selected-window substitute: tmux set-option -w -t $_s2t_target alternate-screen $1.\" set-option -w -t \"$_s2t_target\" alternate-screen \"$1\"\n"
-	"                    else\n"
-	"                        _s2t_approx_exec \"Screen altscreen changes one backend-wide use_altscreen switch; tmux alternate-screen is a window option, so this affects only the current tmux window rather than all Screen windows.\" \"Executing the closest current-window substitute: tmux set-option -w alternate-screen $1.\" set-option -w alternate-screen \"$1\"\n"
-	"                    fi ;;\n"
-	"                *) _s2t_invalid \"altscreen expects on/off\" ;;\n"
-	"            esac ;;\n"
-	"        reset) if [ -n \"$_s2t_target\" ]; then _s2t_tmux send-keys -R -t \"$_s2t_target\"; else _s2t_tmux send-keys -R; fi ;;\n"
-	"        encoding|kanji|charset|gr|c1)\n"
-	"            _s2t_cannot \"Screen provides legacy encoding/ISO-2022 translation ('$(_s2t_shell_quote \"$_s2t_cmd\")'); tmux intentionally uses a modern UTF-8-oriented terminal model.\" \"Use UTF-8 applications, or an external transcoder such as luit/iconv when legacy encodings are unavoidable.\" ;;\n"
-	"        hardstatus)\n"
-	"            case \"${1-}\" in\n"
-	"                on|off)\n"
-	"                    if [ -n \"$_s2t_session\" ]; then _s2t_approx_exec \"Screen hardstatus and tmux status lines overlap in purpose but are not the same terminal facility.\" \"Executing the closest substitute: tmux set-option -t $_s2t_session status $1.\" set-option -t \"$_s2t_session\" status \"$1\"\n"
-	"                    else _s2t_approx_exec \"Screen hardstatus and tmux status lines overlap in purpose but are not the same terminal facility.\" \"Executing the closest substitute: tmux set-option status $1.\" set-option status \"$1\"; fi ;;\n"
-	"                alwayslastline|lastline)\n"
-	"                    if [ -n \"$_s2t_session\" ]; then _s2t_approx_exec \"Screen hardstatus placement maps only approximately to tmux's status line.\" \"Executing the closest substitute: tmux set-option -t $_s2t_session status-position bottom.\" set-option -t \"$_s2t_session\" status-position bottom\n"
-	"                    else _s2t_approx_exec \"Screen hardstatus placement maps only approximately to tmux's status line.\" \"Executing the closest substitute: tmux set-option status-position bottom.\" set-option status-position bottom; fi ;;\n"
-	"                alwaysfirstline|firstline)\n"
-	"                    if [ -n \"$_s2t_session\" ]; then _s2t_approx_exec \"Screen hardstatus placement maps only approximately to tmux's status line.\" \"Executing the closest substitute: tmux set-option -t $_s2t_session status-position top.\" set-option -t \"$_s2t_session\" status-position top\n"
-	"                    else _s2t_approx_exec \"Screen hardstatus placement maps only approximately to tmux's status line.\" \"Executing the closest substitute: tmux set-option status-position top.\" set-option status-position top; fi ;;\n"
-	"                *) _s2t_cannot \"Screen hardstatus has physical-hardstatus and formatting modes that do not map one-to-one.\" \"Use tmux status, status-position, status-left, status-right and status-format options.\" ;;\n"
-	"            esac ;;\n"
-	"        caption)\n"
-	"            case \"${1-}\" in\n"
-	"                always)\n"
-	"                    if [ -n \"$_s2t_target\" ]; then _s2t_approx_exec \"Screen captions label display regions; tmux pane-border-status labels pane borders. They are visually similar but attach to different objects.\" \"Executing the closest substitute for the selected tmux window: tmux set-option -w -t $_s2t_target pane-border-status bottom.\" set-option -w -t \"$_s2t_target\" pane-border-status bottom\n"
-	"                    elif [ -n \"$_s2t_session\" ]; then _s2t_approx_exec \"Screen captions label display regions; tmux pane-border-status labels pane borders. They are visually similar but attach to different objects.\" \"Executing the closest substitute for the session's current window: tmux set-option -w -t $_s2t_session pane-border-status bottom.\" set-option -w -t \"$_s2t_session\" pane-border-status bottom\n"
-	"                    else _s2t_approx_exec \"Screen captions label display regions; tmux pane-border-status labels pane borders. They are visually similar but attach to different objects.\" \"Executing the closest substitute for the current window: tmux set-option -w pane-border-status bottom.\" set-option -w pane-border-status bottom; fi ;;\n"
-	"                splitonly) _s2t_cannot \"Screen can enable captions only when a display has multiple regions; tmux has no identical split-only pane-border-status mode.\" \"Use pane-border-status plus a format condition, or a hook/script, if conditional display is important.\" ;;\n"
-	"                *) _s2t_cannot \"Screen caption syntax does not map one-to-one to tmux pane-border formatting.\" \"Use pane-border-status and pane-border-format.\" ;;\n"
-	"            esac ;;\n"
-	"        multiuser) _s2t_cannot \"Screen toggles an internal multiuser mode; tmux cross-user access is controlled by its server socket plus server-access.\" \"Grant/revoke a specific OS user with tmux server-access and ensure socket filesystem permissions allow connection.\" ;;\n"
-	"        acladd|addacl)\n"
-	"            [ \"$#\" -ge 1 ] || { _s2t_invalid \"$_s2t_cmd requires a user\"; return $?; }\n"
-	"            _s2t_approx_exec \"Screen ACL access is scoped to one Screen session and can be refined per command/window; tmux server-access grants access at the entire tmux server level.\" \"Executing the closest substitute with that broader scope: tmux server-access -a $1.\" server-access -a \"$1\" ;;\n"
-	"        acldel)\n"
-	"            [ \"$#\" -ge 1 ] || { _s2t_invalid \"acldel requires a user\"; return $?; }\n"
-	"            _s2t_approx_exec \"Screen acldel removes a user from one Screen session; tmux server-access revokes access to the entire tmux server.\" \"Executing the closest substitute with that broader scope: tmux server-access -d $1.\" server-access -d \"$1\" ;;\n"
-	"        aclchg|chacl|aclgrp|aclumask|umask|writelock|auth|su)\n"
-	"            _s2t_cannot \"Screen's ACL/authentication operation '$_s2t_cmd' has finer or different semantics than tmux server-access/read-only clients.\" \"Use tmux server-access, Unix socket permissions, and read-only clients where appropriate; there is no exact per-command/per-window Screen ACL equivalent.\" ;;\n"
-	"        break|breaktype|pow_break|flow|console)\n"
-	"            _s2t_external \"Screen includes direct serial/device functionality for '$_s2t_cmd'; tmux panes always contain PTYs and tmux has no built-in serial-device control layer.\" \"Run picocom, cu, minicom, tio, or another serial application inside a tmux pane and use that program's serial controls.\" ;;\n"
-	"        zmodem)\n"
-	"            _s2t_cannot \"Screen has built-in ZMODEM interception/pass-through policy; tmux does not.\" \"Run rz/sz or terminal/file-transfer tooling externally and leave tmux as the PTY multiplexer.\" ;;\n"
-	"        displays)\n"
-	"            if [ -n \"$_s2t_session\" ]; then\n"
-	"                _s2t_approx_exec \"Screen displays lists Displays attached to one Screen session; tmux list-clients can be scoped to that session but uses different output fields and formatting.\" \"Executing the closest substitute: tmux list-clients -t $_s2t_session\" list-clients -t \"$_s2t_session\"\n"
-	"            else\n"
-	"                _s2t_approx \"Screen displays lists Displays attached to its one Screen backend; a tmux server may contain clients for many sessions.\" \"Choose a tmux session explicitly, then use tmux list-clients -t SESSION.\"\n"
-	"            fi ;;\n"
-	"        dinfo)\n"
-	"            _s2t_dinfo_format='#{client_name} #{client_tty} #{client_width}x#{client_height} #{client_termname}'\n"
-	"            if [ -n \"$_s2t_session\" ]; then\n"
-	"                _s2t_approx_exec \"Screen dinfo reports one particular Screen Display; a tmux session may have multiple clients with different terminal/display state.\" \"Executing a useful client summary for every client on the selected session: tmux list-clients -t $_s2t_session -F '$_s2t_dinfo_format'.\" list-clients -t \"$_s2t_session\" -F \"$_s2t_dinfo_format\"\n"
-	"            else\n"
-	"                _s2t_approx_exec \"Screen dinfo reports one particular Screen Display; tmux may have multiple clients with different terminal/display state.\" \"Executing a useful tmux client summary: tmux list-clients -F '$_s2t_dinfo_format'.\" list-clients -F \"$_s2t_dinfo_format\"\n"
-	"            fi ;;\n"
-	"        windows)\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_approx_exec \"Screen windows uses Screen-specific formatting/flags; tmux list-windows is functionally similar but not output-compatible.\" \"Executing the closest substitute: tmux list-windows -t $_s2t_session.\" list-windows -t \"$_s2t_session\"\n"
-	"            else _s2t_approx_exec \"Screen windows uses Screen-specific formatting/flags; tmux list-windows is functionally similar but not output-compatible.\" \"Executing the closest substitute: tmux list-windows.\" list-windows; fi ;;\n"
-	"        help) _s2t_approx_exec \"Screen help renders Screen's current command-class bindings; tmux list-keys renders tmux's server-wide key tables with different command names and formatting.\" \"Executing the closest substitute: tmux list-keys.\" list-keys ;;\n"
-	"        info)\n"
-	"            _s2t_info_format='#{session_name}:#{window_index}.#{pane_index} #{pane_width}x#{pane_height} #{pane_current_command}'\n"
-	"            if [ -n \"$_s2t_target\" ]; then _s2t_approx_exec \"Screen info emits a Screen-specific window/display status summary; tmux has no byte-compatible equivalent.\" \"Executing a useful tmux status summary with explicit format variables.\" display-message -p -t \"$_s2t_target\" \"$_s2t_info_format\"\n"
-	"            else _s2t_approx_exec \"Screen info emits a Screen-specific window/display status summary; tmux has no byte-compatible equivalent.\" \"Executing a useful tmux status summary with explicit format variables.\" display-message -p \"$_s2t_info_format\"; fi ;;\n"
-	"        lastmsg) _s2t_approx_exec \"Screen lastmsg reports one Screen message; tmux show-messages reports a differently formatted message history.\" \"Executing tmux show-messages; select the desired entry explicitly if exact single-message behavior matters.\" show-messages ;;\n"
-	"        version) _s2t_unsupported \"Screen's internal version command reports Screen's version/status text; tmux -V reports tmux and is not an equivalent command result.\" \"Use the native Screen command when Screen version output is required, or tmux -V explicitly for tmux's version.\" ;;\n"
-	"        license) _s2t_cannot \"Screen has an interactive license command; tmux does not expose its license text as a runtime command.\" \"Read tmux's COPYING file from the source/package.\" ;;\n"
-	"        layout)\n"
-	"            case \"${1-}\" in\n"
-	"                next) _s2t_approx_exec \"Screen 'layout next' switches among saved display-region layouts; tmux next-layout cycles pane-layout algorithms/history, not Screen layout objects.\" \"Executing the closest visual substitute: tmux next-layout.\" next-layout ;;\n"
-	"                prev) _s2t_approx_exec \"Screen 'layout prev' switches among saved display-region layouts; tmux previous-layout operates on pane layouts.\" \"Executing the closest visual substitute: tmux previous-layout.\" previous-layout ;;\n"
-	"                show)\n"
-	"                    if [ -n \"$_s2t_target\" ]; then _s2t_approx_exec \"Screen 'layout show' reports the selected saved Screen layout; tmux exposes current pane geometry as an encoded layout string.\" \"Executing the closest inspection command: tmux display-message -p -t $_s2t_target '#{window_layout}'.\" display-message -p -t \"$_s2t_target\" '#{window_layout}'\n"
-	"                    else _s2t_approx_exec \"Screen 'layout show' reports the selected saved Screen layout; tmux exposes current pane geometry as an encoded layout string.\" \"Executing the closest inspection command: tmux display-message -p '#{window_layout}'.\" display-message -p '#{window_layout}'; fi ;;\n"
-	"                select)\n"
-	"                    shift; [ \"$#\" -gt 0 ] || { _s2t_invalid \"layout select requires a layout\"; return $?; }\n"
-	"                    if [ -n \"$_s2t_target\" ]; then _s2t_approx_exec \"Screen selects a saved named/numbered display layout; tmux select-layout selects a pane layout name or encoded geometry.\" \"Executing tmux select-layout -t $_s2t_target '$1'; this works only when the Screen layout argument is meaningful to tmux.\" select-layout -t \"$_s2t_target\" \"$1\"\n"
-	"                    else _s2t_approx_exec \"Screen selects a saved named/numbered display layout; tmux select-layout selects a pane layout name or encoded geometry.\" \"Executing tmux select-layout '$1'; this works only when the Screen layout argument is meaningful to tmux.\" select-layout \"$1\"; fi ;;\n"
-	"                *) _s2t_unsupported \"Screen has persistent named/numbered layout objects; tmux has current/encoded pane layouts but not the same saved-layout collection.\" \"Use #{window_layout} to capture an encoded tmux layout and select-layout to restore it, or store names in user options/scripts.\" ;;\n"
-	"            esac ;;\n"
-	"        *)\n"
-	"            if _s2t_known_internal \"$_s2t_cmd\"; then\n"
-	"                _s2t_cannot \"Screen command '$_s2t_cmd' is valid/recognized but has no safe automatic mapping implemented in screen-to-tmux-translator $SCREEN2TMUX_VERSION.\" \"Use 'tmux list-commands' and the project cross-reference to select the closest tmux operation.\"\n"
-	"            else\n"
-	"                _s2t_invalid \"unknown Screen command '$_s2t_cmd'\"\n"
-	"            fi ;;\n"
-	"    esac\n"
-	"}\n"
-	"\n"
-	"screen2tmux()\n"
-	"{\n"
-	"    _s2t_dry_run=0\n"
-	"    _s2t_strict=0\n"
-	"    _s2t_strict_blocked=0\n"
-	"    _s2t_rebuilt=\n"
-	"    for _s2t_a do\n"
-	"        case \"$_s2t_a\" in\n"
-	"            --dry-run|--dryrun) _s2t_dry_run=1 ;;\n"
-	"            --strict) _s2t_strict=1 ;;\n"
-	"            *)\n"
-	"                _s2t_rebuilt=\"$_s2t_rebuilt $(_s2t_shell_quote \"$_s2t_a\")\"\n"
-	"                ;;\n"
-	"        esac\n"
-	"    done\n"
-	"    eval \"set -- $_s2t_rebuilt\"\n"
-	"    if [ \"${1-}\" = \"screen\" ]; then shift; fi\n"
-	"\n"
-	"    _s2t_session=\n"
-	"    _s2t_window=\n"
-	"    _s2t_screenrc=\n"
-	"    _s2t_Aflag=0\n"
-	"    _s2t_quiet=0\n"
-	"    _s2t_Uflag=0\n"
-	"    _s2t_mode=\n"
-	"    _s2t_list=0\n"
-	"    _s2t_wipe=0\n"
-	"    _s2t_detach=0\n"
-	"    _s2t_mflag=0\n"
-	"    _s2t_attach=0\n"
-	"    _s2t_attach_strength=0\n"
-	"    _s2t_xflag=0\n"
-	"    _s2t_log=0\n"
-	"    _s2t_logfile=\n"
-	"    _s2t_title=\n"
-	"    _s2t_shell=\n"
-	"    _s2t_hist=\n"
-	"    _s2t_term=\n"
-	"    _s2t_escape=\n"
-	"    _s2t_unsupported_opt=\n"
-	"    _s2t_af=\n"
-	"\n"
-	"    while [ \"$#\" -gt 0 ]; do\n"
-	"        case \"$1\" in\n"
-	"            --) shift; break ;;\n"
-	"            --help) _s2t_help; return 0 ;;\n"
-	"            --version) _s2t_unsupported \"Screen --version reports the GNU Screen version; tmux -V reports a different program and cannot preserve that result.\" \"Run the native Screen binary for Screen's version, or tmux -V explicitly for tmux's version.\"; return $? ;;\n"
-	"            -list) _s2t_list=1; shift; if [ \"$#\" -gt 0 ] && [ \"${1#-}\" = \"$1\" ]; then _s2t_session=$1; shift; fi; continue ;;\n"
-	"            -ls) _s2t_list=1; shift; if [ \"$#\" -gt 0 ] && [ \"${1#-}\" = \"$1\" ]; then _s2t_session=$1; shift; fi; continue ;;\n"
-	"            -wipe) _s2t_list=1; _s2t_wipe=1; shift; if [ \"$#\" -gt 0 ] && [ \"${1#-}\" = \"$1\" ]; then _s2t_session=$1; shift; fi; continue ;;\n"
-	"            -Logfile) shift; [ \"$#\" -gt 0 ] || { _s2t_invalid \"-Logfile requires a filename\"; return $?; }; _s2t_logfile=$1; shift; continue ;;\n"
-	"            -*)\n"
-	"                _s2t_opt=${1#-}; shift\n"
-	"                while [ -n \"$_s2t_opt\" ]; do\n"
-	"                    _s2t_ch=$(printf '%.1s' \"$_s2t_opt\")\n"
-	"                    _s2t_rest=${_s2t_opt#?}\n"
-	"                    case \"$_s2t_ch\" in\n"
-	"                        4|6) _s2t_af=$_s2t_ch; _s2t_opt=$_s2t_rest ;;\n"
-	"                        a) _s2t_unsupported_opt=\"Screen -a capability-forcing has no exact tmux CLI equivalent\"; _s2t_opt=$_s2t_rest ;;\n"
-	"                        A) _s2t_Aflag=1; _s2t_opt=$_s2t_rest ;;\n"
-	"                        p)\n"
-	"                            if [ -n \"$_s2t_rest\" ]; then _s2t_window=$_s2t_rest; _s2t_opt=; else [ \"$#\" -gt 0 ] || { _s2t_invalid \"-p requires a window\"; return $?; }; _s2t_window=$1; shift; _s2t_opt=; fi ;;\n"
-	"                        P) _s2t_unsupported_opt=\"Screen -P enables Screen-managed authentication; tmux uses Unix socket permissions/server-access\"; _s2t_opt=$_s2t_rest ;;\n"
-	"                        c)\n"
-	"                            if [ -n \"$_s2t_rest\" ]; then _s2t_screenrc=$_s2t_rest; _s2t_opt=; else [ \"$#\" -gt 0 ] || { _s2t_invalid \"-c requires a file\"; return $?; }; _s2t_screenrc=$1; shift; _s2t_opt=; fi ;;\n"
-	"                        e)\n"
-	"                            if [ -n \"$_s2t_rest\" ]; then _s2t_escape=$_s2t_rest; _s2t_opt=; else [ \"$#\" -gt 0 ] || { _s2t_invalid \"-e requires two command characters\"; return $?; }; _s2t_escape=$1; shift; _s2t_opt=; fi ;;\n"
-	"                        f)\n"
-	"                            case \"$_s2t_rest\" in ''|n|a|0|1|y) _s2t_unsupported_opt=\"Screen flow-control option -f${_s2t_rest} has no direct tmux equivalent\"; _s2t_opt= ;; *) _s2t_invalid \"unknown Screen flow option -f$_s2t_rest\"; return $? ;; esac ;;\n"
-	"                        h) [ -z \"$_s2t_rest\" ] || { _s2t_invalid \"-h requires its argument as the next word\"; return $?; }; [ \"$#\" -gt 0 ] || { _s2t_invalid \"-h requires a history size\"; return $?; }; _s2t_hist=$1; shift; _s2t_opt= ;;\n"
-	"                        i) _s2t_unsupported_opt=\"Screen -i changes XON/XOFF interrupt behavior; tmux has no equivalent multiplexer policy\"; _s2t_opt=$_s2t_rest ;;\n"
-	"                        t) [ -z \"$_s2t_rest\" ] || { _s2t_invalid \"-t requires its argument as the next word\"; return $?; }; [ \"$#\" -gt 0 ] || { _s2t_invalid \"-t requires a title\"; return $?; }; _s2t_title=$1; shift; _s2t_opt= ;;\n"
-	"                        l)\n"
-	"                            case \"$_s2t_rest\" in\n"
-	"                                s) _s2t_list=1; _s2t_opt= ;;\n"
-	"                                ist) _s2t_list=1; _s2t_opt= ;;\n"
-	"                                n|0|'') _s2t_unsupported_opt=\"Screen login/utmp mode has no tmux pane equivalent\"; _s2t_opt= ;;\n"
-	"                                y|1|a) _s2t_unsupported_opt=\"Screen login/utmp mode has no tmux pane equivalent\"; _s2t_opt= ;;\n"
-	"                                *) _s2t_invalid \"unknown Screen -l suboption '$_s2t_rest'\"; return $? ;;\n"
-	"                            esac ;;\n"
-	"                        L)\n"
-	"                            if [ \"$_s2t_rest\" = ogfile ]; then [ \"$#\" -gt 0 ] || { _s2t_invalid \"-Logfile requires a filename\"; return $?; }; _s2t_logfile=$1; shift; _s2t_opt=; elif [ -z \"$_s2t_rest\" ]; then _s2t_log=1; _s2t_opt=; else _s2t_invalid \"unknown Screen -L option '-L$_s2t_rest'\"; return $?; fi ;;\n"
-	"                        m) _s2t_mflag=1; _s2t_opt=$_s2t_rest ;;\n"
-	"                        O) _s2t_unsupported_opt=\"Screen -O is a legacy VT100 output-compatibility mode; tmux uses terminfo/terminal-features instead\"; _s2t_opt=$_s2t_rest ;;\n"
-	"                        T) [ -z \"$_s2t_rest\" ] || { _s2t_invalid \"-T requires its argument as the next word\"; return $?; }; [ \"$#\" -gt 0 ] || { _s2t_invalid \"-T requires TERM\"; return $?; }; _s2t_term=$1; shift; _s2t_opt= ;;\n"
-	"                        q) _s2t_quiet=1; _s2t_opt=$_s2t_rest ;;\n"
-	"                        Q) _s2t_mode=Q; _s2t_opt=$_s2t_rest ;;\n"
-	"                        r) _s2t_attach=1; _s2t_attach_strength=$((_s2t_attach_strength + 1)); _s2t_opt=$_s2t_rest ;;\n"
-	"                        R) _s2t_attach=1; if [ \"$_s2t_attach_strength\" -gt 0 ]; then _s2t_attach_strength=2; fi; _s2t_attach_strength=$((_s2t_attach_strength + 2)); _s2t_opt=$_s2t_rest ;;\n"
-	"                        x) _s2t_attach=1; _s2t_xflag=1; _s2t_opt=$_s2t_rest ;;\n"
-	"                        d) _s2t_detach=1; _s2t_opt=$_s2t_rest ;;\n"
-	"                        D) _s2t_detach=2; _s2t_opt=$_s2t_rest ;;\n"
-	"                        s) [ -z \"$_s2t_rest\" ] || { _s2t_invalid \"-s requires its argument as the next word\"; return $?; }; [ \"$#\" -gt 0 ] || { _s2t_invalid \"-s requires a shell\"; return $?; }; _s2t_shell=$1; shift; _s2t_opt= ;;\n"
-	"                        S) [ -z \"$_s2t_rest\" ] || { _s2t_invalid \"-S requires its argument as the next word\"; return $?; }; [ \"$#\" -gt 0 ] || { _s2t_invalid \"-S requires a session name\"; return $?; }; _s2t_session=$1; shift; _s2t_opt= ;;\n"
-	"                        X) _s2t_mode=X; _s2t_opt=$_s2t_rest ;;\n"
-	"                        v) _s2t_unsupported \"Screen -v reports the GNU Screen version; tmux -V reports a different program and cannot preserve that result.\" \"Run the native Screen binary for Screen's version, or tmux -V explicitly for tmux's version.\"; return $? ;;\n"
-	"                        U) _s2t_Uflag=1; _s2t_opt=$_s2t_rest ;;\n"
-	"                        w)\n"
-	"                            if [ \"$_s2t_rest\" = ipe ]; then _s2t_list=1; _s2t_wipe=1; _s2t_opt=; else _s2t_invalid \"unknown Screen option '-w$_s2t_rest'\"; return $?; fi ;;\n"
-	"                        *) _s2t_invalid \"unknown Screen option '-$_s2t_ch'\"; return $? ;;\n"
-	"                    esac\n"
-	"                done\n"
-	"                ;;\n"
-	"            *)\n"
-	"                # Screen consumes a lone remaining operand as a session selector for\n"
-	"                # detach/attach modes. For attach modes it also consumes a following\n"
-	"                # non-option session selector.\n"
-	"                if [ -z \"$_s2t_session\" ] && { [ \"$_s2t_attach\" -eq 1 ] || { [ \"$_s2t_detach\" -gt 0 ] && [ \"$_s2t_mflag\" -eq 0 ] && [ \"$#\" -eq 1 ]; }; }; then\n"
-	"                    _s2t_session=$1; shift; continue\n"
-	"                fi\n"
-	"                break ;;\n"
-	"        esac\n"
-	"    done\n"
-	"\n"
-	"    if [ -n \"$_s2t_unsupported_opt\" ]; then\n"
-	"        _s2t_unsupported \"$_s2t_unsupported_opt.\" \"Configure the corresponding tmux terminal/access behavior explicitly; the base Screen operation was not executed.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    if [ -n \"$_s2t_screenrc\" ]; then\n"
-	"        _s2t_unsupported \"Screen -c reads Screen configuration syntax; tmux -f reads a different command language, so passing the same file to tmux is unsafe.\" \"Translate '$_s2t_screenrc' to tmux.conf syntax first. Do not pass a screenrc directly to tmux -f.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    if [ -n \"${SCREENDIR:-}\" ]; then\n"
-	"        _s2t_unsupported \"SCREENDIR selects a directory containing Screen per-session sockets; tmux instead selects one server socket with -L name or -S path.\" \"Choose an explicit tmux server, for example: tmux -L myserver ... or tmux -S /path/to/socket ...\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    if [ \"$_s2t_mode\" = X ]; then _s2t_xcommand \"$@\"; return $?; fi\n"
-	"    if [ \"$_s2t_mode\" = Q ]; then _s2t_query \"$@\"; return $?; fi\n"
-	"\n"
-	"    if [ \"$_s2t_wipe\" -eq 1 ]; then\n"
-	"        _s2t_moot \"Screen -wipe cleans stale per-session socket records; tmux sessions are in-memory objects owned by one server and do not leave one stale socket per session.\" \"Use tmux list-sessions. Only clean up the tmux server socket itself if that server is actually dead.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    if [ \"$_s2t_list\" -eq 1 ]; then\n"
-	"        if [ \"$_s2t_quiet\" -eq 1 ]; then\n"
-	"            if [ -n \"$_s2t_session\" ]; then\n"
-	"                if _s2t_session_selector_is_risky \"$_s2t_session\"; then\n"
-	"                    _s2t_approx \"Screen -q -ls matching uses Screen socket-name matching and special socket-count exit statuses; safely interpreting this selector as a tmux target is ambiguous.\" \"Choose an explicit tmux session target and use tmux has-session -t TARGET when a boolean existence test is sufficient.\"\n"
-	"                else\n"
-	"                    _s2t_approx_exec \"Screen -q -ls suppresses output and returns Screen-specific socket-count status codes; tmux has-session is only a boolean exact-name existence test.\" \"Executing the closest quiet existence check: tmux has-session -t $_s2t_session.\" has-session -t \"$_s2t_session\"\n"
-	"                fi\n"
-	"            else\n"
-	"                _s2t_approx_exec \"Screen -q -ls suppresses output and returns Screen-specific socket-count status codes; tmux has-session is only a boolean test for a resolvable tmux session.\" \"Executing the closest quiet existence check: tmux has-session.\" has-session\n"
-	"            fi\n"
-	"        elif [ -n \"$_s2t_session\" ]; then\n"
-	"            if _s2t_session_selector_is_risky \"$_s2t_session\"; then\n"
-	"                _s2t_approx \"Screen -ls/-list matching uses Screen socket-name matching, while safely embedding this selector in a tmux format filter is ambiguous.\" \"Choose a simple literal tmux session-name substring and run tmux list-sessions -f with an explicit filter.\"\n"
-	"            else\n"
-	"                _s2t_list_filter=\"#{m:*$_s2t_session*,#{session_name}}\"\n"
-	"                _s2t_approx_exec \"Screen -ls/-list reports Screen socket names, attached/detached state, dead sockets and socket-directory information; tmux list-sessions uses a different session model and output format.\" \"Executing the closest substitute: tmux list-sessions -f '$_s2t_list_filter'.\" list-sessions -f \"$_s2t_list_filter\"\n"
-	"            fi\n"
-	"        else\n"
-	"            _s2t_approx_exec \"Screen -ls/-list reports Screen socket names, attached/detached state, dead sockets and socket-directory information; tmux list-sessions uses a different session model and output format.\" \"Executing the closest substitute: tmux list-sessions.\" list-sessions\n"
-	"        fi\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    if { [ \"$_s2t_attach\" -eq 1 ] || { [ \"$_s2t_detach\" -gt 0 ] && [ \"$_s2t_mflag\" -eq 0 ]; }; } && [ -n \"$_s2t_session\" ]; then\n"
-	"        _s2t_guard_target_arguments || return $?\n"
-	"    fi\n"
-	"\n"
-	"    # Plain -d/-D means detach an existing Screen session.  -d -m is different:\n"
-	"    # it creates a new detached Screen session, so it is handled later.\n"
-	"    if [ \"$_s2t_detach\" -gt 0 ] && [ \"$_s2t_attach\" -eq 0 ] && [ \"$_s2t_mflag\" -eq 0 ]; then\n"
-	"        if [ \"$_s2t_detach\" -eq 2 ]; then\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_tmux detach-client -P -s \"$_s2t_session\"; else _s2t_tmux detach-client -P; fi\n"
-	"        else\n"
-	"            if [ -n \"$_s2t_session\" ]; then _s2t_tmux detach-client -s \"$_s2t_session\"; else _s2t_tmux detach-client; fi\n"
-	"        fi\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    if [ \"$_s2t_attach\" -eq 1 ]; then\n"
-	"        if [ \"$_s2t_Aflag\" -eq 1 ]; then\n"
-	"            _s2t_approx_notice \"Screen -A explicitly adapts all Screen window sizes to the current terminal when attaching; tmux uses its own client/window-size policy and has no equivalent adapt-all-windows flag.\" \"Proceeding with tmux's normal window-size policy; configure window-size explicitly if Screen's adapt-all-windows behavior matters.\"\n"
-	"        fi\n"
-	"        if [ \"$_s2t_Uflag\" -eq 1 ]; then\n"
-	"            _s2t_approx_notice \"Screen -U tells the attached Screen display to use UTF-8 and also changes the default encoding for newly created Screen windows; tmux -u only forces the client UTF-8 assumption.\" \"Proceeding with tmux -u for the client-side UTF-8 portion; Screen's per-window encoding policy is not reproduced.\"\n"
-	"        fi\n"
-	"        _s2t_attach_target=$_s2t_session\n"
-	"        if [ -n \"$_s2t_window\" ]; then\n"
-	"            if [ -z \"$_s2t_session\" ]; then\n"
-	"                _s2t_approx \"Screen can combine -p with an automatically selected session; tmux needs a determinate session when selecting a window at attach time.\" \"Choose the session explicitly, then use tmux attach-session -t session:$_s2t_window.\"\n"
-	"                return $?\n"
-	"            fi\n"
-	"            _s2t_attach_target=$_s2t_session:$_s2t_window\n"
-	"        fi\n"
-	"\n"
-	"        if [ \"$_s2t_attach_strength\" -ge 2 ]; then\n"
-	"            if [ -z \"$_s2t_session\" ]; then\n"
-	"                _s2t_unsupported \"Screen -R/-RR can automatically select among detached Screen sockets and create a new session if no suitable socket exists; tmux has no one-command equivalent with the same selection rules.\" \"Choose a tmux session explicitly, or implement the Screen detached-session selection policy in a wrapper before calling tmux.\"\n"
-	"                return $?\n"
-	"            fi\n"
-	"            if [ -n \"$_s2t_window\" ]; then\n"
-	"                _s2t_r_target=\"$_s2t_session:$_s2t_window\"\n"
-	"                if [ \"$_s2t_detach\" -eq 2 ]; then _s2t_r_suggest=\"tmux new-session -A -D -X -s $_s2t_session\"\n"
-	"                elif [ \"$_s2t_detach\" -eq 1 ]; then _s2t_r_suggest=\"tmux new-session -A -D -s $_s2t_session\"\n"
-	"                else _s2t_r_suggest=\"tmux new-session -A -s $_s2t_session\"; fi\n"
-	"                if [ \"$_s2t_attach_strength\" -ge 4 ]; then _s2t_r_kind='-RR'; else _s2t_r_kind='-R'; fi\n"
-	"                _s2t_approx \"Screen $_s2t_r_kind only considers sockets suitable under Screen's attached/detached rules and may create a new session; tmux new-session -A has different state and multiple-match rules, and preserving -p also needs a second operation.\" \"Closest common-case substitute: $_s2t_r_suggest, then select $_s2t_r_target if it exists.\"\n"
-	"                return $?\n"
-	"            fi\n"
-	"            if [ \"$_s2t_attach_strength\" -ge 4 ]; then _s2t_r_kind='-RR'; else _s2t_r_kind='-R'; fi\n"
-	"            _s2t_approx_notice \"Screen $_s2t_r_kind only considers sockets suitable under Screen's attached/detached rules and may create a new session; tmux new-session -A will attach an existing named tmux session even when Screen would reject it as already attached. Screen -RR also has different multiple-match selection behavior.\" \"Executing the closest common-case tmux new-session -A mapping for the explicit session name.\"\n"
-	"            if [ \"$_s2t_detach\" -eq 2 ]; then _s2t_tmux_with_u new-session -A -D -X -s \"$_s2t_session\"\n"
-	"            elif [ \"$_s2t_detach\" -eq 1 ]; then _s2t_tmux_with_u new-session -A -D -s \"$_s2t_session\"\n"
-	"            else _s2t_tmux_with_u new-session -A -s \"$_s2t_session\"; fi\n"
-	"            return $?\n"
-	"        fi\n"
-	"\n"
-	"        if [ -z \"$_s2t_attach_target\" ]; then\n"
-	"            _s2t_approx_notice \"Screen -r without a selector only succeeds when Screen can resolve an appropriate session under Screen's own detached-session rules; tmux attach-session without -t selects according to tmux's session rules.\" \"Executing the closest substitute: tmux attach-session.\"\n"
-	"            _s2t_tmux_with_u attach-session\n"
-	"            return $?\n"
-	"        fi\n"
-	"        if [ \"$_s2t_detach\" -eq 0 ] && [ \"$_s2t_xflag\" -eq 0 ]; then\n"
-	"            _s2t_approx_notice \"Screen -r resumes a detached Screen session and normally refuses an already attached session; tmux attach-session normally permits an additional client.\" \"Executing the closest substitute: tmux attach-session -t $_s2t_attach_target. Use Screen -x semantics when multiple simultaneous clients are intended, or -d -r when detaching an existing attachment first.\"\n"
-	"        fi\n"
-	"        if [ \"$_s2t_detach\" -eq 2 ]; then _s2t_tmux_with_u attach-session -d -x -t \"$_s2t_attach_target\"\n"
-	"        elif [ \"$_s2t_detach\" -eq 1 ]; then _s2t_tmux_with_u attach-session -d -t \"$_s2t_attach_target\"\n"
-	"        else _s2t_tmux_with_u attach-session -t \"$_s2t_attach_target\"; fi\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    if [ \"$_s2t_detach\" -eq 2 ] && [ \"$_s2t_mflag\" -eq 1 ]; then\n"
-	"        _s2t_unsupported \"Screen -D -m has process/daemonization semantics that do not correspond to creating one tmux session; tmux -D instead keeps the tmux server in the foreground.\" \"For an ordinary detached session use tmux new-session -d; for a foreground tmux server use tmux -D.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    if [ \"$_s2t_Uflag\" -eq 1 ]; then\n"
-	"        _s2t_approx_notice \"Screen -U has two semantics: it declares the Screen display UTF-8 capable and sets UTF-8 as the default encoding for newly created Screen windows. tmux -u does not implement Screen's per-window encoding policy.\" \"Proceeding with tmux -u for the client-side UTF-8 portion; Screen's per-window encoding policy is not reproduced.\"\n"
-	"    fi\n"
-	"\n"
-	"    if [ -n \"$_s2t_hist\" ]; then\n"
-	"        _s2t_unsupported \"Screen -h sets initial-window scrollback during creation; tmux history-limit is a creation-time option whose safe scope cannot be changed for only this invocation on an existing server.\" \"Configure 'set -g history-limit $_s2t_hist' before creating the pane/session.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    if [ -n \"$_s2t_term\" ]; then\n"
-	"        _s2t_unsupported \"Screen -T sets the virtual TERM for windows at creation; tmux default-terminal is a server option and changing it for only this invocation is not equivalent.\" \"Configure 'set -g default-terminal $_s2t_term' in tmux.conf for the intended tmux server.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    if [ -n \"$_s2t_shell\" ]; then\n"
-	"        _s2t_unsupported \"Screen -s changes the default shell for current and future windows in that Screen session; a one-shot tmux new-session command would only choose an initial process.\" \"Configure tmux default-shell, or run the desired shell explicitly in each new-session/new-window command.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"    if [ -n \"$_s2t_escape\" ]; then\n"
-	"        _s2t_unsupported \"Screen -e sets Screen's command character plus its literal-escape character before startup; tmux models prefix/prefix2 and send-prefix differently.\" \"Translate the intended key behavior explicitly with tmux prefix/prefix2 and key bindings.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    # Direct character devices and built-in Telnet are Screen endpoint features,\n"
-	"    # not tmux features. tmux can nevertheless host a serial/Telnet client as\n"
-	"    # the pane process. Concrete helper-backed forms therefore remain EXTERNAL\n"
-	"    # but become executable when the required helper is installed.\n"
-	"    if [ \"$#\" -gt 0 ]; then\n"
-	"        case \"$1\" in\n"
-	"            /dev/tty*)\n"
-	"                _s2t_dev=$1\n"
-	"                shift\n"
-	"                _s2t_baud=\n"
-	"                if [ \"$#\" -gt 0 ]; then\n"
-	"                    case \"$1\" in\n"
-	"                        *[!0-9]*)\n"
-	"                            _s2t_external \"Screen accepts native tty/stty option syntax for direct device windows; tmux has no built-in serial endpoint.\" \"Translate those device settings explicitly for picocom, tio, minicom, cu, or another serial client.\"\n"
-	"                            return $?\n"
-	"                            ;;\n"
-	"                        *) _s2t_baud=$1; shift ;;\n"
-	"                    esac\n"
-	"                fi\n"
-	"                if [ \"$#\" -gt 0 ]; then\n"
-	"                    _s2t_external \"Screen accepts additional native tty/stty options for direct device windows; tmux has no built-in serial endpoint.\" \"Translate those settings to picocom, tio, minicom, or cu options explicitly.\"\n"
-	"                    return $?\n"
-	"                fi\n"
-	"                if [ -n \"$_s2t_baud\" ]; then\n"
-	"                    set -- picocom -b \"$_s2t_baud\" \"$_s2t_dev\"\n"
-	"                else\n"
-	"                    set -- picocom \"$_s2t_dev\"\n"
-	"                fi\n"
-	"                _s2t_external_launch picocom \"Screen can attach its window directly to $_s2t_dev; tmux panes always run a process on a PTY, so a serial client is required.\" \"Using picocom as the serial endpoint when installed.\" \"$@\"\n"
-	"                return $?\n"
-	"                ;;\n"
-	"            //telnet)\n"
-	"                shift\n"
-	"                [ \"$#\" -gt 0 ] || { _s2t_invalid \"//telnet requires a host\"; return $?; }\n"
-	"                _s2t_host=$1\n"
-	"                shift\n"
-	"                _s2t_port=${1-}\n"
-	"                if [ \"$#\" -gt 1 ]; then _s2t_invalid \"//telnet accepts host and optional port\"; return $?; fi\n"
-	"                if [ \"$_s2t_af\" = 4 ]; then\n"
-	"                    if [ -n \"$_s2t_port\" ]; then set -- telnet -4 \"$_s2t_host\" \"$_s2t_port\"; else set -- telnet -4 \"$_s2t_host\"; fi\n"
-	"                elif [ \"$_s2t_af\" = 6 ]; then\n"
-	"                    if [ -n \"$_s2t_port\" ]; then set -- telnet -6 \"$_s2t_host\" \"$_s2t_port\"; else set -- telnet -6 \"$_s2t_host\"; fi\n"
-	"                else\n"
-	"                    if [ -n \"$_s2t_port\" ]; then set -- telnet \"$_s2t_host\" \"$_s2t_port\"; else set -- telnet \"$_s2t_host\"; fi\n"
-	"                fi\n"
-	"                _s2t_external_launch telnet \"Screen's //telnet is built in; tmux has no Telnet client but can run one as the pane process.\" \"Using the external telnet client when installed.\" \"$@\"\n"
-	"                return $?\n"
-	"                ;;\n"
-	"        esac\n"
-	"    fi\n"
-	"\n"
-	"    # A Screen -Logfile setting without -L still affects later Screen logging.\n"
-	"    # tmux has no corresponding persistent pane-log filename setting.\n"
-	"    if [ -n \"$_s2t_logfile\" ] && [ \"$_s2t_log\" -eq 0 ]; then\n"
-	"        _s2t_unsupported \"Screen -Logfile stores a default logfile name even when logging is not yet enabled; tmux pipe-pane has no equivalent persistent logfile-name setting.\" \"Create the tmux session normally, then use pipe-pane with an explicit destination whenever logging is enabled.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    # -m means 'force a new Screen session even inside Screen'; it does NOT mean\n"
-	"    # detached.  Only -d -m creates a detached new session.\n"
-	"    if [ \"$_s2t_detach\" -eq 1 ] && [ \"$_s2t_mflag\" -eq 1 ]; then _s2t_new_detached=1; else _s2t_new_detached=0; fi\n"
-	"\n"
-	"    # Automatic Screen logging is only approximately reproducible with tmux\n"
-	"    # pipe-pane and hooks, so never silently drop it or execute it as EXACT.\n"
-	"    if [ \"$_s2t_log\" -eq 1 ]; then\n"
-	"        _s2t_log_path=${_s2t_logfile:-tmux.log}\n"
-	"        _s2t_approx \"Screen -L enables Screen's built-in logging policy; tmux has no matching startup logging flag and pipe-pane only covers selected panes unless additional hooks are installed.\" \"Closest initial-pane substitute: create the session, then run tmux pipe-pane -o 'cat >>$_s2t_log_path'; add after-new-window/after-split-window hooks if automatic logging of future panes is required.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    # Screen -m deliberately forces a new Screen session even when already\n"
-	"    # inside Screen. tmux deliberately blocks an attached nested new-session\n"
-	"    # by default when $TMUX is set. Do not hide that safeguard or unset TMUX\n"
-	"    # automatically; require an explicit operator decision.\n"
-	"    if [ -n \"${TMUX:-}\" ] && [ \"$_s2t_mflag\" -eq 1 ] && [ \"$_s2t_new_detached\" -eq 0 ]; then\n"
-	"        _s2t_approx \"Screen -m forces a new attached Screen session even from inside Screen, but tmux normally rejects an attached nested new-session while TMUX is set.\" \"If nesting is intentional, explicitly unset TMUX for the new tmux invocation; otherwise omit -m to create a window in the current tmux session.\"\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    # GNU Screen creates a new window in the current Screen session when STY is\n"
-	"    # set, no -S selector is supplied, and -m was not requested.  For a drop-in\n"
-	"    # tmux compatibility function, TMUX is the corresponding current-context\n"
-	"    # signal.  Do this only on the ordinary creation path: list/attach/-X/-Q and\n"
-	"    # Screen-only options have already been handled above.\n"
-	"    if [ -n \"${TMUX:-}\" ] && [ \"$_s2t_mflag\" -eq 0 ] && [ -z \"$_s2t_session\" ]; then\n"
-	"        if [ \"$_s2t_new_detached\" -eq 1 ]; then\n"
-	"            _s2t_unsupported \"Screen's nested-session rule and -d -m request conflict here: -d -m explicitly creates a new detached Screen session rather than a window in the current session.\" \"Use -m only when a new tmux session is intended; otherwise omit -d -m to create a tmux window in the current session.\"\n"
-	"            return $?\n"
-	"        fi\n"
-	"        if [ -n \"$_s2t_title\" ]; then\n"
-	"            _s2t_tmux_format_literal \"$_s2t_title\"\n"
-	"            _s2t_tmux_with_u new-window -n \"$_s2t_format_literal\" \"$@\"\n"
-	"        else\n"
-	"            _s2t_tmux_with_u new-window \"$@\"\n"
-	"        fi\n"
-	"        return $?\n"
-	"    fi\n"
-	"\n"
-	"    # GNU Screen socket names include a process-specific prefix, so multiple\n"
-	"    # Screen backends may share the same user-supplied -S label. tmux session\n"
-	"    # names are unique. Refuse to call this EXACT unless the operator opts into\n"
-	"    # a unique-label deployment policy.\n"
-	"    if [ -n \"$_s2t_session\" ] && [ \"${SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES:-0}\" != 1 ]; then\n"
-	"        if [ \"$_s2t_new_detached\" -eq 1 ]; then _s2t_name_suggest=\"tmux new-session -d -s $_s2t_session\"; else _s2t_name_suggest=\"tmux new-session -s $_s2t_session\"; fi\n"
-	"        _s2t_approx_notice \"GNU Screen permits multiple sessions whose socket names share the same -S label (for example different PID.name sockets), while tmux requires each session name to be unique.\" \"Executing the closest tmux named-session mapping. If your environment relies on duplicate Screen labels, tmux cannot reproduce that naming model: $_s2t_name_suggest.\"\n"
-	"    fi\n"
-	"\n"
-	"    # Normal session creation with no semantic compromises remaining under the\n"
-	"    # selected session-name policy. tmux format-expands -s/-n, so preserve\n"
-	"    # literal Screen # characters with tmux's documented ## escape.\n"
-	"    if [ -n \"$_s2t_session\" ]; then _s2t_tmux_format_literal \"$_s2t_session\"; _s2t_session_tmux=$_s2t_format_literal; else _s2t_session_tmux=; fi\n"
-	"    if [ -n \"$_s2t_title\" ]; then _s2t_tmux_format_literal \"$_s2t_title\"; _s2t_title_tmux=$_s2t_format_literal; else _s2t_title_tmux=; fi\n"
-	"    if [ -n \"$_s2t_session_tmux\" ] && [ -n \"$_s2t_title_tmux\" ]; then\n"
-	"        if [ \"$_s2t_new_detached\" -eq 1 ]; then _s2t_tmux_with_u new-session -d -s \"$_s2t_session_tmux\" -n \"$_s2t_title_tmux\" \"$@\"\n"
-	"        else _s2t_tmux_with_u new-session -s \"$_s2t_session_tmux\" -n \"$_s2t_title_tmux\" \"$@\"; fi\n"
-	"    elif [ -n \"$_s2t_session_tmux\" ]; then\n"
-	"        if [ \"$_s2t_new_detached\" -eq 1 ]; then _s2t_tmux_with_u new-session -d -s \"$_s2t_session_tmux\" \"$@\"\n"
-	"        else _s2t_tmux_with_u new-session -s \"$_s2t_session_tmux\" \"$@\"; fi\n"
-	"    elif [ -n \"$_s2t_title_tmux\" ]; then\n"
-	"        if [ \"$_s2t_new_detached\" -eq 1 ]; then _s2t_tmux_with_u new-session -d -n \"$_s2t_title_tmux\" \"$@\"\n"
-	"        else _s2t_tmux_with_u new-session -n \"$_s2t_title_tmux\" \"$@\"; fi\n"
-	"    else\n"
-	"        if [ \"$_s2t_new_detached\" -eq 1 ]; then _s2t_tmux_with_u new-session -d \"$@\"\n"
-	"        else _s2t_tmux_with_u new-session \"$@\"; fi\n"
-	"    fi\n"
-	"}\n"
-	"\n"
-	"if [ \"${SCREEN2TMUX_NO_SCREEN_FUNCTION:-0}\" != 1 ]; then\n"
-	"    screen()\n"
-	"    {\n"
-	"        screen2tmux \"$@\"\n"
-	"    }\n"
-	"fi\n"
-;
+struct screen_compat_cmd {
+	char	**argv;
+	int	  argc;
+	int	  size;
+};
 
-static const char screen_compat_wire_tail[] =
-	"\n"
-	"_s2t_tmux() {\n"
-	"    if [ \"${_s2t_strict_blocked:-0}\" -eq 1 ]; then return 3; fi\n"
-	"    printf '%s\\000' \"$#\" >&3 || return 111\n"
-	"    for _s2t_wire_arg do\n"
-	"        printf '%s\\000' \"$_s2t_wire_arg\" >&3 || return 111\n"
-	"    done\n"
-	"    return 0\n"
-	"}\n"
-	"screen2tmux \"$@\"\n"
-	"exit $?\n";
+struct screen_compat {
+	int	 dry_run;
+	int	 strict;
+	int	 strict_blocked;
+	int	 Aflag;
+	int	 quiet;
+	int	 Uflag;
+	int	 list;
+	int	 wipe;
+	int	 detach;
+	int	 mflag;
+	int	 attach;
+	int	 attach_strength;
+	int	 xflag;
+	int	 log;
+	int	 af;
+	char	 mode;
 
-static const char screen_compat_dry_tail[] =
-	"\n"
-	"screen2tmux \"$@\"\n"
-	"exit $?\n";
+	const char	*session;
+	const char	*window;
+	const char	*screenrc;
+	const char	*logfile;
+	const char	*title;
+	const char	*shell;
+	const char	*hist;
+	const char	*term;
+	const char	*escape;
+	char		*unsupported_opt;
+
+	int	 argc;
+	char	**argv;
+	int	 pos;
+
+	int	 original_argc;
+	char	**original_argv;
+};
+
+static int	 screen_compat_is_screen(const char *);
+static int	 screen_compat_color_enabled(void);
+static const char	*screen_compat_class_color(const char *);
+static void	 screen_compat_color(FILE *, const char *, const char *);
+static void	 screen_compat_report(const char *, const char *, const char *);
+static __dead void	 screen_compat_invalid(const char *);
+static __dead void	 screen_compat_unsupported(const char *, const char *);
+static __dead void	 screen_compat_approx(const char *, const char *);
+static __dead void	 screen_compat_moot(const char *, const char *);
+static __dead void	 screen_compat_external(const char *, const char *);
+static __dead void	 screen_compat_uncertain(const char *, const char *,
+	    const char *);
+static void	 screen_compat_note(const char *);
+static void	 screen_compat_strict_refusal(const char *);
+static void	 screen_compat_help(void);
+static int	 screen_compat_selector_risky(const char *);
+static int	 screen_compat_session_selector_risky(const char *);
+static void	 screen_compat_guard_targets(struct screen_compat *);
+static char	*screen_compat_target(struct screen_compat *);
+static char	*screen_compat_format_literal(const char *);
+static char	*screen_compat_join(int, char **);
+static char	*screen_compat_quote(const char *);
+static int	 screen_compat_program_exists(const char *);
+
+static void	 screen_compat_cmd_init(struct screen_compat_cmd *);
+static void	 screen_compat_cmd_add(struct screen_compat_cmd *, const char *);
+static void	 screen_compat_cmd_addf(struct screen_compat_cmd *, const char *,
+	    ...)
+	    __printflike(2, 3);
+static void	 screen_compat_cmd_add_argv(struct screen_compat_cmd *, int,
+	    char **);
+static void	 screen_compat_cmd_prepend_u(struct screen_compat *,
+	    struct screen_compat_cmd *);
+static void	 screen_compat_print_arg(const char *);
+static void	 screen_compat_print_cmd(struct screen_compat_cmd *);
+static void	 screen_compat_install_cmd(struct screen_compat *,
+	    struct screen_compat_cmd *);
+static void	 screen_compat_finish(struct screen_compat *,
+	    struct screen_compat_cmd *);
+static void	 screen_compat_finish_u(struct screen_compat *,
+	    struct screen_compat_cmd *);
+static void	 screen_compat_approx_notice(struct screen_compat *,
+	    const char *, const char *);
+static void	 screen_compat_approx_exec(struct screen_compat *, const char *,
+	    const char *, struct screen_compat_cmd *);
+static void	 screen_compat_external_exec(struct screen_compat *, const char *,
+	    const char *, const char *, struct screen_compat_cmd *);
+static void	 screen_compat_external_launch(struct screen_compat *, const char *,
+	    const char *, const char *, int, char **);
+static int	 screen_compat_known_internal(const char *);
+static void	 screen_compat_query(struct screen_compat *, int, char **);
+static void	 screen_compat_xcommand(struct screen_compat *, int, char **);
+static void	 screen_compat_parse(struct screen_compat *);
 
 static int
 screen_compat_is_screen(const char *arg0)
 {
-	const char	*base;
+	const char	*name;
 
 	if (arg0 == NULL)
 		return (0);
-	if ((base = strrchr(arg0, '/')) != NULL)
-		base++;
+	name = strrchr(arg0, '/');
+	if (name == NULL)
+		name = arg0;
 	else
-		base = arg0;
-	if (*base == '-')
-		base++;
-	return (strcmp(base, "screen") == 0);
+		name++;
+	if (*name == '-')
+		name++;
+	return (strcmp(name, "screen") == 0);
 }
 
 static int
-screen_compat_has_dry_run(int argc, char **argv)
+screen_compat_color_enabled(void)
 {
-	int	i;
+	const char	*value;
 
-	for (i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "--dry-run") == 0 ||
-		    strcmp(argv[i], "--dryrun") == 0)
+	value = getenv("NO_COLOR");
+	if (value != NULL && *value != '\0')
+		return (0);
+	value = getenv("SCREEN2TMUX_COLOR");
+	if (value != NULL) {
+		if (strcmp(value, "always") == 0)
+			return (1);
+		if (strcmp(value, "never") == 0)
+			return (0);
+		if (*value != '\0' && strcmp(value, "auto") != 0)
+			return (0);
+	}
+	value = getenv("TERM");
+	return (isatty(STDERR_FILENO) &&
+	    (value == NULL || strcmp(value, "dumb") != 0));
+}
+
+static const char *
+screen_compat_class_color(const char *class)
+{
+	if (strcmp(class, "EXACT") == 0)
+		return ("\033[32m");
+	if (strcmp(class, "APPROX") == 0)
+		return ("\033[33m");
+	if (strcmp(class, "UNSUPPORTED") == 0 ||
+	    strcmp(class, "INVALID") == 0)
+		return ("\033[31m");
+	if (strcmp(class, "MOOT") == 0)
+		return ("\033[36m");
+	if (strcmp(class, "EXTERNAL") == 0)
+		return ("\033[35m");
+	return ("\033[36m");
+}
+
+static void
+screen_compat_color(FILE *f, const char *color, const char *text)
+{
+	if (screen_compat_color_enabled())
+		fprintf(f, "%s%s\033[0m", color, text);
+	else
+		fputs(text, f);
+}
+
+static void
+screen_compat_report(const char *class, const char *reason,
+    const char *suggestion)
+{
+	fputs("screen2tmux: ", stderr);
+	screen_compat_color(stderr, screen_compat_class_color(class), class);
+	fprintf(stderr, ": %s\n", reason);
+	if (suggestion != NULL && *suggestion != '\0') {
+		fputs("screen2tmux: ", stderr);
+		screen_compat_color(stderr, "\033[36m", "suggestion");
+		fprintf(stderr, ": %s\n", suggestion);
+	}
+}
+
+static __dead void
+screen_compat_invalid(const char *text)
+{
+	fputs("screen2tmux: ", stderr);
+	screen_compat_color(stderr, "\033[31m", "invalid/unknown Screen syntax");
+	fprintf(stderr, ": %s\n", text);
+	exit(64);
+}
+
+static __dead void
+screen_compat_unsupported(const char *reason, const char *suggestion)
+{
+	screen_compat_report("UNSUPPORTED", reason, suggestion);
+	exit(2);
+}
+
+static __dead void
+screen_compat_approx(const char *reason, const char *suggestion)
+{
+	screen_compat_report("APPROX", reason, suggestion);
+	exit(3);
+}
+
+static __dead void
+screen_compat_moot(const char *reason, const char *suggestion)
+{
+	screen_compat_report("MOOT", reason, suggestion);
+	exit(4);
+}
+
+static __dead void
+screen_compat_external(const char *reason, const char *suggestion)
+{
+	screen_compat_report("EXTERNAL", reason, suggestion);
+	exit(5);
+}
+
+static __dead void
+screen_compat_uncertain(const char *argument, const char *reason,
+    const char *suggestion)
+{
+	fputs("screen2tmux: ", stderr);
+	screen_compat_color(stderr, "\033[33m", "WARNING");
+	fprintf(stderr, ": uncertain translation of argument %s: %s\n",
+	    argument, reason);
+	if (suggestion != NULL && *suggestion != '\0') {
+		fputs("screen2tmux: ", stderr);
+		screen_compat_color(stderr, "\033[36m", "suggestion");
+		fprintf(stderr, ": %s\n", suggestion);
+	}
+	exit(3);
+}
+
+static void
+screen_compat_note(const char *text)
+{
+	fputs("screen2tmux: ", stderr);
+	screen_compat_color(stderr, "\033[36m", "note");
+	fprintf(stderr, ": %s\n", text);
+}
+
+static void
+screen_compat_strict_refusal(const char *class)
+{
+	fputs("screen2tmux: ", stderr);
+	screen_compat_color(stderr, "\033[33m", "STRICT");
+	fprintf(stderr,
+	    ": --strict keeps %s mappings advisory; tmux was not executed.\n",
+
+	    class);
+}
+
+static const char screen_compat_help_text[] =
+	"screen-to-tmux compatibility help (translator 0.4.17)\n"
+	"GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe "
+	"mapping exists.\n"
+	"This is compatibility help, not byte-for-byte native GNU Screen help.\n"
+	"\n"
+	"Usage\n"
+	"  screen [options] [command [args]]\n"
+	"  screen -r [session]\n"
+	"  screen -S session -X command [args]\n"
+	"  screen -S session -Q command [args]\n"
+	"  screen [--dry-run|--dryrun] [--strict] ...\n"
+	"\n"
+	"Translation classes\n"
+	"  EXACT                    [EXACT] Safe mapping; executes tmux "
+	"automatically (or prints it in dry-run mode).\n"
+	"  APPROX                   [APPROX] Semantics differ; concrete "
+	"one-command substitutes execute after a warning, otherwise translation "
+	"stays advisory.\n"
+	"  UNSUPPORTED              [UNSUPPORTED] Valid Screen behavior has no "
+	"safe tmux equivalent; no emulation is invented.\n"
+	"  MOOT                     [MOOT] Screen-only maintenance/architecture is "
+	"unnecessary under tmux.\n"
+	"  EXTERNAL                 [EXTERNAL] Closest substitute needs another "
+	"program; concrete helper-backed mappings run when that helper is "
+	"installed (unless --strict).\n"
+	"  VARIES                   [VARIES] Depends on subcommand, selector, "
+	"runtime state, or invocation context.\n"
+	"\n"
+	"Top-level Screen options\n"
+	"  -4 / -6                  [VARIES] Only meaningful for Screen built-in "
+	"network forms; external-client substitution may be required.\n"
+	"  -a                       [UNSUPPORTED] Screen termcap capability "
+	"forcing has no matching tmux CLI operation.\n"
+	"  -A                       [VARIES] Inert for a fresh tmux session; "
+	"Screen attach-time resize semantics are different.\n"
+	"  -c file                  [UNSUPPORTED] screenrc syntax is not tmux.conf "
+	"syntax; the same file is never passed to tmux -f.\n"
+	"  -d [session]             [EXACT] Detach the selected session clients "
+	"for supported unambiguous targets.\n"
+	"  -D [session]             [EXACT] Power-detach style top-level operation "
+	"for supported unambiguous targets.\n"
+	"  -dmS name                [APPROX] Detached named tmux session is close, "
+	"but tmux names are unique while Screen labels need not be.\n"
+	"  -e xy                    [UNSUPPORTED] Screen command-character pair is "
+	"not silently rewritten into tmux prefix configuration.\n"
+	"  -f / -fn / -fa           [UNSUPPORTED] Screen flow-control policy has "
+	"no direct tmux equivalent.\n"
+	"  -h lines                 [UNSUPPORTED] Screen per-invocation initial "
+	"history semantics do not map safely to tmux history-limit.\n"
+	"  -i                       [UNSUPPORTED] Screen XON/XOFF interrupt policy "
+	"has no tmux equivalent.\n"
+	"  -l / -ln                 [UNSUPPORTED] Screen utmp login accounting is "
+	"not a tmux pane feature.\n"
+	"  -ls / -list [match]      [APPROX] tmux list-sessions is useful, but "
+	"output/state/exit-code semantics differ.\n"
+	"  -L                       [APPROX] tmux pipe-pane can log panes, but "
+	"Screen startup/future-window logging policy differs.\n"
+	"  -Logfile file            [VARIES] Unsupported alone; with -L, pipe-pane "
+	"is only an approximation.\n"
+	"  -m                       [VARIES] Forces a new session; inside tmux, "
+	"the tmux nesting safeguard can make this non-equivalent.\n"
+	"  -O                       [UNSUPPORTED] Legacy Screen VT-output mode is "
+	"not mapped to tmux terminal-features automatically.\n"
+	"  -p window                [VARIES] Safe simple selectors are preserved; "
+	"ambiguous/tmux-significant selectors produce a warning.\n"
+	"  -P                       [UNSUPPORTED] Screen-managed authentication "
+	"differs from tmux socket/server-access security.\n"
+	"  -q                       [VARIES] Quiet behavior is command-specific; "
+	"Screen quiet-list exit codes are not tmux-compatible.\n"
+	"  -Q command               [VARIES] Queries are translated per command; "
+	"some output is exact and some only approximate.\n"
+	"  -r [session]             [APPROX] Screen requires a detached session; "
+	"tmux normally permits another client.\n"
+	"  -R / -RR [session]       [APPROX] Screen attach-or-create "
+	"matching/state rules differ from tmux new-session -A.\n"
+	"  -s shell                 [UNSUPPORTED] Screen default-shell override is "
+	"not applied as a tmux-global side effect.\n"
+	"  -S sockname              [APPROX] Screen allows duplicate PID.label "
+	"sockets; tmux session names are unique.\n"
+	"  -t title                 [EXACT] Initial window title is preserved; "
+	"tmux format metacharacters are escaped literally.\n"
+	"  -T term                  [UNSUPPORTED] Screen virtual TERM selection is "
+	"not silently converted into tmux terminal configuration.\n"
+	"  -U                       [APPROX] Screen changes client/output and "
+	"new-window encoding semantics; tmux -u is not equivalent.\n"
+	"  -v / --version           [UNSUPPORTED] A tmux-backed binary cannot "
+	"truthfully report itself as native GNU Screen.\n"
+	"  -wipe [match]            [MOOT] tmux does not leave one stale "
+	"filesystem socket per session.\n"
+	"  -x [session]             [EXACT] tmux natively supports multiple "
+	"clients; safe unambiguous targets attach directly.\n"
+	"  -X command [args]        [VARIES] Screen commands are translated "
+	"individually; see common command groups below.\n"
+	"\n"
+	"Translator extensions\n"
+	"  --dry-run / --dryrun     [EXTENSION] Print the translated tmux argv or "
+	"diagnostic instead of executing it.\n"
+	"  --strict                 [EXTENSION] Never execute APPROX or EXTERNAL "
+	"mappings; APPROX returns 3 and EXTERNAL returns 5.\n"
+	"  --help                   [EXTENSION] Show this compatibility-aware help "
+	"page.\n"
+	"\n"
+	"Common -X / -Q command coverage\n"
+	"  stuff/select/title/kill  [EXACT] Direct pane/window operations for safe "
+	"targets; literal data is protected from tmux format expansion.\n"
+	"  next/prev/other/quit     [EXACT] Straightforward tmux window/session "
+	"operations for supported targets.\n"
+	"  setenv/unsetenv          [EXACT] Mapped to tmux environment operations "
+	"in the selected session context.\n"
+	"  monitor/silence/vbell    [EXACT] Mapped to the corresponding tmux "
+	"window/session monitoring options.\n"
+	"  copy/xon/xoff/reset      [EXACT] Mapped to tmux copy/input/reset "
+	"operations where source semantics align.\n"
+	"  split/focus/resize       [APPROX] Screen display regions and tmux panes "
+	"are different object models.\n"
+	"  hardcopy FILE / log      [APPROX] capture-pane/pipe-pane are useful "
+	"substitutes but output/log policy differs.\n"
+	"  truecolor/altscreen      [APPROX] tmux has related "
+	"capabilities/options, but scope and terminal model differ.\n"
+	"  layout/displays/info     [APPROX] Useful tmux inspection/layout "
+	"commands exist; Screen object/output formats differ.\n"
+	"  bind/unbindall/ACL       [APPROX] tmux key tables and server access "
+	"have broader server-wide scope.\n"
+	"  source/chdir/auth        [UNSUPPORTED] No unsafe "
+	"config-language/backend/security emulation is attempted.\n"
+	"  multiuser/writelock      [UNSUPPORTED] Screen per-session/per-window "
+	"security model is not recreated on top of tmux.\n"
+	"  encoding/charset         [UNSUPPORTED] Screen character-set machinery "
+	"is not reprogrammed in the translator.\n"
+	"  paste/removebuf          [UNSUPPORTED] Screen register/exchange-file "
+	"semantics differ from tmux server-wide buffers.\n"
+	"  /dev/tty*, //telnet      [EXTERNAL] Concrete mappings launch "
+	"picocom/telnet inside tmux when installed; tmux itself is not a "
+	"serial/telnet engine.\n"
+	"\n"
+	"Important tmux-underneath differences\n"
+	"  * tmux multi-client attachment is native and often simpler, but that "
+	"makes Screen -r semantics only approximate.\n"
+	"  * tmux uses unique session names; Screen socket labels can repeat "
+	"because the PID is part of the socket name.\n"
+	"  * tmux panes are PTYs; Screen display regions can show layers/windows "
+	"without creating another PTY.\n"
+	"  * tmux paste buffers and key tables are server-wide, so the translator "
+	"refuses to pretend they are Screen-session-local.\n"
+	"  * tmux has one server socket rather than one staleable socket per "
+	"session, so Screen -wipe is unnecessary.\n"
+	"  * When an argument can be interpreted differently by Screen and tmux, "
+	"translation stops with a specific WARNING.\n"
+	"\n"
+	"Environment controls\n"
+	"  SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1  allow direct -S NAME "
+	"creation when your deployment guarantees uniqueness.\n"
+	"  SCREEN2TMUX_COLOR=auto|always|never          control selective "
+	"diagnostic/help color.\n"
+	"  NO_COLOR=1                                  disable ANSI color "
+	"unconditionally.\n"
+	"\n"
+	"Exit status\n"
+	"  0 exact/help success or successful executable APPROX/EXTERNAL mapping; "
+	"2 unsupported; 3 advisory approximate/uncertain; 4 moot; 5 "
+	"advisory/missing-helper external; 64 invalid syntax.\n"
+	"  Executed mappings return the underlying tmux command status in normal "
+	"mode; --strict never executes APPROX or EXTERNAL.\n"
+	;
+
+static void
+screen_compat_help(void)
+{
+	fputs(screen_compat_help_text, stdout);
+}
+
+static int
+screen_compat_selector_risky(const char *value)
+{
+	const unsigned char	*p;
+
+	if (value == NULL || *value == '\0')
+		return (1);
+	for (p = (const unsigned char *)value; *p != '\0'; p++) {
+		if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+		    (*p >= '0' && *p <= '9') || *p == '_' || *p == '-')
+			continue;
+		return (1);
+	}
+	return (0);
+}
+
+static int
+screen_compat_session_selector_risky(const char *value)
+{
+	if (screen_compat_selector_risky(value))
+		return (1);
+	if (*value >= '0' && *value <= '9')
+		return (1);
+	if (strncmp(value, "tty", 3) == 0)
+		return (1);
+	return (0);
+}
+
+static void
+screen_compat_guard_targets(struct screen_compat *sc)
+{
+	char	*argument;
+
+	if (sc->session != NULL && *sc->session != '\0' &&
+	    screen_compat_session_selector_risky(sc->session)) {
+		xasprintf(&argument, "Screen session selector '%s'", sc->session);
+		screen_compat_uncertain(argument,
+		    "Screen socket matching may interpret leading digits as a PID, may "
+		    "strip PID prefixes, treats a tty prefix specially, and otherwise "
+		    "uses Screen-specific prefix rules; tmux target syntax has different "
+		    "ID, separator, and pattern rules.",
+
+		    "Choose the intended tmux session explicitly and rewrite the target; "
+		    "this translator will not guess how that Screen selector should be "
+		    "interpreted.");
+	}
+	if (sc->window != NULL && *sc->window != '\0' &&
+	    screen_compat_selector_risky(sc->window)) {
+		xasprintf(&argument, "Screen window selector '%s'", sc->window);
+		screen_compat_uncertain(argument,
+		    "tmux window/pane targets have a different selector grammar from "
+		    "Screen window names and numbers.",
+
+		    "Choose the intended tmux window explicitly and rewrite the target; "
+		    "this translator will not guess how that Screen selector should be "
+		    "interpreted.");
+	}
+}
+
+static char *
+screen_compat_target(struct screen_compat *sc)
+{
+	char	*target;
+
+	if (sc->session != NULL && *sc->session != '\0' &&
+	    sc->window != NULL && *sc->window != '\0') {
+		xasprintf(&target, "%s:%s", sc->session, sc->window);
+		return (target);
+	}
+	if (sc->session != NULL && *sc->session != '\0')
+		return (xstrdup(sc->session));
+	if (sc->window != NULL && *sc->window != '\0') {
+		xasprintf(&target, ":%s", sc->window);
+		return (target);
+	}
+	return (NULL);
+}
+
+static char *
+screen_compat_format_literal(const char *value)
+{
+	const char	*p;
+	char		*out, *q;
+	size_t		 hashes = 0, len;
+
+	for (p = value; *p != '\0'; p++) {
+		if (*p == '#')
+			hashes++;
+	}
+	len = strlen(value);
+	out = xcalloc(len + hashes + 1, 1);
+	q = out;
+	for (p = value; *p != '\0'; p++) {
+		if (*p == '#')
+			*q++ = '#';
+		*q++ = *p;
+	}
+	*q = '\0';
+	return (out);
+}
+
+static char *
+screen_compat_join(int argc, char **argv)
+{
+	char	*out, *p;
+	size_t	 len = 1;
+	int	 i;
+
+	for (i = 0; i < argc; i++)
+		len += strlen(argv[i]) + (i != 0);
+	out = xcalloc(len, 1);
+	p = out;
+	for (i = 0; i < argc; i++) {
+		if (i != 0)
+			*p++ = ' ';
+		memcpy(p, argv[i], strlen(argv[i]));
+		p += strlen(argv[i]);
+	}
+	*p = '\0';
+	return (out);
+}
+
+static char *
+screen_compat_quote(const char *value)
+{
+	const char	*p;
+	char		*out, *q;
+	size_t		 quotes = 0, len;
+
+	for (p = value; *p != '\0'; p++) {
+		if (*p == '\'')
+			quotes++;
+	}
+	len = strlen(value);
+	out = xcalloc(len + quotes * 3 + 3, 1);
+	q = out;
+	*q++ = '\'';
+	for (p = value; *p != '\0'; p++) {
+		if (*p == '\'') {
+			*q++ = '\'';
+			*q++ = '\\';
+			*q++ = '\'';
+			*q++ = '\'';
+		} else
+			*q++ = *p;
+	}
+	*q++ = '\'';
+	*q = '\0';
+	return (out);
+}
+
+static int
+screen_compat_program_exists(const char *program)
+{
+	const char	*path, *start, *end;
+	char		*name;
+
+	if (strchr(program, '/') != NULL)
+		return (access(program, X_OK) == 0);
+	path = getenv("PATH");
+	if (path == NULL)
+		path = "/bin:/usr/bin";
+	start = path;
+	for (;;) {
+		end = strchr(start, ':');
+		if (end == NULL)
+			xasprintf(&name, "%s/%s", *start == '\0' ? "." : start,
+			    program);
+		else if (end == start)
+			xasprintf(&name, "./%s", program);
+		else {
+			char *dir = xcalloc((size_t)(end - start) + 1, 1);
+			memcpy(dir, start, (size_t)(end - start));
+			xasprintf(&name, "%s/%s", dir, program);
+			free(dir);
+		}
+		if (access(name, X_OK) == 0) {
+			free(name);
+			return (1);
+		}
+		free(name);
+		if (end == NULL)
+			break;
+		start = end + 1;
+	}
+	return (0);
+}
+
+static void
+screen_compat_cmd_init(struct screen_compat_cmd *cmd)
+{
+	memset(cmd, 0, sizeof *cmd);
+}
+
+static void
+screen_compat_cmd_add(struct screen_compat_cmd *cmd, const char *value)
+{
+	if (cmd->argc + 1 >= cmd->size) {
+		cmd->size = cmd->size == 0 ? 8 : cmd->size * 2;
+		cmd->argv = xreallocarray(cmd->argv, cmd->size,
+		    sizeof *cmd->argv);
+	}
+	cmd->argv[cmd->argc++] = xstrdup(value);
+	cmd->argv[cmd->argc] = NULL;
+}
+
+static void
+screen_compat_cmd_addf(struct screen_compat_cmd *cmd, const char *fmt, ...)
+{
+	va_list	 ap;
+	char	*value;
+
+	va_start(ap, fmt);
+	xvasprintf(&value, fmt, ap);
+	va_end(ap);
+	screen_compat_cmd_add(cmd, value);
+	free(value);
+}
+
+static void
+screen_compat_cmd_add_argv(struct screen_compat_cmd *cmd, int argc, char **argv)
+{
+	int	 i;
+
+	for (i = 0; i < argc; i++)
+		screen_compat_cmd_add(cmd, argv[i]);
+}
+
+static void
+screen_compat_cmd_prepend_u(struct screen_compat *sc,
+    struct screen_compat_cmd *cmd)
+{
+	char	**argv;
+	int	 i;
+
+	if (!sc->Uflag)
+		return;
+	argv = xcalloc(cmd->size == 0 ? cmd->argc + 3 : cmd->size + 1,
+	    sizeof *argv);
+	argv[0] = xstrdup("-u");
+	for (i = 0; i < cmd->argc; i++)
+		argv[i + 1] = cmd->argv[i];
+	free(cmd->argv);
+	cmd->argv = argv;
+	cmd->argc++;
+	cmd->size = cmd->argc + 1;
+}
+
+static int
+screen_compat_safe_arg(const char *value)
+{
+	const unsigned char	*p;
+
+	if (*value == '\0')
+		return (0);
+	for (p = (const unsigned char *)value; *p != '\0'; p++) {
+		if ((*p >= 'A' && *p <= 'Z') || (*p >= 'a' && *p <= 'z') ||
+		    (*p >= '0' && *p <= '9') || strchr("_@%+=:,./-", *p) != NULL)
+			continue;
+		return (0);
+	}
+	return (1);
+}
+
+static void
+screen_compat_print_arg(const char *value)
+{
+	const unsigned char	*p;
+
+	if (screen_compat_safe_arg(value)) {
+		fputs(value, stdout);
+		return;
+	}
+	if (*value == '\0') {
+		fputs("''", stdout);
+		return;
+	}
+	putchar('\'');
+	for (p = (const unsigned char *)value; *p != '\0'; p++) {
+		switch (*p) {
+		case '\'':
+			fputs("'\\''", stdout);
+			break;
+		case '\r':
+			fputs("\\r", stdout);
+			break;
+		case '\n':
+			fputs("\\n", stdout);
+			break;
+		case '\t':
+			fputs("\\t", stdout);
+			break;
+		default:
+			if (*p >= 32 && *p <= 126)
+				putchar(*p);
+			else
+				printf("\\x%02x", *p);
+			break;
+		}
+	}
+	putchar('\'');
+}
+
+static void
+screen_compat_print_cmd(struct screen_compat_cmd *cmd)
+{
+	int	 i;
+
+	fputs("tmux", stdout);
+	for (i = 0; i < cmd->argc; i++) {
+		putchar(' ');
+		screen_compat_print_arg(cmd->argv[i]);
+	}
+	putchar('\n');
+}
+
+static void
+screen_compat_install_cmd(struct screen_compat *sc,
+    struct screen_compat_cmd *cmd)
+{
+	char	**argv;
+	int	 i;
+
+	argv = xcalloc((size_t)cmd->argc + 2, sizeof *argv);
+	argv[0] = sc->original_argv[0];
+	for (i = 0; i < cmd->argc; i++)
+		argv[i + 1] = cmd->argv[i];
+	argv[cmd->argc + 1] = NULL;
+	free(cmd->argv);
+	sc->original_argc = cmd->argc + 1;
+	sc->original_argv = argv;
+}
+
+static void
+screen_compat_finish(struct screen_compat *sc, struct screen_compat_cmd *cmd)
+{
+	if (sc->strict_blocked) {
+		if (sc->dry_run)
+			screen_compat_print_cmd(cmd);
+		exit(3);
+	}
+	if (sc->dry_run) {
+		screen_compat_print_cmd(cmd);
+		exit(0);
+	}
+	screen_compat_install_cmd(sc, cmd);
+}
+
+static void
+screen_compat_finish_u(struct screen_compat *sc, struct screen_compat_cmd *cmd)
+{
+	screen_compat_cmd_prepend_u(sc, cmd);
+	screen_compat_finish(sc, cmd);
+}
+
+static void
+screen_compat_approx_notice(struct screen_compat *sc, const char *reason,
+    const char *suggestion)
+{
+	screen_compat_report("APPROX", reason, suggestion);
+	if (sc->strict) {
+		sc->strict_blocked = 1;
+		screen_compat_strict_refusal("APPROX");
+	}
+}
+
+static void
+screen_compat_approx_exec(struct screen_compat *sc, const char *reason,
+    const char *suggestion, struct screen_compat_cmd *cmd)
+{
+	screen_compat_report("APPROX", reason, suggestion);
+	if (sc->strict) {
+		screen_compat_strict_refusal("APPROX");
+		if (sc->dry_run)
+			screen_compat_print_cmd(cmd);
+		exit(3);
+	}
+	screen_compat_finish(sc, cmd);
+}
+
+static void
+screen_compat_external_exec(struct screen_compat *sc, const char *helper,
+    const char *reason, const char *suggestion, struct screen_compat_cmd *cmd)
+{
+	char	*note;
+
+	screen_compat_report("EXTERNAL", reason, suggestion);
+	if (sc->strict) {
+		screen_compat_strict_refusal("EXTERNAL");
+		if (sc->dry_run)
+			screen_compat_print_cmd(cmd);
+		exit(5);
+	}
+	if (sc->dry_run) {
+		screen_compat_print_cmd(cmd);
+		exit(0);
+	}
+	if (!screen_compat_program_exists(helper)) {
+		xasprintf(&note,
+		    "external helper '%s' is not installed; tmux was not executed.",
+		    helper);
+		screen_compat_note(note);
+		exit(5);
+	}
+	screen_compat_install_cmd(sc, cmd);
+}
+
+static void
+screen_compat_external_launch(struct screen_compat *sc, const char *helper,
+    const char *reason, const char *suggestion, int argc, char **argv)
+{
+	struct screen_compat_cmd	 cmd;
+	char			*session = NULL, *title = NULL;
+	const char		*tmux;
+	int			 detached;
+
+	screen_compat_cmd_init(&cmd);
+	tmux = getenv("TMUX");
+	if (tmux != NULL && *tmux != '\0' && !sc->mflag &&
+	    (sc->session == NULL || *sc->session == '\0')) {
+		screen_compat_cmd_add(&cmd, "new-window");
+		if (sc->title != NULL && *sc->title != '\0') {
+			title = screen_compat_format_literal(sc->title);
+			screen_compat_cmd_add(&cmd, "-n");
+			screen_compat_cmd_add(&cmd, title);
+		}
+		screen_compat_cmd_add_argv(&cmd, argc, argv);
+		screen_compat_cmd_prepend_u(sc, &cmd);
+		screen_compat_external_exec(sc, helper, reason, suggestion, &cmd);
+		return;
+	}
+
+	if (sc->session != NULL && *sc->session != '\0')
+		session = screen_compat_format_literal(sc->session);
+	if (sc->title != NULL && *sc->title != '\0')
+		title = screen_compat_format_literal(sc->title);
+	detached = sc->detach == 1 && sc->mflag;
+
+	screen_compat_cmd_add(&cmd, "new-session");
+	if (detached)
+		screen_compat_cmd_add(&cmd, "-d");
+	if (session != NULL) {
+		screen_compat_cmd_add(&cmd, "-s");
+		screen_compat_cmd_add(&cmd, session);
+	}
+	if (title != NULL) {
+		screen_compat_cmd_add(&cmd, "-n");
+		screen_compat_cmd_add(&cmd, title);
+	}
+	screen_compat_cmd_add_argv(&cmd, argc, argv);
+	screen_compat_cmd_prepend_u(sc, &cmd);
+	screen_compat_external_exec(sc, helper, reason, suggestion, &cmd);
+}
+
+static const char *screen_compat_internal_commands[] = {
+	"acladd", "aclchg", "acldel", "aclgrp", "aclumask", "activity",
+	"addacl", "allpartial", "altscreen", "at", "auth", "autodetach",
+	"autonuke", "backtick", "bce", "bell", "bell_msg", "bind",
+	"bindkey", "blanker", "blankerprg", "break", "breaktype",
+	"bufferfile", "bumpleft", "bumpright", "c1", "caption", "chacl",
+	"charset", "chdir", "cjkwidth", "clear", "collapse", "colon",
+	"command", "compacthist", "console", "copy", "crlf", "defautonuke",
+	"defbce", "defbreaktype", "defc1", "defcharset", "defdynamictitle",
+	"defencoding", "defescape", "defflow", "defgr", "defhstatus",
+	"defkanji", "deflog", "deflogin", "defmode", "defmonitor",
+	"defmousetrack", "defnonblock", "defobuflimit", "defscrollback",
+	"defshell", "defsilence", "defslowpaste", "defutf8", "defwrap",
+	"defwritelock", "detach", "digraph", "dinfo", "displays",
+	"dumptermcap", "dynamictitle", "echo", "encoding", "escape", "eval",
+	"exec", "fit", "flow", "focus", "focusminsize", "gr", "group",
+	"hardcopy", "hardcopy_append", "hardcopydir", "hardstatus", "height",
+	"help", "history", "hstatus", "idle", "ignorecase", "info", "kanji",
+	"kill", "lastmsg", "layout", "license", "lockscreen", "log",
+	"logfile", "login", "logtstamp", "mapdefault", "mapnotnext",
+	"maptimeout", "markkeys", "meta", "monitor", "mousetrack",
+	"msgminwait", "msgwait", "multiinput", "multiuser", "next",
+	"nonblock", "number", "obuflimit", "only", "other", "parent",
+	"partial", "paste", "pastefont", "pow_break", "pow_detach",
+	"pow_detach_msg", "prev", "printcmd", "process", "quit", "readbuf",
+	"readreg", "redisplay", "register", "remove", "removebuf", "rendition",
+	"reset", "resize", "screen", "scrollback", "select", "sessionname",
+	"setenv", "setsid", "shell", "shelltitle", "silence", "silencewait",
+	"sleep", "slowpaste", "sorendition", "sort", "source", "split",
+	"startup_message", "status", "stuff", "su", "suspend", "term",
+	"termcap", "termcapinfo", "terminfo", "title", "truecolor", "umask",
+	"unbindall", "unsetenv", "utf8", "vbell", "vbell_msg", "vbellwait",
+	"verbose", "version", "wall", "width", "windowlist", "windows", "wrap",
+	"writebuf", "writelock", "xoff", "xon", "zmodem", "zombie",
+	"zombie_timeout", NULL
+};
+
+static int
+screen_compat_known_internal(const char *name)
+{
+	const char	**p;
+
+	for (p = screen_compat_internal_commands; *p != NULL; p++) {
+		if (strcmp(*p, name) == 0)
 			return (1);
 	}
 	return (0);
 }
 
-static int
-screen_compat_write(int fd, const char *buf, size_t len)
+static void
+screen_compat_query(struct screen_compat *sc, int argc, char **argv)
 {
-	ssize_t	n;
+	struct screen_compat_cmd	 cmd;
+	char			*target, *text;
+	const char		*name;
 
-	while (len != 0) {
-		n = write(fd, buf, len);
-		if (n == -1) {
-			if (errno == EINTR)
-				continue;
-			return (-1);
-		}
-		buf += n;
-		len -= (size_t)n;
+	if (argc == 0)
+		screen_compat_invalid("-Q requires a query command");
+	name = argv[0];
+	argc--;
+	argv++;
+	screen_compat_guard_targets(sc);
+	target = screen_compat_target(sc);
+	screen_compat_cmd_init(&cmd);
+
+	if (strcmp(name, "windows") == 0) {
+		screen_compat_cmd_add(&cmd, "list-windows");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+			xasprintf(&text,
+			    "Executing closest substitute; use -F to build output compatible "
+			    "with the consumer if exact formatting matters: tmux list-windows -t "
+			    "%s",
+			    sc->session);
+		} else
+			text = xstrdup(
+			    "Executing closest substitute; use -F to build output compatible "
+			    "with the consumer if exact formatting matters: tmux list-windows");
+		screen_compat_approx_exec(sc,
+		    "Screen -Q windows has Screen-specific window-list formatting and "
+		    "markers; tmux list-windows reports a different format.",
+
+		    text, &cmd);
 	}
-	return (0);
+	if (strcmp(name, "number") == 0) {
+		screen_compat_cmd_add(&cmd, "display-message");
+		screen_compat_cmd_add(&cmd, "-p");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_cmd_add(&cmd, "#{window_index} (#{window_name})");
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "title") == 0) {
+		screen_compat_cmd_add(&cmd, "display-message");
+		screen_compat_cmd_add(&cmd, "-p");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_cmd_add(&cmd, "#W");
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "info") == 0) {
+		screen_compat_cmd_add(&cmd, "display-message");
+		screen_compat_cmd_add(&cmd, "-p");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_cmd_add(&cmd,
+		    "#{session_name}:#{window_index}.#{pane_index} "
+		    "#{pane_width}x#{pane_height} #{pane_current_command}");
+		screen_compat_approx_exec(sc,
+		    "Screen -Q info emits Screen's own fixed status summary; tmux has no "
+		    "byte-compatible equivalent.",
+
+		    "Executing a useful tmux status summary with explicit format fields.",
+		    &cmd);
+	}
+	if (strcmp(name, "lastmsg") == 0) {
+		screen_compat_cmd_add(&cmd, "show-messages");
+		screen_compat_approx_exec(sc,
+		    "Screen -Q lastmsg returns Screen's single most recent message; tmux "
+		    "show-messages returns a message history with different formatting "
+		    "and scope.",
+
+		    "Executing tmux show-messages; scripts that need exactly one "
+		    "Screen-style message must select the desired entry explicitly.",
+		    &cmd);
+	}
+	if (strcmp(name, "echo") == 0) {
+		if (argc == 0)
+			screen_compat_invalid("echo requires a string");
+		if (argc == 1 || (argc == 2 && strcmp(argv[0], "-n") == 0)) {
+			screen_compat_cmd_add(&cmd, "display-message");
+			screen_compat_cmd_add(&cmd, "-pl");
+			screen_compat_cmd_add(&cmd, argc == 1 ? argv[0] : argv[1]);
+			screen_compat_finish(sc, &cmd);
+			return;
+		}
+		if (argc == 2 && strcmp(argv[0], "-p") == 0)
+			screen_compat_unsupported(
+			    "Screen echo -p expands Screen's own % status-format language; tmux "
+			    "formats use a different #{} language.",
+
+			    "Translate the Screen format deliberately instead of passing it to "
+			    "tmux display-message.");
+		text = screen_compat_join(argc, argv);
+		{
+			char *argument;
+			xasprintf(&argument, "echo arguments '%s'", text);
+			screen_compat_uncertain(argument,
+			    "Screen accepts a narrow one/two-argument form and extra argument "
+			    "interpretation is not safely representable as a tmux "
+			    "display-message invocation.",
+
+			    "Use Screen's documented 'echo [-n] [-p] string' form and translate "
+			    "the intended formatting explicitly.");
+		}
+	}
+	if (strcmp(name, "select") == 0) {
+		if (argc > 0) {
+			screen_compat_cmd_add(&cmd, "select-window");
+			screen_compat_cmd_add(&cmd, "-t");
+			if (sc->session != NULL && *sc->session != '\0')
+				screen_compat_cmd_addf(&cmd, "%s:%s", sc->session, argv[0]);
+			else
+				screen_compat_cmd_addf(&cmd, ":%s", argv[0]);
+		} else {
+			screen_compat_cmd_add(&cmd, "display-message");
+			screen_compat_cmd_add(&cmd, "-p");
+			if (target != NULL) {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, target);
+			}
+			screen_compat_cmd_add(&cmd, "#I #W");
+		}
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (screen_compat_known_internal(name)) {
+		xasprintf(&text,
+		    "Screen command '%s' is recognized, but Screen only permits a subset "
+		    "of commands to return useful -Q results.",
+		    name);
+		screen_compat_unsupported(text,
+		    "Use tmux list-*, show-*, or display-message -p with format variables.");
+	}
+	xasprintf(&text, "unknown -Q command '%s'", name);
+	screen_compat_invalid(text);
 }
 
-static int
-screen_compat_wait(pid_t pid)
+static void
+screen_compat_xcommand(struct screen_compat *sc, int argc, char **argv)
 {
-	int	status;
+	struct screen_compat_cmd	 cmd;
+	char			*target, *text, *text2, *joined, *quoted;
+	char			*name_tmux, *nw_target;
+	const char		*name, *value, *nw_name = NULL, *nw_index = NULL;
+	const char		*nw_hist = NULL, *sel, *state;
+	int			 i;
 
-	while (waitpid(pid, &status, 0) == -1) {
-		if (errno != EINTR)
-			err(70, "waitpid");
+	if (argc == 0)
+		screen_compat_invalid("-X requires a Screen command");
+	name = argv[0];
+	argc--;
+	argv++;
+	screen_compat_guard_targets(sc);
+	target = screen_compat_target(sc);
+	screen_compat_cmd_init(&cmd);
+
+	if (strcmp(name, "screen") == 0) {
+		i = 0;
+		while (i < argc) {
+			if (strcmp(argv[i], "-t") == 0) {
+				if (++i >= argc)
+					screen_compat_invalid("screen -t requires a title");
+				nw_name = argv[i++];
+				continue;
+			}
+			if (strcmp(argv[i], "-h") == 0) {
+				if (++i >= argc)
+					screen_compat_invalid("screen -h requires a history size");
+				nw_hist = argv[i++];
+				continue;
+			}
+			if (strcmp(argv[i], "--") == 0) {
+				i++;
+				break;
+			}
+			if (argv[i][0] == '-') {
+				xasprintf(&text,
+				    "internal Screen 'screen' option '%s' has no safe generic tmux "
+				    "translation in this release.",
+				    argv[i]);
+				screen_compat_unsupported(text,
+				    "Create the window with tmux new-window and configure the "
+				    "corresponding tmux option explicitly.");
+			}
+			if (argv[i][0] >= '0' && argv[i][0] <= '9') {
+				char *colon = strchr(argv[i], ':');
+				if (colon != NULL) {
+					char *index = xcalloc((size_t)(colon - argv[i]) + 1, 1);
+					memcpy(index, argv[i], (size_t)(colon - argv[i]));
+					nw_index = index;
+					nw_name = colon + 1;
+					i++;
+					break;
+				}
+				nw_index = argv[i++];
+				break;
+			}
+			break;
+		}
+		if (nw_hist != NULL && *nw_hist != '\0') {
+			xasprintf(&text,
+			    "Screen can choose scrollback size while creating this window; tmux "
+			    "history-limit is an option whose creation-time semantics are "
+			    "server/session scoped.");
+			xasprintf(&text2,
+			    "Set 'history-limit %s' in tmux.conf before creating panes, then use "
+			    "tmux new-window.",
+			    nw_hist);
+			screen_compat_unsupported(text, text2);
+		}
+		if (nw_index != NULL && *nw_index != '\0') {
+			xasprintf(&text,
+			    "Screen treats window number '%s' as StartAt and chooses the first "
+			    "free number at or above it; tmux -t :N addresses exact index N and "
+			    "fails if that index is occupied.",
+			    nw_index);
+			xasprintf(&text2,
+			    "Executing the closest exact-index tmux new-window mapping. If index "
+			    "%s is occupied, tmux may fail where Screen would search upward.",
+			    nw_index);
+			screen_compat_approx_notice(sc, text, text2);
+		}
+		if (sc->session != NULL && *sc->session != '\0' &&
+		    nw_index != NULL && *nw_index != '\0')
+			xasprintf(&nw_target, "%s:%s", sc->session, nw_index);
+		else if (sc->session != NULL && *sc->session != '\0')
+			nw_target = xstrdup(sc->session);
+		else if (nw_index != NULL && *nw_index != '\0')
+			xasprintf(&nw_target, ":%s", nw_index);
+		else
+			nw_target = NULL;
+		name_tmux = nw_name == NULL || *nw_name == '\0' ? NULL :
+		    screen_compat_format_literal(nw_name);
+		screen_compat_cmd_add(&cmd, "new-window");
+		if (nw_target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, nw_target);
+		}
+		if (name_tmux != NULL) {
+			screen_compat_cmd_add(&cmd, "-n");
+			screen_compat_cmd_add(&cmd, name_tmux);
+		}
+		screen_compat_cmd_add_argv(&cmd, argc - i, argv + i);
+		screen_compat_finish(sc, &cmd);
+		return;
 	}
-	if (WIFEXITED(status))
-		return (WEXITSTATUS(status));
-	if (WIFSIGNALED(status))
-		return (128 + WTERMSIG(status));
-	return (70);
+
+	if (strcmp(name, "select") == 0) {
+		sel = argc > 0 ? argv[0] : sc->window;
+		if (sel == NULL || *sel == '\0')
+			screen_compat_invalid(
+			    "select requires a target window in noninteractive translation");
+		screen_compat_cmd_add(&cmd, "select-window");
+		screen_compat_cmd_add(&cmd, "-t");
+		if (sc->session != NULL && *sc->session != '\0')
+			screen_compat_cmd_addf(&cmd, "%s:%s", sc->session, sel);
+		else
+			screen_compat_cmd_addf(&cmd, ":%s", sel);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "title") == 0) {
+		if (argc == 0)
+			screen_compat_invalid("title requires a title in shell translation");
+		name_tmux = screen_compat_format_literal(argv[0]);
+		screen_compat_cmd_add(&cmd, "rename-window");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_cmd_add(&cmd, name_tmux);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "number") == 0) {
+		if (argc == 0) {
+			screen_compat_cmd_add(&cmd, "display-message");
+			screen_compat_cmd_add(&cmd, "-p");
+			if (target != NULL) {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, target);
+			}
+			screen_compat_cmd_add(&cmd, "#I");
+			screen_compat_finish(sc, &cmd);
+			return;
+		}
+		if (target == NULL)
+			screen_compat_unsupported(
+			    "renumbering requires a determinate Screen window target.",
+			    "Use screen -S session -p window -X number N and inspect the "
+			    "destination before choosing a tmux operation.");
+		if (sc->session != NULL && *sc->session != '\0')
+			xasprintf(&text, "%s:%s", sc->session, argv[0]);
+		else
+			xasprintf(&text, ":%s", argv[0]);
+		screen_compat_cmd_add(&cmd, "move-window");
+		screen_compat_cmd_add(&cmd, "-s");
+		screen_compat_cmd_add(&cmd, target);
+		screen_compat_cmd_add(&cmd, "-t");
+		screen_compat_cmd_add(&cmd, text);
+		xasprintf(&text2,
+		    "Executing the non-destructive closest substitute: tmux move-window "
+		    "-s %s -t %s. If the destination is occupied, tmux will fail instead "
+		    "of replacing it; use swap-window explicitly when Screen's "
+		    "occupied-slot behavior is required.",
+		    target, text);
+		screen_compat_approx_exec(sc,
+		    "Screen number swaps window numbers when the destination is occupied, "
+		    "whereas tmux move-window fails when the destination is occupied.",
+
+		    text2, &cmd);
+	}
+	if (strcmp(name, "kill") == 0) {
+		screen_compat_cmd_add(&cmd, "kill-window");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "next") == 0 || strcmp(name, "prev") == 0 ||
+	    strcmp(name, "other") == 0) {
+		screen_compat_cmd_add(&cmd,
+		    strcmp(name, "next") == 0 ? "next-window" :
+		    strcmp(name, "prev") == 0 ? "previous-window" : "last-window");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+		}
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "collapse") == 0) {
+		screen_compat_cmd_add(&cmd, "move-window");
+		screen_compat_cmd_add(&cmd, "-r");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+			xasprintf(&text,
+			    "Executing tmux move-window -r -t %s; the result is "
+			    "Screen-compatible only when tmux base-index is 0.",
+			    sc->session);
+		} else
+			text = xstrdup(
+			    "Executing tmux move-window -r; the result is Screen-compatible only "
+			    "when tmux base-index is 0.");
+		screen_compat_approx_exec(sc,
+		    "Screen collapse always renumbers windows consecutively from 0; tmux "
+		    "move-window -r starts from the session's base-index option.",
+
+		    text, &cmd);
+	}
+	if (strcmp(name, "sort") == 0)
+		screen_compat_unsupported(
+		    "Screen mutates window numbers by sorting actual windows "
+		    "alphabetically; tmux can sort list/chooser views but has no direct "
+		    "mutating sort command.",
+
+		    "Script list-windows plus move-window if persistent alphabetical "
+		    "indices are required.");
+	if (strcmp(name, "stuff") == 0) {
+		if (argc == 0)
+			screen_compat_invalid("stuff requires text");
+		joined = screen_compat_join(argc, argv);
+		screen_compat_cmd_add(&cmd, "send-keys");
+		screen_compat_cmd_add(&cmd, "-l");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_cmd_add(&cmd, joined);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "xon") == 0 || strcmp(name, "xoff") == 0) {
+		screen_compat_cmd_add(&cmd, "send-keys");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_cmd_add(&cmd, strcmp(name, "xon") == 0 ? "C-q" : "C-s");
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "split") == 0) {
+		int horizontal = argc > 0 && strcmp(argv[0], "-v") == 0;
+		screen_compat_cmd_add(&cmd, "split-window");
+		screen_compat_cmd_add(&cmd, horizontal ? "-h" : "-v");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		if (horizontal) {
+			if (target != NULL)
+				xasprintf(&text,
+				    "Executing the closest visual substitute: tmux split-window -h -t "
+				    "%s.",
+				    target);
+			else
+				text = xstrdup(
+				    "Executing the closest visual substitute: tmux split-window -h.");
+			screen_compat_approx_exec(sc,
+			    "Screen split -v creates another display region without creating a "
+			    "new PTY; tmux split-window -h creates a new pane/PTY.",
+			    text, &cmd);
+		} else {
+			if (target != NULL)
+				xasprintf(&text,
+				    "Executing the closest visual substitute: tmux split-window -v -t "
+				    "%s.",
+				    target);
+			else
+				text = xstrdup(
+				    "Executing the closest visual substitute: tmux split-window -v.");
+			screen_compat_approx_exec(sc,
+			    "Screen split creates another display region without creating a new "
+			    "PTY; tmux split-window -v creates a new pane/PTY.",
+			    text, &cmd);
+		}
+	}
+	if (strcmp(name, "focus") == 0) {
+		const char *direction = argc > 0 ? argv[0] : "next";
+		const char *suffix;
+		if (*direction == '\0' || strcmp(direction, "next") == 0)
+			suffix = ".+";
+		else if (strcmp(direction, "prev") == 0)
+			suffix = ".-";
+		else if (strcmp(direction, "up") == 0)
+			suffix = ".{up-of}";
+		else if (strcmp(direction, "down") == 0)
+			suffix = ".{down-of}";
+		else if (strcmp(direction, "left") == 0)
+			suffix = ".{left-of}";
+		else if (strcmp(direction, "right") == 0)
+			suffix = ".{right-of}";
+		else if (strcmp(direction, "top") == 0)
+			suffix = ".{top}";
+		else if (strcmp(direction, "bottom") == 0)
+			suffix = ".{bottom}";
+		else {
+			xasprintf(&text, "unknown focus direction '%s'", direction);
+			screen_compat_invalid(text);
+		}
+		if (sc->session != NULL && *sc->session != '\0')
+			xasprintf(&text, "%s:%s", sc->session, suffix);
+		else
+			text = xstrdup(suffix);
+		screen_compat_cmd_add(&cmd, "select-pane");
+		screen_compat_cmd_add(&cmd, "-t");
+		screen_compat_cmd_add(&cmd, text);
+		xasprintf(&text2,
+		    "Executing the closest substitute: tmux select-pane -t %s",
+		    text);
+		screen_compat_approx_exec(sc,
+		    "Screen focus moves among display regions; tmux select-pane moves "
+		    "among PTY panes, so the object model is different.",
+		    text2, &cmd);
+	}
+	if (strcmp(name, "only") == 0) {
+		screen_compat_cmd_add(&cmd, "resize-pane");
+		screen_compat_cmd_add(&cmd, "-Z");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+			xasprintf(&text,
+			    "Executing the closest non-destructive substitute: tmux resize-pane "
+			    "-Z -t %s.",
+			    target);
+		} else
+			text = xstrdup(
+			    "Executing the closest non-destructive substitute: tmux resize-pane "
+			    "-Z.");
+		screen_compat_approx_exec(sc,
+		    "Screen 'only' removes the other display regions while preserving "
+		    "their windows; tmux zoom merely hides other panes temporarily.",
+
+		    text, &cmd);
+	}
+	if (strcmp(name, "remove") == 0)
+		screen_compat_unsupported(
+		    "Screen removes a display region without killing its window; tmux has "
+		    "no separate region object because a pane is both the PTY and the "
+		    "layout object.",
+
+		    "Use resize-pane -Z to zoom, or break-pane before kill-pane if you "
+		    "need to preserve the process.");
+	if (strcmp(name, "fit") == 0)
+		screen_compat_unsupported(
+		    "Screen fits a window layer to a display region; tmux automatically "
+		    "sizes pane PTYs to their layout cells.",
+
+		    "Usually no command is needed; use resize-pane/resize-window if "
+		    "explicit geometry is required.");
+	if (strcmp(name, "resize") == 0) {
+		if (argc == 0)
+			screen_compat_unsupported(
+			    "Interactive Screen resize without an amount has no safe "
+			    "noninteractive one-command mapping.",
+
+			    "Use tmux resize-pane -L/-R/-U/-D N or resize-pane -x/-y.");
+		xasprintf(&text,
+		    "Choose the appropriate tmux resize-pane direction explicitly for the "
+		    "pane layout; requested Screen amount was '%s'.",
+		    argv[0]);
+		screen_compat_approx(
+		    "Screen resize changes a display-region boundary according to "
+		    "Screen's region orientation; mapping '+/-' to a fixed tmux direction "
+		    "would be wrong.",
+
+		    text);
+	}
+	if (strcmp(name, "redisplay") == 0)
+		screen_compat_approx(
+		    "Screen redisplay acts on a particular attached Display; a Screen "
+		    "session selector does not identify one unique tmux client when "
+		    "several clients are attached.",
+
+		    "From the intended tmux client use: tmux refresh-client. Otherwise "
+		    "choose a concrete client from 'tmux list-clients -t SESSION' and use "
+		    "refresh-client -t CLIENT.");
+	if (strcmp(name, "detach") == 0)
+		screen_compat_approx(
+		    "Screen's internal detach command requires one concrete Display and "
+		    "detaches that Display only; tmux detach-client -s SESSION would "
+		    "detach every client attached to the session.",
+
+		    "From the intended tmux client use: tmux detach-client. Otherwise "
+		    "identify one client with tmux list-clients -t SESSION and use tmux "
+		    "detach-client -t CLIENT.");
+	if (strcmp(name, "pow_detach") == 0)
+		screen_compat_approx(
+		    "Screen's internal pow_detach acts on one concrete Display and also "
+		    "signals that attacher's parent; a session-wide tmux detach would "
+		    "broaden the operation.",
+
+		    "From the intended client use tmux detach-client -P, or select one "
+		    "concrete client and use tmux detach-client -P -t CLIENT.");
+	if (strcmp(name, "suspend") == 0)
+		screen_compat_approx(
+		    "Screen suspend operates on the invoking/selected Display; an "
+		    "external Screen session selector does not uniquely identify a tmux "
+		    "client.",
+
+		    "From the intended tmux client use: tmux suspend-client. Otherwise "
+		    "choose a concrete target-client explicitly.");
+	if (strcmp(name, "quit") == 0) {
+		if (sc->session == NULL || *sc->session == '\0')
+			screen_compat_unsupported(
+			    "Screen 'quit' kills its one Screen session, while tmux may hold "
+			    "many sessions in one server.",
+
+			    "Specify screen -S name -X quit so it can map to tmux kill-session "
+			    "-t name; use tmux kill-server only if you truly want every tmux "
+			    "session.");
+		screen_compat_cmd_add(&cmd, "kill-session");
+		screen_compat_cmd_add(&cmd, "-t");
+		screen_compat_cmd_add(&cmd, sc->session);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "lockscreen") == 0) {
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "lock-session");
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+			xasprintf(&text,
+			    "Executing the closest selectable substitute with that broader "
+			    "scope: tmux lock-session -t %s.",
+			    sc->session);
+			screen_compat_approx_exec(sc,
+			    "Screen lockscreen locks one Screen display; tmux lock-session locks "
+			    "every client attached to the selected tmux session.",
+			    text, &cmd);
+		} else {
+			screen_compat_cmd_add(&cmd, "lock-client");
+			screen_compat_approx_exec(sc,
+			    "Screen lockscreen locks the current Screen display; tmux "
+			    "lock-client locks the current tmux client.",
+
+			    "Executing the closest current-client substitute: tmux lock-client.",
+			    &cmd);
+		}
+	}
+	if (strcmp(name, "sessionname") == 0) {
+		if (argc == 0)
+			screen_compat_invalid(
+			    "sessionname requires a new name in shell translation");
+		name_tmux = screen_compat_format_literal(argv[0]);
+		screen_compat_cmd_add(&cmd, "rename-session");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+		}
+		screen_compat_cmd_add(&cmd, name_tmux);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "hardcopy") == 0) {
+		int history = 0;
+		const char *file = NULL;
+		if (argc > 0 && strcmp(argv[0], "-h") == 0) {
+			history = 1;
+			argc--;
+			argv++;
+		}
+		if (argc > 0)
+			file = argv[0];
+		if (target != NULL) {
+			quoted = screen_compat_quote(target);
+			xasprintf(&text, history ?
+			    "tmux capture-pane -p -S - -t %s" :
+			    "tmux capture-pane -p -t %s", quoted);
+		} else
+			text = xstrdup(history ? "tmux capture-pane -p -S -" :
+			    "tmux capture-pane -p");
+		if (file != NULL && *file != '\0') {
+			quoted = screen_compat_quote(file);
+			xasprintf(&text2, "Closest substitute: %s > %s.", text, quoted);
+			screen_compat_approx(
+			    "Screen hardcopy and tmux capture-pane are close but not "
+			    "byte-for-byte equivalent in whitespace/history/rendering details, "
+			    "so automatic execution could change saved output.",
+			    text2);
+		}
+		screen_compat_unsupported(
+		    "Screen hardcopy without a filename writes to Screen's hardcopy "
+		    "naming convention; tmux capture-pane normally writes to stdout.",
+
+		    "Use an explicit file with tmux capture-pane -p > file after "
+		    "reviewing the formatting differences.");
+	}
+	if (strcmp(name, "scrollback") == 0) {
+		if (argc == 0)
+			screen_compat_invalid("scrollback requires a line count");
+		screen_compat_unsupported(
+		    "Changing Screen scrollback on an existing window does not map "
+		    "exactly to tmux history-limit for an already-created pane.",
+
+		    "Set tmux history-limit before pane creation (usually in tmux.conf).");
+	}
+	if (strcmp(name, "readbuf") == 0 || strcmp(name, "writebuf") == 0) {
+		if (argc == 0)
+			screen_compat_invalid(strcmp(name, "readbuf") == 0 ?
+			    "readbuf requires a filename for noninteractive translation" :
+			    "writebuf requires a filename for noninteractive translation");
+		xasprintf(&text, "screen2tmux:%s:copy",
+		    sc->session != NULL && *sc->session != '\0' ? sc->session : "default");
+		screen_compat_cmd_add(&cmd, strcmp(name, "readbuf") == 0 ?
+		    "load-buffer" : "save-buffer");
+		screen_compat_cmd_add(&cmd, "-b");
+		screen_compat_cmd_add(&cmd, text);
+		screen_compat_cmd_add(&cmd, argv[0]);
+		if (strcmp(name, "readbuf") == 0) {
+			xasprintf(&text2,
+			    "Executing with a session-namespaced tmux buffer: tmux load-buffer "
+			    "-b %s '%s'.",
+			    text, argv[0]);
+			screen_compat_approx_exec(sc,
+			    "Screen readbuf loads the current Screen user's copy buffer inside "
+			    "one Screen backend; tmux paste buffers are shared by the entire "
+			    "tmux server.",
+			    text2, &cmd);
+		} else {
+			xasprintf(&text2,
+			    "Executing with the same session-namespaced compatibility buffer: "
+			    "tmux save-buffer -b %s '%s'.",
+			    text, argv[0]);
+			screen_compat_approx_exec(sc,
+			    "Screen writebuf writes the current Screen user's copy buffer; tmux "
+			    "paste buffers are server-wide and shared by the entire tmux server.",
+			    text2, &cmd);
+		}
+	}
+	if (strcmp(name, "removebuf") == 0)
+		screen_compat_unsupported(
+		    "Screen removebuf deletes Screen's exchange file (BufferFile); it "
+		    "does not delete the in-memory copy buffer, so tmux delete-buffer "
+		    "would perform a different operation.",
+
+		    "If you intended to remove Screen's exchange file, remove that file "
+		    "explicitly. If you intended to clear a tmux paste buffer, use tmux "
+		    "delete-buffer deliberately.");
+	if (strcmp(name, "register") == 0) {
+		if (argc < 2)
+			screen_compat_invalid("register requires a register name and string");
+		xasprintf(&text, "screen2tmux:%s:reg:%s",
+		    sc->session != NULL && *sc->session != '\0' ? sc->session : "default",
+		    argv[0]);
+		joined = screen_compat_join(argc - 1, argv + 1);
+		screen_compat_cmd_add(&cmd, "set-buffer");
+		screen_compat_cmd_add(&cmd, "-b");
+		screen_compat_cmd_add(&cmd, text);
+		screen_compat_cmd_add(&cmd, joined);
+		xasprintf(&text2,
+		    "Executing with a session-namespaced tmux buffer: tmux set-buffer -b "
+		    "%s TEXT.",
+		    text);
+		screen_compat_approx_exec(sc,
+		    "Screen named registers belong to the Screen backend, while tmux "
+		    "named paste buffers are server-wide and can collide with unrelated "
+		    "sessions.",
+		    text2, &cmd);
+	}
+	if (strcmp(name, "paste") == 0) {
+		if (argc == 0)
+			screen_compat_unsupported(
+			    "Screen paste with no register argument enters Screen's interactive "
+			    "register prompt; tmux paste-buffer immediately pastes a server-wide "
+			    "buffer, so the previous mapping was not equivalent.",
+
+			    "Specify the intended Screen register and translate it to a "
+			    "session-namespaced tmux buffer, or enter tmux "
+			    "copy-mode/paste-buffer explicitly.");
+		screen_compat_approx(
+		    "Screen paste can concatenate Screen registers/copy buffers with "
+		    "Screen-specific encoding semantics; tmux paste-buffer uses "
+		    "server-wide named buffers and a different model.",
+
+		    "Translate the requested registers into session-namespaced tmux "
+		    "buffers and paste the intended buffer explicitly.");
+	}
+	if (strcmp(name, "copy") == 0) {
+		screen_compat_cmd_add(&cmd, "copy-mode");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "log") == 0) {
+		value = argc > 0 ? argv[0] : "";
+		if (strcmp(value, "on") == 0) {
+			screen_compat_cmd_add(&cmd, "pipe-pane");
+			screen_compat_cmd_add(&cmd, "-o");
+			if (target != NULL) {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, target);
+			}
+			screen_compat_cmd_add(&cmd, "cat >>screenlog.#{window_index}");
+			if (target != NULL)
+				xasprintf(&text,
+				    "Executing the closest default-policy substitute: tmux pipe-pane -o "
+				    "-t %s 'cat >>screenlog.#{window_index}'. If the Screen session "
+				    "used a custom logfile pattern, choose that destination explicitly.",
+				    target);
+			else
+				text = xstrdup(
+				    "Executing the closest default-policy substitute: tmux pipe-pane -o "
+				    "'cat >>screenlog.#{window_index}'. If the Screen session used a "
+				    "custom logfile pattern, choose that destination explicitly.");
+			screen_compat_approx_exec(sc,
+			    "Screen 'log on' uses Screen's configured logfile policy; tmux "
+			    "pipe-pane is a general pane-output pipe and cannot recover a Screen "
+			    "logfile pattern configured in an earlier Screen process.",
+			    text, &cmd);
+		}
+		if (strcmp(value, "off") == 0) {
+			screen_compat_cmd_add(&cmd, "pipe-pane");
+			if (target != NULL) {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, target);
+				xasprintf(&text,
+				    "Executing tmux pipe-pane -t %s. This may also close a non-logging "
+				    "pipe installed by other tmux configuration.",
+				    target);
+			} else
+				text = xstrdup(
+				    "Executing tmux pipe-pane. This may also close a non-logging pipe "
+				    "installed by other tmux configuration.");
+			screen_compat_approx_exec(sc,
+			    target != NULL ?
+			    "Screen 'log off' disables Screen's logger; tmux pipe-pane without a "
+			    "command closes whatever output pipe the pane currently has." :
+			    "Screen 'log off' disables Screen's logger; tmux pipe-pane without a "
+			    "command closes whatever output pipe the current pane has.",
+
+			    text, &cmd);
+		}
+		screen_compat_invalid("log expects on or off in shell translation");
+	}
+	if (strcmp(name, "logfile") == 0)
+		screen_compat_unsupported(
+		    "Screen has a built-in logfile naming/flush subsystem; tmux logging "
+		    "is implemented with pipe-pane to an external process.",
+
+		    "Use tmux pipe-pane -o 'cat >>file'; put tmux format variables such "
+		    "as #{session_name}, #{window_index}, and #{pane_index} in the shell "
+		    "command.");
+	if (strcmp(name, "logtstamp") == 0)
+		screen_compat_unsupported(
+		    "Screen can insert inactivity timestamps into its built-in logs; tmux "
+		    "has no equivalent logging filter.",
+
+		    "Pipe the pane through an external timestamping program using tmux "
+		    "pipe-pane.");
+	if (strcmp(name, "monitor") == 0) {
+		state = argc > 0 ? argv[0] : "on";
+		if (strcmp(state, "on") != 0 && strcmp(state, "off") != 0)
+			screen_compat_invalid("monitor expects on/off");
+		screen_compat_cmd_add(&cmd, "set-option");
+		screen_compat_cmd_add(&cmd, target != NULL ? "-wt" : "-w");
+		if (target != NULL)
+			screen_compat_cmd_add(&cmd, target);
+		screen_compat_cmd_add(&cmd, "monitor-activity");
+		screen_compat_cmd_add(&cmd, state);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "silence") == 0) {
+		value = argc > 0 ? argv[0] : "on";
+		if (strcmp(value, "off") == 0)
+			value = "0";
+		else if (strcmp(value, "on") == 0)
+			value = "30";
+		for (i = 0; value[i] != '\0'; i++) {
+			if (value[i] < '0' || value[i] > '9')
+				screen_compat_invalid("silence expects on/off/seconds");
+		}
+		screen_compat_cmd_add(&cmd, "set-option");
+		screen_compat_cmd_add(&cmd, target != NULL ? "-wt" : "-w");
+		if (target != NULL)
+			screen_compat_cmd_add(&cmd, target);
+		screen_compat_cmd_add(&cmd, "monitor-silence");
+		screen_compat_cmd_add(&cmd, value);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "vbell") == 0) {
+		if (argc == 0 || (strcmp(argv[0], "on") != 0 &&
+		    strcmp(argv[0], "off") != 0))
+			screen_compat_invalid("vbell expects on/off");
+		screen_compat_cmd_add(&cmd, "set-option");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+		} else
+			screen_compat_cmd_add(&cmd, "-g");
+		screen_compat_cmd_add(&cmd, "visual-bell");
+		screen_compat_cmd_add(&cmd, argv[0]);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "source") == 0) {
+		if (argc == 0)
+			screen_compat_invalid("source requires a filename");
+		screen_compat_unsupported(
+		    "Screen 'source' reads Screen command syntax, which tmux source-file "
+		    "cannot parse.",
+
+		    "Translate the screenrc fragment to tmux.conf syntax first, then use "
+		    "tmux source-file on the translated file.");
+	}
+	if (strcmp(name, "setenv") == 0) {
+		if (argc < 2)
+			screen_compat_invalid(
+			    "setenv requires NAME VALUE in noninteractive translation");
+		joined = screen_compat_join(argc - 1, argv + 1);
+		screen_compat_cmd_add(&cmd, "set-environment");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+		}
+		screen_compat_cmd_add(&cmd, argv[0]);
+		screen_compat_cmd_add(&cmd, joined);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "unsetenv") == 0) {
+		if (argc == 0)
+			screen_compat_invalid("unsetenv requires NAME");
+		screen_compat_cmd_add(&cmd, "set-environment");
+		screen_compat_cmd_add(&cmd, "-u");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+		}
+		screen_compat_cmd_add(&cmd, argv[0]);
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "chdir") == 0)
+		screen_compat_unsupported(
+		    "Screen changes a backend-wide default directory for future windows; "
+		    "tmux normally chooses a directory at "
+		    "new-session/new-window/split-window time.",
+
+		    "Use tmux new-window -c DIR or split-window -c DIR.");
+	if (strcmp(name, "escape") == 0)
+		screen_compat_unsupported(
+		    "Screen 'escape' encodes both command and literal-prefix characters "
+		    "as a two-character pair; tmux exposes prefix and prefix2 as "
+		    "independent key options.",
+
+		    "Use tmux set-option prefix KEY and, if desired, set-option prefix2 "
+		    "KEY.");
+	if (strcmp(name, "bind") == 0) {
+		if (argc < 2)
+			screen_compat_invalid("bind requires key and command");
+		if (strcmp(argv[1], "screen") == 0 || strcmp(argv[1], "kill") == 0) {
+			screen_compat_cmd_add(&cmd, "bind-key");
+			screen_compat_cmd_add(&cmd, argv[0]);
+			screen_compat_cmd_add(&cmd, strcmp(argv[1], "screen") == 0 ?
+			    "new-window" : "kill-window");
+			xasprintf(&text,
+			    "Executing the closest substitute with that broader scope: tmux "
+			    "bind-key %s %s.",
+
+			    argv[0], strcmp(argv[1], "screen") == 0 ? "new-window" : "kill-window");
+			screen_compat_approx_exec(sc,
+			    "Screen key bindings belong to one Screen backend/session; tmux key "
+			    "tables are server-wide, so bind-key can affect unrelated tmux "
+			    "sessions.",
+
+			    text, &cmd);
+		}
+		xasprintf(&text,
+		    "Screen bind command '%s' is valid but command-name/argument "
+		    "translation is not automatically safe.",
+		    argv[1]);
+		screen_compat_unsupported(text,
+		    "Bind the corresponding tmux command explicitly with tmux bind-key "
+		    "after reviewing server-wide scope.");
+	}
+	if (strcmp(name, "unbindall") == 0) {
+		screen_compat_cmd_add(&cmd, "unbind-key");
+		screen_compat_cmd_add(&cmd, "-a");
+		screen_compat_approx_exec(sc,
+		    "Screen unbindall affects only the current Screen backend/session, "
+		    "while tmux unbind-key -a removes bindings from the server-wide key "
+		    "table.",
+
+		    "Executing tmux unbind-key -a with that broader scope.", &cmd);
+	}
+	if (strcmp(name, "truecolor") == 0) {
+		if (argc == 0)
+			screen_compat_invalid("truecolor expects on/off");
+		if (strcmp(argv[0], "on") == 0)
+			screen_compat_approx(
+			    "Screen truecolor toggles Screen's handling, while tmux "
+			    "terminal-features is server/terminal-capability configuration.",
+
+			    "If detection is wrong, use tmux set-option -as terminal-features "
+			    "',TERM:RGB' for the actual terminal type rather than '*'.");
+		if (strcmp(argv[0], "off") == 0)
+			screen_compat_unsupported(
+			    "Removing RGB from tmux terminal feature detection globally is not a "
+			    "safe equivalent of Screen truecolor off.",
+
+			    "Override terminal-features/terminal-overrides for the specific "
+			    "client terminal if required.");
+		screen_compat_invalid("truecolor expects on/off");
+	}
+	if (strcmp(name, "altscreen") == 0) {
+		if (argc == 0 || (strcmp(argv[0], "on") != 0 && strcmp(argv[0], "off") != 0))
+			screen_compat_invalid("altscreen expects on/off");
+		screen_compat_cmd_add(&cmd, "set-option");
+		screen_compat_cmd_add(&cmd, "-w");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+			xasprintf(&text,
+			    "Executing the closest selected-window substitute: tmux set-option "
+			    "-w -t %s alternate-screen %s.",
+			    target, argv[0]);
+		} else
+			xasprintf(&text,
+			    "Executing the closest current-window substitute: tmux set-option -w "
+			    "alternate-screen %s.",
+			    argv[0]);
+		screen_compat_cmd_add(&cmd, "alternate-screen");
+		screen_compat_cmd_add(&cmd, argv[0]);
+		screen_compat_approx_exec(sc,
+		    target != NULL ?
+		    "Screen altscreen changes one backend-wide use_altscreen switch; tmux "
+		    "alternate-screen is a window option, so this affects only the "
+		    "selected/current tmux window rather than all Screen windows." :
+		    "Screen altscreen changes one backend-wide use_altscreen switch; tmux "
+		    "alternate-screen is a window option, so this affects only the "
+		    "current tmux window rather than all Screen windows.",
+
+		    text, &cmd);
+	}
+	if (strcmp(name, "reset") == 0) {
+		screen_compat_cmd_add(&cmd, "send-keys");
+		screen_compat_cmd_add(&cmd, "-R");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+	if (strcmp(name, "encoding") == 0 || strcmp(name, "kanji") == 0 ||
+	    strcmp(name, "charset") == 0 || strcmp(name, "gr") == 0 ||
+	    strcmp(name, "c1") == 0) {
+		quoted = screen_compat_quote(name);
+		xasprintf(&text,
+		    "Screen provides legacy encoding/ISO-2022 translation ('%s'); tmux "
+		    "intentionally uses a modern UTF-8-oriented terminal model.",
+		    quoted);
+		screen_compat_unsupported(text,
+		    "Use UTF-8 applications, or an external transcoder such as luit/iconv "
+		    "when legacy encodings are unavoidable.");
+	}
+	if (strcmp(name, "hardstatus") == 0) {
+		value = argc > 0 ? argv[0] : "";
+		if (strcmp(value, "on") == 0 || strcmp(value, "off") == 0) {
+			screen_compat_cmd_add(&cmd, "set-option");
+			if (sc->session != NULL && *sc->session != '\0') {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, sc->session);
+				xasprintf(&text,
+				    "Executing the closest substitute: tmux set-option -t %s status %s.",
+				    sc->session, value);
+			} else
+				xasprintf(&text,
+				    "Executing the closest substitute: tmux set-option status %s.",
+				    value);
+			screen_compat_cmd_add(&cmd, "status");
+			screen_compat_cmd_add(&cmd, value);
+			screen_compat_approx_exec(sc,
+			    "Screen hardstatus and tmux status lines overlap in purpose but are "
+			    "not the same terminal facility.",
+			    text, &cmd);
+		}
+		if (strcmp(value, "alwayslastline") == 0 ||
+		    strcmp(value, "lastline") == 0 ||
+		    strcmp(value, "alwaysfirstline") == 0 ||
+		    strcmp(value, "firstline") == 0) {
+			const char *position = (strstr(value, "first") != NULL) ? "top" : "bottom";
+			screen_compat_cmd_add(&cmd, "set-option");
+			if (sc->session != NULL && *sc->session != '\0') {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, sc->session);
+				xasprintf(&text,
+				    "Executing the closest substitute: tmux set-option -t %s "
+				    "status-position %s.",
+				    sc->session, position);
+			} else
+				xasprintf(&text,
+				    "Executing the closest substitute: tmux set-option status-position "
+				    "%s.",
+				    position);
+			screen_compat_cmd_add(&cmd, "status-position");
+			screen_compat_cmd_add(&cmd, position);
+			screen_compat_approx_exec(sc,
+			    "Screen hardstatus placement maps only approximately to tmux's "
+			    "status line.",
+			    text, &cmd);
+		}
+		screen_compat_unsupported(
+		    "Screen hardstatus has physical-hardstatus and formatting modes that "
+		    "do not map one-to-one.",
+
+		    "Use tmux status, status-position, status-left, status-right and "
+		    "status-format options.");
+	}
+	if (strcmp(name, "caption") == 0) {
+		value = argc > 0 ? argv[0] : "";
+		if (strcmp(value, "always") == 0) {
+			screen_compat_cmd_add(&cmd, "set-option");
+			screen_compat_cmd_add(&cmd, "-w");
+			if (target != NULL) {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, target);
+				xasprintf(&text,
+				    "Executing the closest substitute for the selected tmux window: "
+				    "tmux set-option -w -t %s pane-border-status bottom.",
+				    target);
+			} else if (sc->session != NULL && *sc->session != '\0') {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, sc->session);
+				xasprintf(&text,
+				    "Executing the closest substitute for the session's current window: "
+				    "tmux set-option -w -t %s pane-border-status bottom.",
+				    sc->session);
+			} else
+				text = xstrdup(
+				    "Executing the closest substitute for the current window: tmux "
+				    "set-option -w pane-border-status bottom.");
+			screen_compat_cmd_add(&cmd, "pane-border-status");
+			screen_compat_cmd_add(&cmd, "bottom");
+			screen_compat_approx_exec(sc,
+			    "Screen captions label display regions; tmux pane-border-status "
+			    "labels pane borders. They are visually similar but attach to "
+			    "different objects.",
+			    text, &cmd);
+		}
+		if (strcmp(value, "splitonly") == 0)
+			screen_compat_unsupported(
+			    "Screen can enable captions only when a display has multiple "
+			    "regions; tmux has no identical split-only pane-border-status mode.",
+
+			    "Use pane-border-status plus a format condition, or a hook/script, "
+			    "if conditional display is important.");
+		screen_compat_unsupported(
+		    "Screen caption syntax does not map one-to-one to tmux pane-border "
+		    "formatting.",
+
+		    "Use pane-border-status and pane-border-format.");
+	}
+	if (strcmp(name, "multiuser") == 0)
+		screen_compat_unsupported(
+		    "Screen toggles an internal multiuser mode; tmux cross-user access is "
+		    "controlled by its server socket plus server-access.",
+
+		    "Grant/revoke a specific OS user with tmux server-access and ensure "
+		    "socket filesystem permissions allow connection.");
+	if (strcmp(name, "acladd") == 0 || strcmp(name, "addacl") == 0) {
+		if (argc < 1) {
+			xasprintf(&text, "%s requires a user", name);
+			screen_compat_invalid(text);
+		}
+		screen_compat_cmd_add(&cmd, "server-access");
+		screen_compat_cmd_add(&cmd, "-a");
+		screen_compat_cmd_add(&cmd, argv[0]);
+		xasprintf(&text,
+		    "Executing the closest substitute with that broader scope: tmux "
+		    "server-access -a %s.",
+		    argv[0]);
+		screen_compat_approx_exec(sc,
+		    "Screen ACL access is scoped to one Screen session and can be refined "
+		    "per command/window; tmux server-access grants access at the entire "
+		    "tmux server level.",
+		    text, &cmd);
+	}
+	if (strcmp(name, "acldel") == 0) {
+		if (argc < 1)
+			screen_compat_invalid("acldel requires a user");
+		screen_compat_cmd_add(&cmd, "server-access");
+		screen_compat_cmd_add(&cmd, "-d");
+		screen_compat_cmd_add(&cmd, argv[0]);
+		xasprintf(&text,
+		    "Executing the closest substitute with that broader scope: tmux "
+		    "server-access -d %s.",
+		    argv[0]);
+		screen_compat_approx_exec(sc,
+		    "Screen acldel removes a user from one Screen session; tmux "
+		    "server-access revokes access to the entire tmux server.",
+		    text, &cmd);
+	}
+	if (strcmp(name, "aclchg") == 0 || strcmp(name, "chacl") == 0 ||
+	    strcmp(name, "aclgrp") == 0 || strcmp(name, "aclumask") == 0 ||
+	    strcmp(name, "umask") == 0 || strcmp(name, "writelock") == 0 ||
+	    strcmp(name, "auth") == 0 || strcmp(name, "su") == 0) {
+		xasprintf(&text,
+		    "Screen's ACL/authentication operation '%s' has finer or different "
+		    "semantics than tmux server-access/read-only clients.",
+		    name);
+		screen_compat_unsupported(text,
+		    "Use tmux server-access, Unix socket permissions, and read-only "
+		    "clients where appropriate; there is no exact per-command/per-window "
+		    "Screen ACL equivalent.");
+	}
+	if (strcmp(name, "break") == 0 || strcmp(name, "breaktype") == 0 ||
+	    strcmp(name, "pow_break") == 0 || strcmp(name, "flow") == 0 ||
+	    strcmp(name, "console") == 0) {
+		xasprintf(&text,
+		    "Screen includes direct serial/device functionality for '%s'; tmux "
+		    "panes always contain PTYs and tmux has no built-in serial-device "
+		    "control layer.",
+		    name);
+		screen_compat_external(text,
+		    "Run picocom, cu, minicom, tio, or another serial application inside "
+		    "a tmux pane and use that program's serial controls.");
+	}
+	if (strcmp(name, "zmodem") == 0)
+		screen_compat_unsupported(
+		    "Screen has built-in ZMODEM interception/pass-through policy; tmux "
+		    "does not.",
+
+		    "Run rz/sz or terminal/file-transfer tooling externally and leave "
+		    "tmux as the PTY multiplexer.");
+	if (strcmp(name, "displays") == 0) {
+		if (sc->session == NULL || *sc->session == '\0')
+			screen_compat_approx(
+			    "Screen displays lists Displays attached to its one Screen backend; "
+			    "a tmux server may contain clients for many sessions.",
+
+			    "Choose a tmux session explicitly, then use tmux list-clients -t "
+			    "SESSION.");
+		screen_compat_cmd_add(&cmd, "list-clients");
+		screen_compat_cmd_add(&cmd, "-t");
+		screen_compat_cmd_add(&cmd, sc->session);
+		xasprintf(&text,
+		    "Executing the closest substitute: tmux list-clients -t %s",
+		    sc->session);
+		screen_compat_approx_exec(sc,
+		    "Screen displays lists Displays attached to one Screen session; tmux "
+		    "list-clients can be scoped to that session but uses different output "
+		    "fields and formatting.",
+		    text, &cmd);
+	}
+	if (strcmp(name, "dinfo") == 0) {
+		screen_compat_cmd_add(&cmd, "list-clients");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+		}
+		screen_compat_cmd_add(&cmd, "-F");
+		screen_compat_cmd_add(&cmd,
+		    "#{client_name} #{client_tty} #{client_width}x#{client_height} "
+		    "#{client_termname}");
+		if (sc->session != NULL && *sc->session != '\0')
+			xasprintf(&text,
+			    "Executing a useful client summary for every client on the selected "
+			    "session: tmux list-clients -t %s -F '#{client_name} #{client_tty} "
+			    "#{client_width}x#{client_height} #{client_termname}'.",
+			    sc->session);
+		else
+			text = xstrdup(
+			    "Executing a useful tmux client summary: tmux list-clients -F "
+			    "'#{client_name} #{client_tty} #{client_width}x#{client_height} "
+			    "#{client_termname}'.");
+		screen_compat_approx_exec(sc,
+		    sc->session != NULL && *sc->session != '\0' ?
+		    "Screen dinfo reports one particular Screen Display; a tmux session "
+		    "may have multiple clients with different terminal/display state." :
+		    "Screen dinfo reports one particular Screen Display; tmux may have "
+		    "multiple clients with different terminal/display state.",
+
+		    text, &cmd);
+	}
+	if (strcmp(name, "windows") == 0) {
+		screen_compat_cmd_add(&cmd, "list-windows");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, sc->session);
+			xasprintf(&text,
+			    "Executing the closest substitute: tmux list-windows -t %s.",
+			    sc->session);
+		} else
+			text = xstrdup("Executing the closest substitute: tmux list-windows.");
+		screen_compat_approx_exec(sc,
+		    "Screen windows uses Screen-specific formatting/flags; tmux "
+		    "list-windows is functionally similar but not output-compatible.",
+		    text, &cmd);
+	}
+	if (strcmp(name, "help") == 0) {
+		screen_compat_cmd_add(&cmd, "list-keys");
+		screen_compat_approx_exec(sc,
+		    "Screen help renders Screen's current command-class bindings; tmux "
+		    "list-keys renders tmux's server-wide key tables with different "
+		    "command names and formatting.",
+
+		    "Executing the closest substitute: tmux list-keys.", &cmd);
+	}
+	if (strcmp(name, "info") == 0) {
+		screen_compat_cmd_add(&cmd, "display-message");
+		screen_compat_cmd_add(&cmd, "-p");
+		if (target != NULL) {
+			screen_compat_cmd_add(&cmd, "-t");
+			screen_compat_cmd_add(&cmd, target);
+		}
+		screen_compat_cmd_add(&cmd,
+		    "#{session_name}:#{window_index}.#{pane_index} "
+		    "#{pane_width}x#{pane_height} #{pane_current_command}");
+		screen_compat_approx_exec(sc,
+		    "Screen info emits a Screen-specific window/display status summary; "
+		    "tmux has no byte-compatible equivalent.",
+
+		    "Executing a useful tmux status summary with explicit format "
+		    "variables.",
+		    &cmd);
+	}
+	if (strcmp(name, "lastmsg") == 0) {
+		screen_compat_cmd_add(&cmd, "show-messages");
+		screen_compat_approx_exec(sc,
+		    "Screen lastmsg reports one Screen message; tmux show-messages "
+		    "reports a differently formatted message history.",
+
+		    "Executing tmux show-messages; select the desired entry explicitly if "
+		    "exact single-message behavior matters.",
+		    &cmd);
+	}
+	if (strcmp(name, "version") == 0)
+		screen_compat_unsupported(
+		    "Screen's internal version command reports Screen's version/status "
+		    "text; tmux -V reports tmux and is not an equivalent command result.",
+
+		    "Use the native Screen command when Screen version output is "
+		    "required, or tmux -V explicitly for tmux's version.");
+	if (strcmp(name, "license") == 0)
+		screen_compat_unsupported(
+		    "Screen has an interactive license command; tmux does not expose its "
+		    "license text as a runtime command.",
+
+		    "Read tmux's COPYING file from the source/package.");
+	if (strcmp(name, "layout") == 0) {
+		value = argc > 0 ? argv[0] : "";
+		if (strcmp(value, "next") == 0 || strcmp(value, "prev") == 0) {
+			screen_compat_cmd_add(&cmd,
+			    strcmp(value, "next") == 0 ? "next-layout" : "previous-layout");
+			screen_compat_approx_exec(sc,
+			    strcmp(value, "next") == 0 ?
+			    "Screen 'layout next' switches among saved display-region layouts; "
+			    "tmux next-layout cycles pane-layout algorithms/history, not Screen "
+			    "layout objects." :
+			    "Screen 'layout prev' switches among saved display-region layouts; "
+			    "tmux previous-layout operates on pane layouts.",
+
+			    strcmp(value, "next") == 0 ?
+			    "Executing the closest visual substitute: tmux next-layout." :
+			    "Executing the closest visual substitute: tmux previous-layout.", &cmd);
+		}
+		if (strcmp(value, "show") == 0) {
+			screen_compat_cmd_add(&cmd, "display-message");
+			screen_compat_cmd_add(&cmd, "-p");
+			if (target != NULL) {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, target);
+				xasprintf(&text,
+				    "Executing the closest inspection command: tmux display-message -p "
+				    "-t %s '#{window_layout}'.",
+				    target);
+			} else
+				text = xstrdup(
+				    "Executing the closest inspection command: tmux display-message -p "
+				    "'#{window_layout}'.");
+			screen_compat_cmd_add(&cmd, "#{window_layout}");
+			screen_compat_approx_exec(sc,
+			    "Screen 'layout show' reports the selected saved Screen layout; tmux "
+			    "exposes current pane geometry as an encoded layout string.",
+			    text, &cmd);
+		}
+		if (strcmp(value, "select") == 0) {
+			if (argc < 2)
+				screen_compat_invalid("layout select requires a layout");
+			screen_compat_cmd_add(&cmd, "select-layout");
+			if (target != NULL) {
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, target);
+				xasprintf(&text,
+				    "Executing tmux select-layout -t %s '%s'; this works only when the "
+				    "Screen layout argument is meaningful to tmux.",
+				    target, argv[1]);
+			} else
+				xasprintf(&text,
+				    "Executing tmux select-layout '%s'; this works only when the Screen "
+				    "layout argument is meaningful to tmux.",
+				    argv[1]);
+			screen_compat_cmd_add(&cmd, argv[1]);
+			screen_compat_approx_exec(sc,
+			    "Screen selects a saved named/numbered display layout; tmux "
+			    "select-layout selects a pane layout name or encoded geometry.",
+			    text, &cmd);
+		}
+		screen_compat_unsupported(
+		    "Screen has persistent named/numbered layout objects; tmux has "
+		    "current/encoded pane layouts but not the same saved-layout "
+		    "collection.",
+
+		    "Use #{window_layout} to capture an encoded tmux layout and "
+		    "select-layout to restore it, or store names in user options/scripts.");
+	}
+
+	if (screen_compat_known_internal(name)) {
+		xasprintf(&text,
+		    "Screen command '%s' is valid/recognized but has no safe automatic "
+		    "mapping implemented in screen-to-tmux-translator %s.",
+
+		    name, SCREEN_COMPAT_VERSION);
+		screen_compat_unsupported(text,
+		    "Use 'tmux list-commands' and the project cross-reference to select "
+		    "the closest tmux operation.");
+	}
+	xasprintf(&text, "unknown Screen command '%s'", name);
+	screen_compat_invalid(text);
+}
+
+static void
+screen_compat_parse(struct screen_compat *sc)
+{
+	struct screen_compat_cmd	 cmd;
+	char			*text, *text2, *session_tmux;
+	char			*title_tmux, *filter, *helper_argv[5];
+	const char		*arg, *opt, *rest, *tmux, *unique;
+	const char		*host, *port, *dev, *baud;
+	int			 i, remaining, new_detached;
+
+	while (sc->pos < sc->argc) {
+		arg = sc->argv[sc->pos];
+		if (strcmp(arg, "--") == 0) {
+			sc->pos++;
+			break;
+		}
+		if (strcmp(arg, "--help") == 0) {
+			screen_compat_help();
+			exit(0);
+		}
+		if (strcmp(arg, "--version") == 0)
+			screen_compat_unsupported(
+			    "Screen --version reports the GNU Screen version; tmux -V reports a "
+			    "different program and cannot preserve that result.",
+
+			    "Run the native Screen binary for Screen's version, or tmux -V "
+			    "explicitly for tmux's version.");
+		if (strcmp(arg, "-list") == 0 || strcmp(arg, "-ls") == 0 ||
+		    strcmp(arg, "-wipe") == 0) {
+			sc->list = 1;
+			if (strcmp(arg, "-wipe") == 0)
+				sc->wipe = 1;
+			sc->pos++;
+			if (sc->pos < sc->argc && sc->argv[sc->pos][0] != '-')
+				sc->session = sc->argv[sc->pos++];
+			continue;
+		}
+		if (strcmp(arg, "-Logfile") == 0) {
+			sc->pos++;
+			if (sc->pos >= sc->argc)
+				screen_compat_invalid("-Logfile requires a filename");
+			sc->logfile = sc->argv[sc->pos++];
+			continue;
+		}
+		if (arg[0] == '-' && arg[1] != '\0') {
+			opt = arg + 1;
+			sc->pos++;
+			while (*opt != '\0') {
+				rest = opt + 1;
+				switch (*opt) {
+				case '4':
+				case '6':
+					sc->af = *opt - '0';
+					opt = rest;
+					break;
+				case 'a':
+					free(sc->unsupported_opt);
+					sc->unsupported_opt = xstrdup(
+					    "Screen -a capability-forcing has no exact tmux CLI equivalent");
+					opt = rest;
+					break;
+				case 'A':
+					sc->Aflag = 1;
+					opt = rest;
+					break;
+				case 'p':
+					if (*rest != '\0') {
+						sc->window = rest;
+						opt = rest + strlen(rest);
+					} else {
+						if (sc->pos >= sc->argc)
+							screen_compat_invalid("-p requires a window");
+						sc->window = sc->argv[sc->pos++];
+						opt = rest;
+					}
+					break;
+				case 'P':
+					free(sc->unsupported_opt);
+					sc->unsupported_opt = xstrdup(
+					    "Screen -P enables Screen-managed authentication; tmux uses Unix "
+					    "socket permissions/server-access");
+					opt = rest;
+					break;
+				case 'c':
+					if (*rest != '\0') {
+						sc->screenrc = rest;
+						opt = rest + strlen(rest);
+					} else {
+						if (sc->pos >= sc->argc)
+							screen_compat_invalid("-c requires a file");
+						sc->screenrc = sc->argv[sc->pos++];
+						opt = rest;
+					}
+					break;
+				case 'e':
+					if (*rest != '\0') {
+						sc->escape = rest;
+						opt = rest + strlen(rest);
+					} else {
+						if (sc->pos >= sc->argc)
+							screen_compat_invalid("-e requires two command characters");
+						sc->escape = sc->argv[sc->pos++];
+						opt = rest;
+					}
+					break;
+				case 'f':
+					if (*rest == '\0' || strcmp(rest, "n") == 0 ||
+					    strcmp(rest, "a") == 0 || strcmp(rest, "0") == 0 ||
+					    strcmp(rest, "1") == 0 || strcmp(rest, "y") == 0) {
+						free(sc->unsupported_opt);
+						xasprintf(&sc->unsupported_opt,
+						    "Screen flow-control option -f%s has no direct tmux equivalent",
+						    rest);
+						opt = rest + strlen(rest);
+					} else {
+						xasprintf(&text, "unknown Screen flow option -f%s", rest);
+						screen_compat_invalid(text);
+					}
+					break;
+				case 'h':
+					if (*rest != '\0')
+						screen_compat_invalid("-h requires its argument as the next word");
+					if (sc->pos >= sc->argc)
+						screen_compat_invalid("-h requires a history size");
+					sc->hist = sc->argv[sc->pos++];
+					opt = rest;
+					break;
+				case 'i':
+					free(sc->unsupported_opt);
+					sc->unsupported_opt = xstrdup(
+					    "Screen -i changes XON/XOFF interrupt behavior; tmux has no "
+					    "equivalent multiplexer policy");
+					opt = rest;
+					break;
+				case 't':
+					if (*rest != '\0')
+						screen_compat_invalid("-t requires its argument as the next word");
+					if (sc->pos >= sc->argc)
+						screen_compat_invalid("-t requires a title");
+					sc->title = sc->argv[sc->pos++];
+					opt = rest;
+					break;
+				case 'l':
+					if (strcmp(rest, "s") == 0 || strcmp(rest, "ist") == 0) {
+						sc->list = 1;
+						opt = rest + strlen(rest);
+					} else if (*rest == '\0' || strcmp(rest, "n") == 0 ||
+					    strcmp(rest, "0") == 0 || strcmp(rest, "y") == 0 ||
+					    strcmp(rest, "1") == 0 || strcmp(rest, "a") == 0) {
+						free(sc->unsupported_opt);
+						sc->unsupported_opt = xstrdup(
+						    "Screen login/utmp mode has no tmux pane equivalent");
+						opt = rest + strlen(rest);
+					} else {
+						xasprintf(&text, "unknown Screen -l suboption '%s'", rest);
+						screen_compat_invalid(text);
+					}
+					break;
+				case 'L':
+					if (strcmp(rest, "ogfile") == 0) {
+						if (sc->pos >= sc->argc)
+							screen_compat_invalid("-Logfile requires a filename");
+						sc->logfile = sc->argv[sc->pos++];
+						opt = rest + strlen(rest);
+					} else if (*rest == '\0') {
+						sc->log = 1;
+						opt = rest;
+					} else {
+						xasprintf(&text, "unknown Screen -L option '-L%s'", rest);
+						screen_compat_invalid(text);
+					}
+					break;
+				case 'm':
+					sc->mflag = 1;
+					opt = rest;
+					break;
+				case 'O':
+					free(sc->unsupported_opt);
+					sc->unsupported_opt = xstrdup(
+					    "Screen -O is a legacy VT100 output-compatibility mode; tmux uses "
+					    "terminfo/terminal-features instead");
+					opt = rest;
+					break;
+				case 'T':
+					if (*rest != '\0')
+						screen_compat_invalid("-T requires its argument as the next word");
+					if (sc->pos >= sc->argc)
+						screen_compat_invalid("-T requires TERM");
+					sc->term = sc->argv[sc->pos++];
+					opt = rest;
+					break;
+				case 'q':
+					sc->quiet = 1;
+					opt = rest;
+					break;
+				case 'Q':
+					sc->mode = 'Q';
+					opt = rest;
+					break;
+				case 'r':
+					sc->attach = 1;
+					sc->attach_strength++;
+					opt = rest;
+					break;
+				case 'R':
+					sc->attach = 1;
+					if (sc->attach_strength > 0)
+						sc->attach_strength = 2;
+					sc->attach_strength += 2;
+					opt = rest;
+					break;
+				case 'x':
+					sc->attach = 1;
+					sc->xflag = 1;
+					opt = rest;
+					break;
+				case 'd':
+					sc->detach = 1;
+					opt = rest;
+					break;
+				case 'D':
+					sc->detach = 2;
+					opt = rest;
+					break;
+				case 's':
+					if (*rest != '\0')
+						screen_compat_invalid("-s requires its argument as the next word");
+					if (sc->pos >= sc->argc)
+						screen_compat_invalid("-s requires a shell");
+					sc->shell = sc->argv[sc->pos++];
+					opt = rest;
+					break;
+				case 'S':
+					if (*rest != '\0')
+						screen_compat_invalid("-S requires its argument as the next word");
+					if (sc->pos >= sc->argc)
+						screen_compat_invalid("-S requires a session name");
+					sc->session = sc->argv[sc->pos++];
+					opt = rest;
+					break;
+				case 'X':
+					sc->mode = 'X';
+					opt = rest;
+					break;
+				case 'v':
+					screen_compat_unsupported(
+					    "Screen -v reports the GNU Screen version; tmux -V reports a "
+					    "different program and cannot preserve that result.",
+
+					    "Run the native Screen binary for Screen's version, or tmux -V "
+					    "explicitly for tmux's version.");
+				case 'U':
+					sc->Uflag = 1;
+					opt = rest;
+					break;
+				case 'w':
+					if (strcmp(rest, "ipe") == 0) {
+						sc->list = 1;
+						sc->wipe = 1;
+						opt = rest + strlen(rest);
+					} else {
+						xasprintf(&text, "unknown Screen option '-w%s'", rest);
+						screen_compat_invalid(text);
+					}
+					break;
+				default:
+					xasprintf(&text, "unknown Screen option '-%c'", *opt);
+					screen_compat_invalid(text);
+				}
+			}
+			continue;
+		}
+
+		remaining = sc->argc - sc->pos;
+		if ((sc->session == NULL || *sc->session == '\0') &&
+		    (sc->attach || (sc->detach > 0 && !sc->mflag && remaining == 1))) {
+			sc->session = sc->argv[sc->pos++];
+			continue;
+		}
+		break;
+	}
+
+	if (sc->unsupported_opt != NULL) {
+		xasprintf(&text, "%s.", sc->unsupported_opt);
+		screen_compat_unsupported(text,
+		    "Configure the corresponding tmux terminal/access behavior "
+		    "explicitly; the base Screen operation was not executed.");
+	}
+	if (sc->screenrc != NULL && *sc->screenrc != '\0') {
+		xasprintf(&text,
+		    "Translate '%s' to tmux.conf syntax first. Do not pass a screenrc "
+		    "directly to tmux -f.",
+		    sc->screenrc);
+		screen_compat_unsupported(
+		    "Screen -c reads Screen configuration syntax; tmux -f reads a "
+		    "different command language, so passing the same file to tmux is "
+		    "unsafe.",
+		    text);
+	}
+	arg = getenv("SCREENDIR");
+	if (arg != NULL && *arg != '\0')
+		screen_compat_unsupported(
+		    "SCREENDIR selects a directory containing Screen per-session sockets; "
+		    "tmux instead selects one server socket with -L name or -S path.",
+
+		    "Choose an explicit tmux server, for example: tmux -L myserver ... or "
+		    "tmux -S /path/to/socket ...");
+
+	remaining = sc->argc - sc->pos;
+	if (sc->mode == 'X') {
+		screen_compat_xcommand(sc, remaining, sc->argv + sc->pos);
+		return;
+	}
+	if (sc->mode == 'Q') {
+		screen_compat_query(sc, remaining, sc->argv + sc->pos);
+		return;
+	}
+
+	if (sc->wipe)
+		screen_compat_moot(
+		    "Screen -wipe cleans stale per-session socket records; tmux sessions "
+		    "are in-memory objects owned by one server and do not leave one stale "
+		    "socket per session.",
+
+		    "Use tmux list-sessions. Only clean up the tmux server socket itself "
+		    "if that server is actually dead.");
+	if (sc->list) {
+		screen_compat_cmd_init(&cmd);
+		if (sc->quiet) {
+			if (sc->session != NULL && *sc->session != '\0') {
+				if (screen_compat_session_selector_risky(sc->session))
+					screen_compat_approx(
+					    "Screen -q -ls matching uses Screen socket-name matching and "
+					    "special socket-count exit statuses; safely interpreting this "
+					    "selector as a tmux target is ambiguous.",
+
+					    "Choose an explicit tmux session target and use tmux has-session "
+					    "-t TARGET when a boolean existence test is sufficient.");
+				screen_compat_cmd_add(&cmd, "has-session");
+				screen_compat_cmd_add(&cmd, "-t");
+				screen_compat_cmd_add(&cmd, sc->session);
+				xasprintf(&text,
+				    "Executing the closest quiet existence check: tmux has-session -t "
+				    "%s.",
+				    sc->session);
+				screen_compat_approx_exec(sc,
+				    "Screen -q -ls suppresses output and returns Screen-specific "
+				    "socket-count status codes; tmux has-session is only a boolean "
+				    "exact-name existence test.",
+
+				    text, &cmd);
+			}
+			screen_compat_cmd_add(&cmd, "has-session");
+			screen_compat_approx_exec(sc,
+			    "Screen -q -ls suppresses output and returns Screen-specific "
+			    "socket-count status codes; tmux has-session is only a boolean test "
+			    "for a resolvable tmux session.",
+
+			    "Executing the closest quiet existence check: tmux has-session.", &cmd);
+		}
+		if (sc->session != NULL && *sc->session != '\0') {
+			if (screen_compat_session_selector_risky(sc->session))
+				screen_compat_approx(
+				    "Screen -ls/-list matching uses Screen socket-name matching, while "
+				    "safely embedding this selector in a tmux format filter is "
+				    "ambiguous.",
+
+				    "Choose a simple literal tmux session-name substring and run tmux "
+				    "list-sessions -f with an explicit filter.");
+			xasprintf(&filter, "#{m:*%s*,#{session_name}}", sc->session);
+			screen_compat_cmd_add(&cmd, "list-sessions");
+			screen_compat_cmd_add(&cmd, "-f");
+			screen_compat_cmd_add(&cmd, filter);
+			xasprintf(&text,
+			    "Executing the closest substitute: tmux list-sessions -f '%s'.",
+			    filter);
+			screen_compat_approx_exec(sc,
+			    "Screen -ls/-list reports Screen socket names, attached/detached "
+			    "state, dead sockets and socket-directory information; tmux "
+			    "list-sessions uses a different session model and output format.",
+			    text, &cmd);
+		}
+		screen_compat_cmd_add(&cmd, "list-sessions");
+		screen_compat_approx_exec(sc,
+		    "Screen -ls/-list reports Screen socket names, attached/detached "
+		    "state, dead sockets and socket-directory information; tmux "
+		    "list-sessions uses a different session model and output format.",
+
+		    "Executing the closest substitute: tmux list-sessions.", &cmd);
+	}
+
+	if ((sc->attach || (sc->detach > 0 && !sc->mflag)) &&
+	    sc->session != NULL && *sc->session != '\0')
+		screen_compat_guard_targets(sc);
+
+	if (sc->detach > 0 && !sc->attach && !sc->mflag) {
+		screen_compat_cmd_init(&cmd);
+		screen_compat_cmd_add(&cmd, "detach-client");
+		if (sc->detach == 2)
+			screen_compat_cmd_add(&cmd, "-P");
+		if (sc->session != NULL && *sc->session != '\0') {
+			screen_compat_cmd_add(&cmd, "-s");
+			screen_compat_cmd_add(&cmd, sc->session);
+		}
+		screen_compat_finish(sc, &cmd);
+		return;
+	}
+
+	if (sc->attach) {
+		char *attach_target = NULL;
+		if (sc->Aflag)
+			screen_compat_approx_notice(sc,
+			    "Screen -A explicitly adapts all Screen window sizes to the current "
+			    "terminal when attaching; tmux uses its own client/window-size "
+			    "policy and has no equivalent adapt-all-windows flag.",
+
+			    "Proceeding with tmux's normal window-size policy; configure "
+			    "window-size explicitly if Screen's adapt-all-windows behavior "
+			    "matters.");
+		if (sc->Uflag)
+			screen_compat_approx_notice(sc,
+			    "Screen -U tells the attached Screen display to use UTF-8 and also "
+			    "changes the default encoding for newly created Screen windows; tmux "
+			    "-u only forces the client UTF-8 assumption.",
+
+			    "Proceeding with tmux -u for the client-side UTF-8 portion; Screen's "
+			    "per-window encoding policy is not reproduced.");
+		if (sc->session != NULL && *sc->session != '\0')
+			attach_target = xstrdup(sc->session);
+		if (sc->window != NULL && *sc->window != '\0') {
+			if (sc->session == NULL || *sc->session == '\0') {
+				xasprintf(&text,
+				    "Choose the session explicitly, then use tmux attach-session -t "
+				    "session:%s.",
+				    sc->window);
+				screen_compat_approx(
+				    "Screen can combine -p with an automatically selected session; tmux "
+				    "needs a determinate session when selecting a window at attach "
+				    "time.",
+				    text);
+			}
+			xasprintf(&attach_target, "%s:%s", sc->session, sc->window);
+		}
+		if (sc->attach_strength >= 2) {
+			const char *kind = sc->attach_strength >= 4 ? "-RR" : "-R";
+			if (sc->session == NULL || *sc->session == '\0')
+				screen_compat_unsupported(
+				    "Screen -R/-RR can automatically select among detached Screen "
+				    "sockets and create a new session if no suitable socket exists; "
+				    "tmux has no one-command equivalent with the same selection rules.",
+
+				    "Choose a tmux session explicitly, or implement the Screen "
+				    "detached-session selection policy in a wrapper before calling "
+				    "tmux.");
+			if (sc->window != NULL && *sc->window != '\0') {
+				if (sc->detach == 2)
+					xasprintf(&text, "tmux new-session -A -D -X -s %s", sc->session);
+				else if (sc->detach == 1)
+					xasprintf(&text, "tmux new-session -A -D -s %s", sc->session);
+				else
+					xasprintf(&text, "tmux new-session -A -s %s", sc->session);
+				xasprintf(&text2,
+				    "Screen %s only considers sockets suitable under Screen's "
+				    "attached/detached rules and may create a new session; tmux "
+				    "new-session -A has different state and multiple-match rules, and "
+				    "preserving -p also needs a second operation.",
+				    kind);
+				{
+					char *suggestion;
+					xasprintf(&suggestion,
+					    "Closest common-case substitute: %s, then select %s if it exists.",
+					    text, attach_target);
+					screen_compat_approx(text2, suggestion);
+				}
+			}
+			xasprintf(&text,
+			    "Screen %s only considers sockets suitable under Screen's "
+			    "attached/detached rules and may create a new session; tmux "
+			    "new-session -A will attach an existing named tmux session even when "
+			    "Screen would reject it as already attached. Screen -RR also has "
+			    "different multiple-match selection behavior.",
+			    kind);
+			screen_compat_approx_notice(sc, text,
+			    "Executing the closest common-case tmux new-session -A mapping for "
+			    "the explicit session name.");
+			screen_compat_cmd_init(&cmd);
+			screen_compat_cmd_add(&cmd, "new-session");
+			screen_compat_cmd_add(&cmd, "-A");
+			if (sc->detach > 0) {
+				screen_compat_cmd_add(&cmd, "-D");
+				if (sc->detach == 2)
+					screen_compat_cmd_add(&cmd, "-X");
+			}
+			screen_compat_cmd_add(&cmd, "-s");
+			screen_compat_cmd_add(&cmd, sc->session);
+			screen_compat_finish_u(sc, &cmd);
+			return;
+		}
+		if (attach_target == NULL) {
+			screen_compat_approx_notice(sc,
+			    "Screen -r without a selector only succeeds when Screen can resolve "
+			    "an appropriate session under Screen's own detached-session rules; "
+			    "tmux attach-session without -t selects according to tmux's session "
+			    "rules.",
+
+			    "Executing the closest substitute: tmux attach-session.");
+			screen_compat_cmd_init(&cmd);
+			screen_compat_cmd_add(&cmd, "attach-session");
+			screen_compat_finish_u(sc, &cmd);
+			return;
+		}
+		if (sc->detach == 0 && !sc->xflag) {
+			xasprintf(&text,
+			    "Executing the closest substitute: tmux attach-session -t %s. Use "
+			    "Screen -x semantics when multiple simultaneous clients are "
+			    "intended, or -d -r when detaching an existing attachment first.",
+			    attach_target);
+			screen_compat_approx_notice(sc,
+			    "Screen -r resumes a detached Screen session and normally refuses an "
+			    "already attached session; tmux attach-session normally permits an "
+			    "additional client.",
+			    text);
+		}
+		screen_compat_cmd_init(&cmd);
+		screen_compat_cmd_add(&cmd, "attach-session");
+		if (sc->detach == 2) {
+			screen_compat_cmd_add(&cmd, "-d");
+			screen_compat_cmd_add(&cmd, "-x");
+		} else if (sc->detach == 1)
+			screen_compat_cmd_add(&cmd, "-d");
+		screen_compat_cmd_add(&cmd, "-t");
+		screen_compat_cmd_add(&cmd, attach_target);
+		screen_compat_finish_u(sc, &cmd);
+		return;
+	}
+
+	if (sc->detach == 2 && sc->mflag)
+		screen_compat_unsupported(
+		    "Screen -D -m has process/daemonization semantics that do not "
+		    "correspond to creating one tmux session; tmux -D instead keeps the "
+		    "tmux server in the foreground.",
+
+		    "For an ordinary detached session use tmux new-session -d; for a "
+		    "foreground tmux server use tmux -D.");
+	if (sc->Uflag)
+		screen_compat_approx_notice(sc,
+		    "Screen -U has two semantics: it declares the Screen display UTF-8 "
+		    "capable and sets UTF-8 as the default encoding for newly created "
+		    "Screen windows. tmux -u does not implement Screen's per-window "
+		    "encoding policy.",
+
+		    "Proceeding with tmux -u for the client-side UTF-8 portion; Screen's "
+		    "per-window encoding policy is not reproduced.");
+	if (sc->hist != NULL && *sc->hist != '\0') {
+		xasprintf(&text,
+		    "Configure 'set -g history-limit %s' before creating the "
+		    "pane/session.",
+		    sc->hist);
+		screen_compat_unsupported(
+		    "Screen -h sets initial-window scrollback during creation; tmux "
+		    "history-limit is a creation-time option whose safe scope cannot be "
+		    "changed for only this invocation on an existing server.",
+		    text);
+	}
+	if (sc->term != NULL && *sc->term != '\0') {
+		xasprintf(&text,
+		    "Configure 'set -g default-terminal %s' in tmux.conf for the intended "
+		    "tmux server.",
+		    sc->term);
+		screen_compat_unsupported(
+		    "Screen -T sets the virtual TERM for windows at creation; tmux "
+		    "default-terminal is a server option and changing it for only this "
+		    "invocation is not equivalent.",
+		    text);
+	}
+	if (sc->shell != NULL && *sc->shell != '\0')
+		screen_compat_unsupported(
+		    "Screen -s changes the default shell for current and future windows "
+		    "in that Screen session; a one-shot tmux new-session command would "
+		    "only choose an initial process.",
+
+		    "Configure tmux default-shell, or run the desired shell explicitly in "
+		    "each new-session/new-window command.");
+	if (sc->escape != NULL && *sc->escape != '\0')
+		screen_compat_unsupported(
+		    "Screen -e sets Screen's command character plus its literal-escape "
+		    "character before startup; tmux models prefix/prefix2 and send-prefix "
+		    "differently.",
+
+		    "Translate the intended key behavior explicitly with tmux "
+		    "prefix/prefix2 and key bindings.");
+
+	remaining = sc->argc - sc->pos;
+	if (remaining > 0 && strncmp(sc->argv[sc->pos], "/dev/tty", 8) == 0) {
+		dev = sc->argv[sc->pos++];
+		remaining--;
+		baud = NULL;
+		if (remaining > 0) {
+			for (i = 0; sc->argv[sc->pos][i] != '\0'; i++) {
+				if (sc->argv[sc->pos][i] < '0' || sc->argv[sc->pos][i] > '9')
+					screen_compat_external(
+					    "Screen accepts native tty/stty option syntax for direct device "
+					    "windows; tmux has no built-in serial endpoint.",
+
+					    "Translate those device settings explicitly for picocom, tio, "
+					    "minicom, cu, or another serial client.");
+			}
+			baud = sc->argv[sc->pos++];
+			remaining--;
+		}
+		if (remaining > 0)
+			screen_compat_external(
+			    "Screen accepts additional native tty/stty options for direct device "
+			    "windows; tmux has no built-in serial endpoint.",
+
+			    "Translate those settings to picocom, tio, minicom, or cu options "
+			    "explicitly.");
+		i = 0;
+		helper_argv[i++] = "picocom";
+		if (baud != NULL) {
+			helper_argv[i++] = "-b";
+			helper_argv[i++] = (char *)baud;
+		}
+		helper_argv[i++] = (char *)dev;
+		xasprintf(&text,
+		    "Screen can attach its window directly to %s; tmux panes always run a "
+		    "process on a PTY, so a serial client is required.",
+		    dev);
+		screen_compat_external_launch(sc, "picocom", text,
+		    "Using picocom as the serial endpoint when installed.", i, helper_argv);
+		return;
+	}
+	if (remaining > 0 && strcmp(sc->argv[sc->pos], "//telnet") == 0) {
+		sc->pos++;
+		remaining--;
+		if (remaining == 0)
+			screen_compat_invalid("//telnet requires a host");
+		host = sc->argv[sc->pos++];
+		remaining--;
+		port = remaining > 0 ? sc->argv[sc->pos++] : NULL;
+		remaining = sc->argc - sc->pos;
+		if (remaining > 0)
+			screen_compat_invalid("//telnet accepts host and optional port");
+		i = 0;
+		helper_argv[i++] = "telnet";
+		if (sc->af == 4)
+			helper_argv[i++] = "-4";
+		else if (sc->af == 6)
+			helper_argv[i++] = "-6";
+		helper_argv[i++] = (char *)host;
+		if (port != NULL)
+			helper_argv[i++] = (char *)port;
+		screen_compat_external_launch(sc, "telnet",
+		    "Screen's //telnet is built in; tmux has no Telnet client but can run "
+		    "one as the pane process.",
+
+		    "Using the external telnet client when installed.", i, helper_argv);
+		return;
+	}
+
+	if (sc->logfile != NULL && *sc->logfile != '\0' && !sc->log)
+		screen_compat_unsupported(
+		    "Screen -Logfile stores a default logfile name even when logging is "
+		    "not yet enabled; tmux pipe-pane has no equivalent persistent "
+		    "logfile-name setting.",
+
+		    "Create the tmux session normally, then use pipe-pane with an "
+		    "explicit destination whenever logging is enabled.");
+
+	new_detached = sc->detach == 1 && sc->mflag;
+	if (sc->log) {
+		const char *path = sc->logfile != NULL && *sc->logfile != '\0' ?
+		    sc->logfile : "tmux.log";
+		xasprintf(&text,
+		    "Closest initial-pane substitute: create the session, then run tmux "
+		    "pipe-pane -o 'cat >>%s'; add after-new-window/after-split-window "
+		    "hooks if automatic logging of future panes is required.",
+		    path);
+		screen_compat_approx(
+		    "Screen -L enables Screen's built-in logging policy; tmux has no "
+		    "matching startup logging flag and pipe-pane only covers selected "
+		    "panes unless additional hooks are installed.",
+		    text);
+	}
+
+	tmux = getenv("TMUX");
+	if (tmux != NULL && *tmux != '\0' && sc->mflag && !new_detached)
+		screen_compat_approx(
+		    "Screen -m forces a new attached Screen session even from inside "
+		    "Screen, but tmux normally rejects an attached nested new-session "
+		    "while TMUX is set.",
+
+		    "If nesting is intentional, explicitly unset TMUX for the new tmux "
+		    "invocation; otherwise omit -m to create a window in the current tmux "
+		    "session.");
+
+	remaining = sc->argc - sc->pos;
+	if (tmux != NULL && *tmux != '\0' && !sc->mflag &&
+	    (sc->session == NULL || *sc->session == '\0')) {
+		if (new_detached)
+			screen_compat_unsupported(
+			    "Screen's nested-session rule and -d -m request conflict here: -d -m "
+			    "explicitly creates a new detached Screen session rather than a "
+			    "window in the current session.",
+
+			    "Use -m only when a new tmux session is intended; otherwise omit -d "
+			    "-m to create a tmux window in the current session.");
+		screen_compat_cmd_init(&cmd);
+		screen_compat_cmd_add(&cmd, "new-window");
+		if (sc->title != NULL && *sc->title != '\0') {
+			title_tmux = screen_compat_format_literal(sc->title);
+			screen_compat_cmd_add(&cmd, "-n");
+			screen_compat_cmd_add(&cmd, title_tmux);
+		}
+		screen_compat_cmd_add_argv(&cmd, remaining, sc->argv + sc->pos);
+		screen_compat_finish_u(sc, &cmd);
+		return;
+	}
+
+	unique = getenv("SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES");
+	if (sc->session != NULL && *sc->session != '\0' &&
+	    (unique == NULL || strcmp(unique, "1") != 0)) {
+		if (new_detached)
+			xasprintf(&text, "tmux new-session -d -s %s", sc->session);
+		else
+			xasprintf(&text, "tmux new-session -s %s", sc->session);
+		xasprintf(&text2,
+		    "Executing the closest tmux named-session mapping. If your "
+		    "environment relies on duplicate Screen labels, tmux cannot reproduce "
+		    "that naming model: %s.",
+		    text);
+		screen_compat_approx_notice(sc,
+		    "GNU Screen permits multiple sessions whose socket names share the "
+		    "same -S label (for example different PID.name sockets), while tmux "
+		    "requires each session name to be unique.",
+
+		    text2);
+	}
+
+	session_tmux = sc->session != NULL && *sc->session != '\0' ?
+	    screen_compat_format_literal(sc->session) : NULL;
+	title_tmux = sc->title != NULL && *sc->title != '\0' ?
+	    screen_compat_format_literal(sc->title) : NULL;
+	screen_compat_cmd_init(&cmd);
+	screen_compat_cmd_add(&cmd, "new-session");
+	if (new_detached)
+		screen_compat_cmd_add(&cmd, "-d");
+	if (session_tmux != NULL) {
+		screen_compat_cmd_add(&cmd, "-s");
+		screen_compat_cmd_add(&cmd, session_tmux);
+	}
+	if (title_tmux != NULL) {
+		screen_compat_cmd_add(&cmd, "-n");
+		screen_compat_cmd_add(&cmd, title_tmux);
+	}
+	screen_compat_cmd_add_argv(&cmd, remaining, sc->argv + sc->pos);
+	screen_compat_finish_u(sc, &cmd);
 }
 
 void
 screen_compat_translate(int *argcp, char ***argvp)
 {
-	struct sigaction	 sa, oldsa;
-	char		**argv = *argvp, **new_argv, **sh_argv;
-	char		 *end, *p, *wire = NULL;
-	const char	 *errstr, *tail;
-	int		 argc = *argcp, dry, i, rc, saved_errno;
-	int		 script_pipe[2], wire_pipe[2] = { -1, -1 };
-	int		 write_failed = 0;
-	long long	 translated_argc;
-	pid_t		 pid;
-	size_t		 tail_len, wire_cap = 0, wire_len = 0;
-	ssize_t		 n;
+	struct screen_compat	 sc;
+	char		       **args, **copy;
+	int			 i, argc;
 
-	if (!screen_compat_is_screen(argv[0]))
+	if (argcp == NULL || argvp == NULL || *argvp == NULL ||
+	    *argcp == 0 || !screen_compat_is_screen((*argvp)[0]))
 		return;
 
-	dry = screen_compat_has_dry_run(argc, argv);
-	if (pipe(script_pipe) != 0)
-		err(70, "pipe");
-	if (!dry && pipe(wire_pipe) != 0) {
-		saved_errno = errno;
-		close(script_pipe[0]);
-		close(script_pipe[1]);
-		errno = saved_errno;
-		err(70, "pipe");
-	}
-
-	switch (pid = fork()) {
-	case -1:
-		saved_errno = errno;
-		close(script_pipe[0]);
-		close(script_pipe[1]);
-		if (!dry) {
-			close(wire_pipe[0]);
-			close(wire_pipe[1]);
+	memset(&sc, 0, sizeof sc);
+	sc.original_argc = *argcp;
+	sc.original_argv = *argvp;
+	copy = xcalloc((size_t)*argcp + 1, sizeof *copy);
+	args = copy;
+	argc = 0;
+	for (i = 1; i < *argcp; i++) {
+		if (strcmp((*argvp)[i], "--dry-run") == 0 ||
+		    strcmp((*argvp)[i], "--dryrun") == 0) {
+			sc.dry_run = 1;
+			continue;
 		}
-		errno = saved_errno;
-		err(70, "fork");
-	case 0:
-		if (dup2(script_pipe[0], STDIN_FILENO) == -1)
-			err(126, "dup2");
-		if (!dry && dup2(wire_pipe[1], 3) == -1)
-			err(126, "dup2");
-
-		for (i = 0; i < 2; i++) {
-			if (script_pipe[i] != STDIN_FILENO &&
-			    (dry || script_pipe[i] != 3))
-				close(script_pipe[i]);
+		if (strcmp((*argvp)[i], "--strict") == 0) {
+			sc.strict = 1;
+			continue;
 		}
-		if (!dry) {
-			for (i = 0; i < 2; i++) {
-				if (wire_pipe[i] != STDIN_FILENO &&
-				    wire_pipe[i] != 3)
-					close(wire_pipe[i]);
-			}
-		}
-
-		sh_argv = calloc((size_t)argc + 3, sizeof *sh_argv);
-		if (sh_argv == NULL)
-			err(126, "calloc");
-		sh_argv[0] = (char *)"sh";
-		sh_argv[1] = (char *)"-s";
-		sh_argv[2] = (char *)"--";
-		for (i = 1; i < argc; i++)
-			sh_argv[i + 2] = argv[i];
-		sh_argv[argc + 2] = NULL;
-		execv(_PATH_BSHELL, sh_argv);
-		err(127, "exec %s", _PATH_BSHELL);
+		args[argc++] = (*argvp)[i];
 	}
-
-	close(script_pipe[0]);
-	if (!dry)
-		close(wire_pipe[1]);
-
-	memset(&sa, 0, sizeof sa);
-	sigemptyset(&sa.sa_mask);
-	sa.sa_handler = SIG_IGN;
-	if (sigaction(SIGPIPE, &sa, &oldsa) != 0)
-		err(70, "sigaction");
-
-	if (screen_compat_write(script_pipe[1], screen_compat_shell_source,
-	    sizeof screen_compat_shell_source - 1) != 0)
-		write_failed = 1;
-	if (dry) {
-		tail = screen_compat_dry_tail;
-		tail_len = sizeof screen_compat_dry_tail - 1;
-	} else {
-		tail = screen_compat_wire_tail;
-		tail_len = sizeof screen_compat_wire_tail - 1;
+	if (argc > 0 && strcmp(args[0], "screen") == 0) {
+		args++;
+		argc--;
 	}
-	if (!write_failed &&
-	    screen_compat_write(script_pipe[1], tail, tail_len) != 0)
-		write_failed = 1;
-	close(script_pipe[1]);
+	sc.argc = argc;
+	sc.argv = args;
+	sc.pos = 0;
 
-	if (sigaction(SIGPIPE, &oldsa, NULL) != 0)
-		err(70, "sigaction");
-
-	if (!dry) {
-		for (;;) {
-			if (wire_len == wire_cap) {
-				wire_cap += 4096;
-				wire = realloc(wire, wire_cap);
-				if (wire == NULL)
-					err(70, "realloc");
-			}
-			n = read(wire_pipe[0], wire + wire_len,
-			    wire_cap - wire_len);
-			if (n == 0)
-				break;
-			if (n == -1) {
-				if (errno == EINTR)
-					continue;
-				err(70, "read");
-			}
-			wire_len += (size_t)n;
-		}
-		close(wire_pipe[0]);
-	}
-
-	rc = screen_compat_wait(pid);
-	if (dry) {
-		if (write_failed && rc == 0)
-			errx(70, "translator shell stopped reading its source");
-		exit(rc);
-	}
-	if (rc != 0)
-		exit(rc);
-	if (write_failed)
-		errx(70, "translator shell stopped reading its source");
-	if (wire_len == 0 || wire[wire_len - 1] != '\0')
-		errx(70, "translator returned no complete argv record");
-
-	p = wire;
-	if ((end = memchr(p, '\0', wire_len)) == NULL)
-		errx(70, "translator argv count is missing");
-	translated_argc = strtonum(p, 1, INT_MAX, &errstr);
-	if (errstr != NULL)
-		errx(70, "translator returned an invalid argv count: %s", errstr);
-	p = end + 1;
-
-	new_argv = calloc((size_t)translated_argc + 2, sizeof *new_argv);
-	if (new_argv == NULL)
-		err(70, "calloc");
-	new_argv[0] = argv[0];
-	for (i = 0; i < translated_argc; i++) {
-		size_t	remain = wire_len - (size_t)(p - wire);
-
-		if ((end = memchr(p, '\0', remain)) == NULL)
-			errx(70, "translator argv record is truncated");
-		new_argv[i + 1] = malloc((size_t)(end - p) + 1);
-		if (new_argv[i + 1] == NULL)
-			err(70, "malloc");
-		memcpy(new_argv[i + 1], p, (size_t)(end - p));
-		new_argv[i + 1][end - p] = '\0';
-		p = end + 1;
-	}
-	if ((size_t)(p - wire) != wire_len)
-		errx(70, "translator emitted more than one tmux command");
-	new_argv[translated_argc + 1] = NULL;
-	free(wire);
-
-	*argcp = (int)translated_argc + 1;
-	*argvp = new_argv;
+	screen_compat_parse(&sc);
+	free(copy);
+	*argcp = sc.original_argc;
+	*argvp = sc.original_argv;
 }

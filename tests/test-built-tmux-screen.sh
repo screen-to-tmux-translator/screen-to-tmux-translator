@@ -173,7 +173,7 @@ for SCREEN_BIN do
     fi
 
     # Also cover APPROX modifiers whose final command is assembled later. The
-    # embedded argv serializer must honor the strict-blocked state too.
+    # native C argv translator must honor the strict-blocked state too.
     TOTAL=$((TOTAL + 1))
     _strict_named=screen2tmux_strict_named_$$
     HOME="$RUNTIME/home" TMUX_TMPDIR="$RUNTIME/tmux" "$TMUX_BIN" kill-session -t "$_strict_named" >/dev/null 2>&1 || :

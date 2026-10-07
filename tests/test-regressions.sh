@@ -766,6 +766,25 @@ else
     fail "$CURRENT_NAME"
 fi
 
+CURRENT_NAME='compiled tmux integration contains no embedded shell bridge'
+_CFILE=$PROJECT/tmux-integration/screen-compat.c
+_CINCLUDES=$(grep '^#include ' "$_CFILE" || :)
+_EXPECTED_INCLUDES='#include <sys/types.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include "tmux.h"'
+if [ "$_CINCLUDES" = "$_EXPECTED_INCLUDES" ] && \
+   grep -F 'screen_compat_parse(struct screen_compat *)' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F 'screen_compat_translate(int *argcp, char ***argvp)' "$_CFILE" >/dev/null 2>&1 && \
+   ! grep -E 'screen_compat_shell_source|_PATH_BSHELL|/bin/sh|(^|[^A-Za-z0-9_])(fork|pipe|execv?|waitpid)\(' "$_CFILE" >/dev/null 2>&1 && \
+   ! grep -E '^[[:space:]]*#[[:space:]]*include[[:space:]]+<(sys/wait|signal|errno|fcntl|paths)\.h>' "$_CFILE" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+unset _CFILE _CINCLUDES _EXPECTED_INCLUDES
+
 CURRENT_NAME='3.7c default builder uses pinned release tag'
 if grep -F 'TMUX_3_7C_PIN=${SCREEN2TMUX_TMUX_3_7C_PIN:-refs/tags/3.7c}' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
    grep -F '3.7c|release_3.7c)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \

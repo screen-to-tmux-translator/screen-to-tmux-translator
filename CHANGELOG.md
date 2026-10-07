@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.17 — 2026-10-06
+
+- Replaced the compiled tmux hardlink's embedded POSIX-shell payload and fork/pipe shell bridge with a self-contained native C translator in `tmux-integration/screen-compat.c`. Screen-style argv is now parsed and rewritten entirely in-process before tmux parses its own command line; the compiled path no longer invokes `/bin/sh` or shell helper utilities.
+- Ported the complete tested compatibility policy to native C while preserving the canonical shell interfaces as an independent reference. Differential equivalence covers all 683 generated placement variants and requires the compiled C translator to match reference status, diagnostics, and dry-run argv.
+- Kept the upstream-facing tmux patch minimal: `Makefile.am` compiles `screen-compat.c`, `tmux.h` declares `screen_compat_translate()`, and `tmux.c` calls it once before normal option parsing. The C module uses only headers already used by tmux and follows tmux declaration, indentation, naming, wrapping, and xmalloc conventions.
+- Added regression coverage that rejects any return of the embedded-shell implementation (`screen_compat_shell_source`, `/bin/sh`/`_PATH_BSHELL`, fork/pipe/exec/wait bridge code) and restricts the module include set to existing tmux headers. Updated runtime documentation to distinguish POSIX-shell source interfaces from the shell-independent compiled hardlink.
+
 ## 0.4.16 — 2026-10-06
 
 - Reworked `bin/screen-function-source-minified.oneliner.sh` so its first token is a literal `screen () { ... }` POSIX shell function containing the main Screen-to-tmux translation/parser body. Helper functions follow afterward on the same physical line, and `screen2tmux () { screen "$@"; }` is now the small compatibility entry point instead of the main implementation.
