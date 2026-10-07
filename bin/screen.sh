@@ -6,7 +6,7 @@ SCREEN2TMUX_NO_SCREEN_FUNCTION=1
 export SCREEN2TMUX_NO_SCREEN_FUNCTION
 
 #!/bin/sh
-# screen-to-tmux-translator 0.4.10
+# screen-to-tmux-translator 0.4.11
 # POSIX-shell compatibility translator for GNU Screen 5.0.x command lines.
 #
 # Source this file to define:
@@ -33,7 +33,7 @@ export SCREEN2TMUX_NO_SCREEN_FUNCTION
 # unique. Set SCREEN2TMUX_ASSUME_UNIQUE_SESSION_NAMES=1 to opt into direct
 # tmux -s NAME creation when your deployment enforces unique Screen labels.
 
-SCREEN2TMUX_VERSION=0.4.10
+SCREEN2TMUX_VERSION=0.4.11
 
 # This file is intentionally a shell-function source file, not a standalone
 # command. POSIX shells execute `sh FILE` in a child shell, so functions defined
@@ -83,12 +83,24 @@ _s2t_display_quote()
     printf "'"
 }
 
+_s2t_display_arg()
+{
+    # Human-readable, shell-safe dry-run rendering. Ordinary argv words stay
+    # bare; quote only words that need shell protection. This keeps output
+    # copy-pasteable without the visual noise of quoting every argument.
+    case "$1" in
+        '') printf "''" ;;
+        *[!A-Za-z0-9_@%+=:,./-]*) _s2t_display_quote "$1" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
+
 _s2t_print_command()
 {
     _s2t_sep=
     for _s2t_arg do
         printf '%s' "$_s2t_sep"
-        _s2t_display_quote "$_s2t_arg"
+        _s2t_display_arg "$_s2t_arg"
         _s2t_sep=' '
     done
     printf '\n'

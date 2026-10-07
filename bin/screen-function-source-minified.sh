@@ -1,5 +1,5 @@
 #!/bin/sh
-SCREEN2TMUX_VERSION=0.4.10
+SCREEN2TMUX_VERSION=0.4.11
 case ${0##*/} in
     screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)
         _s2t_source_name=${0##*/}
@@ -37,12 +37,20 @@ _s2t_display_quote()
         }'
     printf "'"
 }
+_s2t_display_arg()
+{
+    case "$1" in
+        '') printf "''" ;;
+        *[!A-Za-z0-9_@%+=:,./-]*) _s2t_display_quote "$1" ;;
+        *) printf '%s' "$1" ;;
+    esac
+}
 _s2t_print_command()
 {
     _s2t_sep=
     for _s2t_arg do
         printf '%s' "$_s2t_sep"
-        _s2t_display_quote "$_s2t_arg"
+        _s2t_display_arg "$_s2t_arg"
         _s2t_sep=' '
     done
     printf '\n'

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.11 — 2026-10-06
+
+- Changed translator dry-run command rendering to omit unnecessary single quotes. Ordinary shell-safe argv words now print bare (for example `tmux attach-session`), while empty arguments, whitespace, shell metacharacters, `#`, and control bytes remain quoted/escaped so the displayed command stays copy-pasteable.
+- Confirmed and regression-locked selectorless `screen -r` as an executable APPROX mapping: outside `--strict` it warns and runs `tmux attach-session`; under `--strict` it remains advisory.
+- Updated the test-matrix parser and README dry-run example for the new shell-safe display format. Focused regressions are now 134 PASS.
+
 ## 0.4.10 — 2026-10-06
 
 - Reordered the README for immediate use: directly after the one-line project description it now links `bin/screen-function-source-minified.oneliner.sh` and embeds that file's exact paste-to-run function declaration in a shell code block. The next section is the one-command GitHub ZIP download/build/test workflow.
@@ -8,7 +14,7 @@
 - Retained the supplied tmux 3.7d baseline's stronger archive-derived exact commit pin (`e9634d40749a5ae330aabf5aa46a81505b094a6b`) for historical reproducibility.
 - Added/updated regression coverage for the 3.7c default, release-tag pin resolution, the new version-specific wrappers, and the unchanged 3.7d exact pin.
 
-## 0.4.10 — 2026-10-06
+## 0.4.9 — 2026-10-06
 
 - Fixed the build-dependency automatic-install regression so it supplies a fake `sudo` wrapper as well as a fake package manager. Running the test suite as an unprivileged user can no longer reach the real `sudo`, prompt for a password, or fail because the test runner lacks administrative rights.
 - Improved missing-build-dependency diagnostics. The builder already names the missing commands/development libraries; it now also prints a copyable package-manager command that a user can give an administrator (`sudo apt-get update && sudo apt-get install ...` on Debian/Ubuntu, with equivalent `dnf`, `yum`, and `apk` forms). Homebrew guidance remains unprivileged.

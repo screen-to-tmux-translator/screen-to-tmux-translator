@@ -196,10 +196,10 @@ expect_no_color_override()
     fi
 }
 
-expect_exact "-d -m preserves command operand" "'tmux' 'new-session' '-d' 'bash'" --dry-run -d -m bash
-expect_exact "-m alone does not detach" "'tmux' 'new-session'" -m --dry-run
+expect_exact "-d -m preserves command operand" "tmux new-session -d bash" --dry-run -d -m bash
+expect_exact "-m alone does not detach" "tmux new-session" -m --dry-run
 expect_class_contains "screenrc is not passed to tmux -f" 2 "Screen -c reads Screen configuration syntax" --dry-run -c /tmp/my-screenrc
-expect_not_contains "screenrc rejection never emits tmux -f" 2 "'tmux' '-f'" -c /tmp/my-screenrc --dry-run
+expect_not_contains "screenrc rejection never emits tmux -f" 2 "tmux -f /tmp/my-screenrc" -c /tmp/my-screenrc --dry-run
 expect_class_contains "Screen source is not tmux source-file" 2 "Screen 'source' reads Screen command syntax" -S work -X source /tmp/screen-extra --dry-run
 expect_class_contains "-L is approximation, never silently dropped" 3 "APPROX" --dry-run -L
 expect_class_contains "-Logfile without -L is unsupported" 2 "persistent logfile-name setting" -Logfile /tmp/screen.log --dry-run
@@ -210,14 +210,16 @@ expect_not_contains "resize +5 does not invent down direction" 3 "resize-pane -D
 expect_class_contains "Screen layout next is not claimed exact" 0 "saved display-region layouts" -S work -X layout next --dry-run
 expect_class_contains "ACL add warns about server-wide scope" 0 "server level" -S work -X acladd alice --dry-run
 expect_class_contains "direct serial mapping is external" 0 "EXTERNAL" /dev/ttyUSB0 115200 --dry-run
-expect_class_contains "direct serial dry-run shows picocom tmux command" 0 "'tmux' 'new-session' 'picocom' '-b' '115200' '/dev/ttyUSB0'" /dev/ttyUSB0 115200 --dry-run
-expect_class_contains "telnet dry-run shows external-client tmux command" 0 "'tmux' 'new-session' 'telnet' 'example.com' '23'" //telnet example.com 23 --dry-run
-expect_class_contains "IPv6 telnet dry-run preserves address-family selection" 0 "'tmux' 'new-session' 'telnet' '-6' 'example.com'" -6 //telnet example.com --dry-run
+expect_class_contains "direct serial dry-run shows picocom tmux command" 0 "tmux new-session picocom -b 115200 /dev/ttyUSB0" /dev/ttyUSB0 115200 --dry-run
+expect_class_contains "telnet dry-run shows external-client tmux command" 0 "tmux new-session telnet example.com 23" //telnet example.com 23 --dry-run
+expect_class_contains "IPv6 telnet dry-run preserves address-family selection" 0 "tmux new-session telnet -6 example.com" -6 //telnet example.com --dry-run
 expect_class_contains "plain -r warns before executing closest attach" 0 "normally refuses an already attached session" -r work --dry-run
-expect_exact "--strict leaves EXACT mappings available" "'tmux' 'new-session' '-d' 'bash'" --strict --dry-run -d -m bash
+expect_class_contains "plain selectorless -r dry-run prints unquoted tmux command" 0 "tmux attach-session" -r --dry-run
+expect_not_contains "plain selectorless -r dry-run omits unnecessary quotes" 0 "\'tmux\'" -r --dry-run
+expect_exact "--strict leaves EXACT mappings available" "tmux new-session -d bash" --strict --dry-run -d -m bash
 expect_class_contains "--strict makes executable APPROX advisory" 3 "--strict keeps APPROX mappings advisory" --strict --dry-run -r work
-expect_class_contains "--strict dry-run still shows closest APPROX command" 3 "'tmux' 'attach-session' '-t' 'work'" -r work --strict --dry-run
-expect_class_contains "--strict blocks notice-then-run approximations" 3 "'tmux' 'new-session' '-s' 'work'" --dry-run -S work --strict
+expect_class_contains "--strict dry-run still shows closest APPROX command" 3 "tmux attach-session -t work" -r work --strict --dry-run
+expect_class_contains "--strict blocks notice-then-run approximations" 3 "tmux new-session -s work" --dry-run -S work --strict
 
 CURRENT_NAME='plain -r executes closest tmux attach after warning'
 _s2t_approx_stub=${TMPDIR:-/tmp}/screen2tmux-approx-exec-$$
@@ -241,6 +243,33 @@ rm -rf "$_s2t_approx_stub"
 } >> "$REG_LOG"
 if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -F 'screen2tmux: APPROX:' >/dev/null 2>&1 && \
    printf '%s\n' "$OUT" | grep -F 'APPROX_TMUX_EXEC <attach-session> <-t> <work>' >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (rc=$RC output=$OUT)"
+fi
+
+CURRENT_NAME='selectorless -r executes tmux attach-session after warning'
+_s2t_approx_stub=${TMPDIR:-/tmp}/screen2tmux-approx-exec-$$
+rm -rf "$_s2t_approx_stub"
+mkdir -p "$_s2t_approx_stub"
+cat > "$_s2t_approx_stub/tmux" <<'EOF_APPROX_STUB'
+#!/bin/sh
+printf 'APPROX_TMUX_EXEC'
+for a do printf ' <%s>' "$a"; done
+printf '\n'
+EOF_APPROX_STUB
+chmod 755 "$_s2t_approx_stub/tmux"
+OUT=$(PATH="$_s2t_approx_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen -r 2>&1)
+RC=$?
+rm -rf "$_s2t_approx_stub"
+{
+    printf '%s\n' '=============================================================================='
+    printf 'TEST: %s\n' "$CURRENT_NAME"
+    printf 'ACTUAL_EXIT: %s\n' "$RC"
+    printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
+} >> "$REG_LOG"
+if [ "$RC" -eq 0 ] && printf '%s\n' "$OUT" | grep -F 'screen2tmux: APPROX:' >/dev/null 2>&1 && \
+   printf '%s\n' "$OUT" | grep -F 'APPROX_TMUX_EXEC <attach-session>' >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
@@ -322,7 +351,7 @@ fi
 CURRENT_NAME='--strict dry-run shows EXTERNAL command but returns advisory status'
 OUT=$(PATH="$_s2t_external_stub:$PATH" NO_COLOR=1 SCREEN2TMUX_COLOR=never screen --strict --dry-run //telnet example.com 23 2>&1)
 RC=$?
-if [ "$RC" -eq 5 ] && printf '%s\n' "$OUT" | grep -F "'tmux' 'new-session' 'telnet' 'example.com' '23'" >/dev/null 2>&1 && printf '%s\n' "$OUT" | grep -F -- '--strict keeps EXTERNAL mappings advisory' >/dev/null 2>&1; then
+if [ "$RC" -eq 5 ] && printf '%s\n' "$OUT" | grep -F "tmux new-session telnet example.com 23" >/dev/null 2>&1 && printf '%s\n' "$OUT" | grep -F -- '--strict keeps EXTERNAL mappings advisory' >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
@@ -332,7 +361,7 @@ rm -rf "$_s2t_external_stub"
 expect_class_contains "hardcopy explicit file is approximation" 3 "not byte-for-byte equivalent" -S work -p 0 -X hardcopy /tmp/window.txt --dry-run
 expect_class_contains "removebuf does not delete tmux buffer" 2 "exchange file" -S work -X removebuf --dry-run
 expect_not_contains "removebuf never emits delete-buffer" 2 "delete-buffer'" -S work -X removebuf --dry-run
-expect_exact "query number reproduces Screen N (title) shape" "'tmux' 'display-message' '-p' '-t' 'work' '#{window_index} (#{window_name})'" -S work -Q number --dry-run
+expect_exact "query number reproduces Screen N (title) shape" "tmux display-message -p -t work '#{window_index} (#{window_name})'" -S work -Q number --dry-run
 expect_class_contains "displays is session scoped" 0 "tmux list-clients -t work" -S work -X displays --dry-run
 expect_class_contains "bind warns about tmux server-wide key tables" 0 "server-wide" -S work -X bind c screen --dry-run
 expect_class_contains "unbindall warns about tmux server-wide key tables" 0 "server-wide" -S work -X unbindall --dry-run
@@ -341,16 +370,16 @@ expect_class_contains "suspend requires a concrete client" 3 "does not uniquely 
 expect_class_contains "query info is not claimed output-compatible" 0 "fixed status summary" -S work -Q info --dry-run
 expect_class_contains "query lastmsg is not claimed output-compatible" 0 "single most recent message" -S work -Q lastmsg --dry-run
 expect_class_contains "Screen help is not claimed output-compatible" 0 "server-wide key tables" -S work -X help --dry-run
-expect_exact_in_tmux "inside tmux plain screen bash creates a window" "'tmux' 'new-window' 'bash'" --dry-run bash
-expect_exact_in_tmux "inside tmux plain screen creates a window" "'tmux' 'new-window'" --dry-run
-expect_exact_in_tmux "inside tmux -t title creates titled window" "'tmux' 'new-window' '-n' 'editor' 'vim'" --dry-run -t editor vim
+expect_exact_in_tmux "inside tmux plain screen bash creates a window" "tmux new-window bash" --dry-run bash
+expect_exact_in_tmux "inside tmux plain screen creates a window" "tmux new-window" --dry-run
+expect_exact_in_tmux "inside tmux -t title creates titled window" "tmux new-window -n editor vim" --dry-run -t editor vim
 expect_class_contains_in_tmux "inside tmux -m warns about tmux nesting safeguard" 3 "normally rejects an attached nested new-session" --dry-run -m bash
 expect_class_contains_in_tmux "inside tmux -S warns about duplicate Screen labels before execution" 0 "multiple sessions whose socket names share the same -S label" --dry-run -S work bash
-expect_exact_unique_in_tmux "inside tmux -S can opt into unique-name policy" "'tmux' 'new-session' '-s' 'work' 'bash'" --dry-run -S work bash
+expect_exact_unique_in_tmux "inside tmux -S can opt into unique-name policy" "tmux new-session -s work bash" --dry-run -S work bash
 
 # 0.3.0 hardening: state, scope, and edge-condition semantics.
 expect_class_contains "named session creation warns before closest execution" 0 "tmux requires each session name to be unique" --dry-run -S work
-expect_exact_unique "unique-name policy restores direct named creation" "'tmux' 'new-session' '-s' 'work'" --dry-run -S work
+expect_exact_unique "unique-name policy restores direct named creation" "tmux new-session -s work" --dry-run -S work
 expect_class_contains "session listing is not output-compatible" 0 "dead sockets" --dry-run -ls
 expect_class_contains "quiet listing preserves Screen-specific exit-status warning" 0 "status codes" --dry-run -q -ls
 expect_class_contains "Screen -R is state-sensitive approximation" 0 "only considers sockets suitable" --dry-run -R work
@@ -369,10 +398,10 @@ expect_class_contains "paste with no register is not tmux paste-buffer" 2 "inter
 # 0.3.1 hardening: no invented feature emulation, literal tmux-format data, and
 # explicit uncertainty warnings for target arguments with incompatible grammars.
 expect_class_contains "-U is partial semantics, not tmux -u exact" 0 "two semantics" --dry-run -U
-expect_class_contains "-U executes tmux -u after warning" 0 "'tmux' '-u' 'new-session'" --dry-run -U
+expect_class_contains "-U executes tmux -u after warning" 0 "tmux -u new-session" --dry-run -U
 expect_class_contains "-A attach semantics do not silently disappear" 0 "no equivalent adapt-all-windows flag" --dry-run -A -x work
-expect_exact "-A on new-session path is semantically inert" "'tmux' 'new-session'" --dry-run -A
-expect_exact "-U does not block unrelated remote X command" "'tmux' 'send-keys' '-l' '-t' 'work:0' 'hello'" --dry-run -U -S work -p 0 -X stuff hello
+expect_exact "-A on new-session path is semantically inert" "tmux new-session" --dry-run -A
+expect_exact "-U does not block unrelated remote X command" "tmux send-keys -l -t work:0 hello" --dry-run -U -S work -p 0 -X stuff hello
 expect_class_contains "short Screen version is not tmux version" 2 "reports the GNU Screen version" --dry-run -v
 expect_class_contains "long Screen version is not tmux version" 2 "reports the GNU Screen version" --dry-run --version
 expect_class_contains "compatibility help is available" 0 "screen-to-tmux compatibility help" --dry-run --help
@@ -381,12 +410,12 @@ expect_class_contains "compatibility help explains tmux differences" 0 "Importan
 expect_class_contains "compatibility help documents dryrun alias" 0 "--dry-run / --dryrun" --dry-run --help
 expect_class_contains "compatibility help documents strict mode" 0 "Never execute APPROX or EXTERNAL mappings" --dry-run --help
 expect_class_contains "internal Screen version is not tmux version" 2 "reports Screen's version/status text" --dry-run -S work -X version
-expect_exact "query echo uses tmux literal mode" "'tmux' 'display-message' '-pl' '#{session_name}'" --dry-run -S work -Q echo '#{session_name}'
+expect_exact "query echo uses tmux literal mode" "tmux display-message -pl '#{session_name}'" --dry-run -S work -Q echo '#{session_name}'
 expect_class_contains "query echo -p refuses Screen format reinterpretation" 2 "Screen echo -p expands Screen's own % status-format language" --dry-run -S work -Q echo -p '%n %t'
-expect_exact_unique "named creation escapes tmux format hash" "'tmux' 'new-session' '-s' 'work-##{host}'" --dry-run -S 'work-#{host}'
-expect_exact "initial title escapes tmux format hash" "'tmux' 'new-session' '-n' '##{session_name}' 'vim'" --dry-run -t '#{session_name}' vim
-expect_exact "runtime title escapes tmux format hash" "'tmux' 'rename-window' '-t' 'work:2' '##{session_name}'" --dry-run -S work -p 2 -X title '#{session_name}'
-expect_exact "runtime session rename escapes tmux format hash" "'tmux' 'rename-session' '-t' 'work' 'dev-##(printf pwn)'" --dry-run -S work -X sessionname 'dev-#(printf pwn)'
+expect_exact_unique "named creation escapes tmux format hash" "tmux new-session -s 'work-##{host}'" --dry-run -S 'work-#{host}'
+expect_exact "initial title escapes tmux format hash" "tmux new-session -n '##{session_name}' vim" --dry-run -t '#{session_name}' vim
+expect_exact "runtime title escapes tmux format hash" "tmux rename-window -t work:2 '##{session_name}'" --dry-run -S work -p 2 -X title '#{session_name}'
+expect_exact "runtime session rename escapes tmux format hash" "tmux rename-session -t work 'dev-##(printf pwn)'" --dry-run -S work -X sessionname 'dev-#(printf pwn)'
 expect_class_contains "risky Screen session selector prints uncertainty warning" 3 "WARNING: uncertain translation of argument Screen session selector" --dry-run -S '$1' -X quit
 expect_class_contains "numeric Screen session selector warns about PID ambiguity" 3 "may interpret leading digits as a PID" --dry-run -r 12345
 expect_class_contains "risky Screen window selector prints uncertainty warning" 3 "WARNING: uncertain translation of argument Screen window selector" --dry-run -S work -p 'editor.1' -X stuff x
@@ -493,7 +522,7 @@ RC=$?
     printf 'ACTUAL_EXIT: %s\n' "$RC"
     printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
 } >> "$REG_LOG"
-if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+if [ "$RC" -eq 0 ] && [ "$OUT" = "tmux new-session -d bash" ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
@@ -525,7 +554,7 @@ rm -rf "$_s2t_solo_dir"
     printf 'EXEC_EXIT: %s\n' "$_EXEC_RC"
     printf 'EXEC_OUTPUT_BEGIN\n%s\nEXEC_OUTPUT_END\n' "$_EXEC_OUT"
 } >> "$REG_LOG"
-if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ] && \
+if [ "$RC" -eq 0 ] && [ "$OUT" = "tmux new-session -d bash" ] && \
    [ "$_EXEC_RC" -eq 0 ] && [ "$_EXEC_OUT" = 'SOLO_TMUX_EXEC <new-session> <-d> <bash>' ] && \
    ! grep -F '. "$_s2t_front_dir/' "$PROJECT/bin/screen.sh" >/dev/null 2>&1 && \
    ! grep -F 'screen-function-source.sh" || exit' "$PROJECT/bin/screen.sh" >/dev/null 2>&1; then
@@ -543,7 +572,7 @@ RC=$?
     printf 'ACTUAL_EXIT: %s\n' "$RC"
     printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
 } >> "$REG_LOG"
-if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+if [ "$RC" -eq 0 ] && [ "$OUT" = "tmux new-session -d bash" ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
@@ -573,7 +602,7 @@ RC=$?
     printf 'ACTUAL_EXIT: %s\n' "$RC"
     printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
 } >> "$REG_LOG"
-if [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+if [ "$RC" -eq 0 ] && [ "$OUT" = "tmux new-session -d bash" ]; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
@@ -607,7 +636,7 @@ for _s2t_one in screen-function-source.oneliner.sh screen-function-source-minifi
         printf 'ACTUAL_EXIT: %s\n' "$RC"
         printf 'OUTPUT_DISPLAY_BEGIN\n%s\nOUTPUT_DISPLAY_END\n' "$OUT"
     } >> "$REG_LOG"
-    if [ "$_s2t_lines" -eq 1 ] && [ "$RC" -eq 0 ] && [ "$OUT" = "'tmux' 'new-session' '-d' 'bash'" ]; then
+    if [ "$_s2t_lines" -eq 1 ] && [ "$RC" -eq 0 ] && [ "$OUT" = "tmux new-session -d bash" ]; then
         pass "$CURRENT_NAME"
     else
         fail "$CURRENT_NAME (lines=$_s2t_lines rc=$RC output=$OUT)"

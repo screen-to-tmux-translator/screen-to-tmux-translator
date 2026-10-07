@@ -98,16 +98,17 @@ _s2t_test_format_argv()
     done
 }
 
-# Convert the translator's intentionally fully-quoted dry-run representation
-# into the less noisy display representation above. The input is produced by
-# this project, so evaluating it only to reconstruct argv is safe here.
+# Normalize the translator's shell-safe dry-run representation for matrix
+# display. Ordinary words are already bare; protected words remain quoted.
+# The input is produced by this project, so evaluating it only to reconstruct
+# argv is safe here.
 _s2t_test_pretty_tmux_output()
 {
     _tf_output=$1
     case "$_tf_output" in
         *'
 '*) return 1 ;;
-        "'tmux'"*)
+        tmux|tmux\ *|"'tmux'"*)
             eval "set -- $_tf_output" || return 1
             [ "${1:-}" = tmux ] || return 1
             _s2t_test_format_argv "$@"
