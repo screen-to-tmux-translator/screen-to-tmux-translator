@@ -343,18 +343,19 @@ render_build_stream()
 {
     case "$VERBOSITY" in
         verbose)
-            awk 'index($0,"@@S2T_")==1 { next } { print }'
+            awk 'index($0,"@@S2T_")==1 { next } { print; fflush() }'
             ;;
         quiet)
             awk '
-            /^@@S2T_STAGE_OK\t/ { sub(/^@@S2T_STAGE_OK\t/, ""); print "[OK] " $0; next }
-            /^@@S2T_STAGE_FAIL\t/ { sub(/^@@S2T_STAGE_FAIL\t/, ""); print "[FAIL] " $0; next }
-            /(^|[^A-Za-z])(error:|ERROR:|fatal:)/ { print; next }
+            /^@@S2T_STAGE_OK\t/ { sub(/^@@S2T_STAGE_OK\t/, ""); print "[OK] " $0; fflush(); next }
+            /^@@S2T_STAGE_FAIL\t/ { sub(/^@@S2T_STAGE_FAIL\t/, ""); print "[FAIL] " $0; fflush(); next }
+            /(^|[^A-Za-z])(error:|ERROR:|fatal:)/ { print; fflush(); next }
             '
             ;;
         normal)
             awk -v width="$DISPLAY_WIDTH" -v realcc="$CC_BIN" '
             function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+            function emit(s) { print s; fflush() }
             function clean_name(name,    hadlib) {
                 name = trim(name)
                 sub(/^for /, "", name)
@@ -412,27 +413,29 @@ render_build_stream()
                     item = a[i]
                     piece = (line == prefix ? "" : sep) item
                     if (length(line) > length(prefix) && length(line) + length(piece) > width) {
-                        print line
+                        emit(line)
                         line = indent item
                     } else line = line piece
                 }
-                print line
+                emit(line)
             }
-            function emit_compile(    i,prefix,indent,line,piece,item) {
-                if (nc == 0) return
+            function add_compile(item,    prefix,indent,piece) {
                 prefix = "Compiling "
                 indent = sprintf("%*s", length(prefix), "")
-                line = prefix
-                for (i = 1; i <= nc; i++) {
-                    item = comp[i]
-                    piece = (line == prefix ? "" : " ") item
-                    if (length(line) > length(prefix) && length(line) + length(piece) > width) {
-                        print line
-                        line = indent item
-                    } else line = line piece
+                if (compile_line == "") {
+                    compile_line = prefix item
+                    return
                 }
-                print line
-                delete comp; nc=0
+                piece = " " item
+                if (length(compile_line) + length(piece) > width) {
+                    emit(compile_line)
+                    compile_line = indent item
+                } else compile_line = compile_line piece
+            }
+            function emit_compile() {
+                if (compile_line == "") return
+                emit(compile_line)
+                compile_line = ""
             }
             function flush_cfg() {
                 emit_items("Configure yes", yes, ny, "  ")
@@ -458,7 +461,7 @@ render_build_stream()
                 sub(/^@@S2T_STAGE_BEGIN\t/, "")
                 in_cfg = ($0 == "Configuring tmux")
                 in_compile = ($0 == "Compiling tmux")
-                print $0 " ..."
+                emit($0 " ...")
                 next
             }
             /^@@S2T_STAGE_OK\t/ {
@@ -466,7 +469,7 @@ render_build_stream()
                 if ($0 == "Configuring tmux") flush_cfg()
                 if ($0 == "Compiling tmux") emit_compile()
                 in_cfg = 0; in_compile = 0
-                print "[OK] " $0
+                emit("[OK] " $0)
                 next
             }
             /^@@S2T_STAGE_FAIL\t/ {
@@ -474,14 +477,14 @@ render_build_stream()
                 if ($0 == "Configuring tmux") flush_cfg()
                 if ($0 == "Compiling tmux") emit_compile()
                 in_cfg = 0; in_compile = 0
-                print "[FAIL] " $0
+                emit("[FAIL] " $0)
                 next
             }
-            /^@@S2T_COMPILE_OK\t/ { sub(/^@@S2T_COMPILE_OK\t/, ""); comp[++nc] = $0 " ... [OK]"; next }
-            /^@@S2T_COMPILE_FAIL\t/ { sub(/^@@S2T_COMPILE_FAIL\t/, ""); comp[++nc] = $0 " ... [FAIL]"; next }
+            /^@@S2T_COMPILE_OK\t/ { sub(/^@@S2T_COMPILE_OK\t/, ""); add_compile($0 " ... [OK]"); next }
+            /^@@S2T_COMPILE_FAIL\t/ { sub(/^@@S2T_COMPILE_FAIL\t/, ""); add_compile($0 " ... [FAIL]"); next }
             { if (capture_cfg($0)) next }
-            /(^|[^A-Za-z])(warning:|WARNING:)/ { if (in_compile) emit_compile(); print; next }
-            /(^|[^A-Za-z])(error:|ERROR:|fatal:)/ { if (in_compile) emit_compile(); print; next }
+            /(^|[^A-Za-z])(warning:|WARNING:)/ { if (in_compile) emit_compile(); emit($0); next }
+            /(^|[^A-Za-z])(error:|ERROR:|fatal:)/ { if (in_compile) emit_compile(); emit($0); next }
             '
             ;;
     esac | color_build_stream
@@ -491,21 +494,22 @@ color_build_stream()
 {
     if [ "$COLOR_ENABLED" -ne 1 ]; then cat; return; fi
     awk -v G="$G" -v R="$R" -v Y="$Y" -v C="$C" -v Z="$Z" '
+    function emit(s) { print s; fflush() }
     {
         line=$0
         if (line ~ /^Configure yes:/) {
-            p=index(line,":"); print C substr(line,1,p-1) Z ":" G substr(line,p+1) Z; cfg="yes"; next
+            p=index(line,":"); emit(C substr(line,1,p-1) Z ":" G substr(line,p+1) Z); cfg="yes"; next
         }
         if (line ~ /^Configure no:/) {
-            p=index(line,":"); print C substr(line,1,p-1) Z ":" R substr(line,p+1) Z; cfg="no"; next
+            p=index(line,":"); emit(C substr(line,1,p-1) Z ":" R substr(line,p+1) Z); cfg="no"; next
         }
         if (line ~ /^Configure values:/) {
-            p=index(line,":"); print C substr(line,1,p-1) Z substr(line,p); cfg="values"; next
+            p=index(line,":"); emit(C substr(line,1,p-1) Z substr(line,p)); cfg="values"; next
         }
         if (cfg != "" && line ~ /^ +/) {
-            if (cfg == "yes") print G line Z
-            else if (cfg == "no") print R line Z
-            else print line
+            if (cfg == "yes") emit(G line Z)
+            else if (cfg == "no") emit(R line Z)
+            else emit(line)
             next
         }
         cfg=""
@@ -514,7 +518,7 @@ color_build_stream()
         sub(/^Compiling /, C "Compiling" Z " ", line)
         sub(/^WARNING:/, Y "WARNING" Z ":", line)
         sub(/^ERROR:/, R "ERROR" Z ":", line)
-        print line
+        emit(line)
     }'
 }
 

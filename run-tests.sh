@@ -16,6 +16,7 @@ BUILD_REQUESTED=0
 BUILD_VERSIONS=
 COMPILE_ORIGINAL=0
 LIST_EQUIV=0
+SHOW_REGRESSION_PASS=0
 TAB=$(printf '\t')
 
 usage()
@@ -32,6 +33,9 @@ Usage: sh run-tests.sh [options]
                               build console detail; quiet also suppresses routine
                               per-case PASS rows from the terminal only.
   --quiet                     Hide per-case "screen -> tmux" mapping columns.
+  --show-regression-test-pass Show individual focused-regression PASS rows.
+                              By default only regression failures and the summary
+                              are printed; full results remain in the log.
   --truncate-lines N          Limit terminal display lines to N columns. Full logs
                               are never truncated. --trunkate-lines is an alias.
   --equivalence NAME          Restrict interface equivalence to NAME. Repeatable.
@@ -78,6 +82,7 @@ while [ "$#" -gt 0 ]; do
             VERBOSITY=$2; shift 2 ;;
         --verbosity=*) VERBOSITY=${1#*=}; shift ;;
         --quiet) TEST_QUIET=1; shift ;;
+        --show-regression-test-pass) SHOW_REGRESSION_PASS=1; shift ;;
         --equivalence|--equivalence-only)
             [ "$#" -ge 2 ] || { printf 'ERROR: %s requires an interface name.\n' "$1" >&2; exit 64; }
             if [ "$EQUIV_CUSTOM" -eq 0 ]; then EQUIV_REQUEST=$2; EQUIV_CUSTOM=1; else EQUIV_REQUEST="$EQUIV_REQUEST,$2"; fi
@@ -140,7 +145,7 @@ verbosity_filter()
             awk '
             /^\[PASS\]/ { next }
             /^Compiling .* \[OK\]$/ { next }
-            { print }
+            { print; fflush() }
             '
             ;;
         *) cat ;;
@@ -148,7 +153,7 @@ verbosity_filter()
 }
 truncate_stream()
 {
-    awk -v max="$CONSOLE_WIDTH" '{ if (length($0) > max) { if (max > 3) print substr($0,1,max-3) "..."; else print substr($0,1,max) } else print }'
+    awk -v max="$CONSOLE_WIDTH" '{ if (length($0) > max) { if (max > 3) print substr($0,1,max-3) "..."; else print substr($0,1,max) } else print; fflush() }'
 }
 colorize_stream()
 {
@@ -156,21 +161,22 @@ colorize_stream()
     awk -v G="$(printf '\033[32m')" -v R="$(printf '\033[31m')" -v Y="$(printf '\033[33m')" -v C="$(printf '\033[36m')" -v M="$(printf '\033[35m')" -v Z="$(printf '\033[0m')" '
     function color_token(s, token, col, p) { p=index(s,token); if (!p) return s; return substr(s,1,p-1) col token Z substr(s,p+length(token)) }
     function color_rhs(s, col, p) { p=index(s," -> "); if (!p) return s; return substr(s,1,p+3) col substr(s,p+4) Z }
+    function emit(s) { print s; fflush() }
     {
         line=$0
         if (line ~ /^Configure yes:/) {
-            p=index(line,":"); print C substr(line,1,p-1) Z ":" G substr(line,p+1) Z; cfg="yes"; next
+            p=index(line,":"); emit(C substr(line,1,p-1) Z ":" G substr(line,p+1) Z); cfg="yes"; next
         }
         if (line ~ /^Configure no:/) {
-            p=index(line,":"); print C substr(line,1,p-1) Z ":" R substr(line,p+1) Z; cfg="no"; next
+            p=index(line,":"); emit(C substr(line,1,p-1) Z ":" R substr(line,p+1) Z); cfg="no"; next
         }
         if (line ~ /^Configure values:/) {
-            p=index(line,":"); print C substr(line,1,p-1) Z substr(line,p); cfg="values"; next
+            p=index(line,":"); emit(C substr(line,1,p-1) Z substr(line,p)); cfg="values"; next
         }
         if (cfg != "" && line ~ /^ +/) {
-            if (cfg == "yes") print G line Z
-            else if (cfg == "no") print R line Z
-            else print line
+            if (cfg == "yes") emit(G line Z)
+            else if (cfg == "no") emit(R line Z)
+            else emit(line)
             next
         }
         cfg=""
@@ -203,7 +209,7 @@ colorize_stream()
         if (line ~ /^LOG_[A-Z0-9_.-]+:/) { p=index(line,":"); line=C substr(line,1,p-1) Z substr(line,p) }
         sub(/^RUN_STATUS: PASS$/,"RUN_STATUS: " G "PASS" Z,line); sub(/^RUN_STATUS: FAIL$/,"RUN_STATUS: " R "FAIL" Z,line)
         if (line ~ /^===== .* =====$/) { sub(/^===== /,"===== " C,line); sub(/ =====$/,Z " =====",line) }
-        print line
+        emit(line)
     }'
 }
 terminal_stream() { verbosity_filter | truncate_stream | colorize_stream; }
@@ -321,7 +327,7 @@ if [ "$LIST_EQUIV" -eq 1 ]; then
 fi
 
 if run_component 'Screen CLI/oracle + interface equivalence tests' env EQUIV_LOG="$EQUIV_LOG" SCREEN2TMUX_EQUIV_INTERFACES="$EQUIV_REQUEST" SCREEN2TMUX_EQUIV_BUILT_REGISTRY="$EQUIV_BUILT_REGISTRY" sh "$HERE/tests/test-interface-equivalence.sh"; then :; else suite_rc=1; fi
-if run_component 'focused regressions' env REG_LOG="$REG_LOG" sh "$HERE/tests/test-regressions.sh"; then :; else suite_rc=1; fi
+if run_component 'focused regressions' env REG_LOG="$REG_LOG" SCREEN2TMUX_SHOW_REGRESSION_TEST_PASS="$SHOW_REGRESSION_PASS" sh "$HERE/tests/test-regressions.sh"; then :; else suite_rc=1; fi
 
 # With built patched tmux binaries available, test behavior once per requested
 # version against the patched binary. The pristine originals are build baselines,

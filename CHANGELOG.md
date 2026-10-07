@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.20 — 2026-10-07
+
+- Changed focused-regression console output to show failures only by default. `--show-regression-test-pass` restores individual `[PASS]` rows; the regression log continues to record every PASS/FAIL result regardless of console filtering.
+- Made aggregate terminal formatting line-flushed so equivalence rows, summaries, and other component output are displayed as they arrive instead of being held by AWK pipeline buffering. The equivalence workers remain buffered/parallel internally, but ready mapping rows are emitted one line at a time.
+- Made normal build progress incremental while preserving the existing compact layout: stage headers flush immediately, and width-aware `Compiling ...` lines are emitted as soon as each line fills rather than waiting for the entire compile stage. Configure summaries remain grouped at configure completion.
+- Added focused regressions covering the opt-in PASS flag and incremental console/build formatter contracts. Focused regressions are now 145 PASS.
+
 ## 0.4.19 — 2026-10-07
 
 - Fixed native-C normal-execution control flow for executable `APPROX` mappings. `screen_compat_approx_exec()` rewrites tmux argv in-process and returns, so callers must stop parsing immediately; 0.4.18 could otherwise fall through into a later fallback branch after installing the translated command. The reported `hardstatus off` case therefore emitted the intended APPROX mapping and then an erroneous UNSUPPORTED diagnostic/exit status.

@@ -54,7 +54,7 @@ middle: screen ARG1 --dry-run ARG2 ...
 last:   screen ARG1 ARG2 ... --dry-run
 ```
 
-The combined aggregate matrix still executes every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after the oracle, reference-class checks, and all selected interface comparisons succeed. The display form is `result | description | screen command -> tmux command`; the two pipe columns and the `->` column are aligned. In color mode, the class token and the entire right-hand result use the same class color, so `UNSUPPORTED` placeholders are red, `MOOT` placeholders are cyan, and approximate tmux commands are yellow. Ordinary argv are shown bare; quoting is retained only where shell protection or single-line control-byte escaping is needed. `run-tests.sh --quiet` hides the mapping columns without suppressing ordinary PASS/FAIL progress. `tests/test-screen-cli.sh` remains available separately when the older per-invocation hex diagnostic log is desired.
+The combined aggregate matrix still executes every applicable placement. For successful cases the terminal/console output is intentionally compact: one PASS is printed after the oracle, reference-class checks, and all selected interface comparisons succeed. The workers may prepare results in buffered parallel chunks, but the parent terminal pipeline flushes each ready line immediately so completed rows do not accumulate behind formatter buffering. The display form is `result | description | screen command -> tmux command`; the two pipe columns and the `->` column are aligned. In color mode, the class token and the entire right-hand result use the same class color, so `UNSUPPORTED` placeholders are red, `MOOT` placeholders are cyan, and approximate tmux commands are yellow. Ordinary argv are shown bare; quoting is retained only where shell protection or single-line control-byte escaping is needed. `run-tests.sh --quiet` hides the mapping columns without suppressing ordinary PASS/FAIL progress. `tests/test-screen-cli.sh` remains available separately when the older per-invocation hex diagnostic log is desired.
 
 ## Logs
 
@@ -98,7 +98,7 @@ The default `SCREEN2TMUX_COLOR=auto` enables color only for an interactive termi
 
 Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` width once at startup and truncates displayed lines to that width. `--truncate-lines N` overrides the width; `--trunkate-lines N` is accepted as a typo-compatible alias. The full line is appended to `test-run-console-*` before truncation, so archived logs remain unabridged.
 
-`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.19.
+`logs/test-regressions-<YYYYMMDD-HHMMSS>.log` records the focused semantic regressions accumulated through 0.4.20. The terminal hides individual PASS rows by default and still prints every failure; `run-tests.sh --show-regression-test-pass` restores PASS rows. The log records every result in both modes.
 
 `logs/test-interface-equivalence-<YYYYMMDD-HHMMSS>.log` is now the combined Screen/oracle/interface matrix log. `screen-function-source.sh` is always the reference. For each case the GNU Screen 5.0.2 oracle validates base syntax, the reference exit status is checked against the expected class on every first/middle/last placement, and the minified source, both one-line source variants, standalone self-contained `screen.sh`, plus every discovered patched tmux hardlink named `screen` are compared with the reference. Each Screen case prints one PASS only when all of those checks succeed. The resolved interfaces are printed one per line with the path on the same line in parentheses; paths inside the project are relative to the repository root. `run-tests.sh --equivalence NAME` (repeatable) restricts interface comparison, and `--list-equivalence-interfaces` prints accepted names. The standalone `tests/test-screen-cli.sh` harness remains available but is not duplicated inside `run-tests.sh`.
 
@@ -160,7 +160,7 @@ Terminal truncation is also terminal-only. `run-tests.sh` measures `/dev/tty` wi
 ```text
 translation permutations:       683 PASS, 0 FAIL
 syntax oracle base cases:       228 PASS, 0 FAIL
-focused regressions:            142 PASS, 0 FAIL
+focused regressions:            145 PASS, 0 FAIL
 packaged equivalence interfaces: 5 (canonical, minified, two one-line sources, screen.sh)
 equivalence variants/interface: 683
 equivalence command cases:      228 PASS, 0 FAIL
@@ -210,7 +210,7 @@ Compiling alerts.c ... [OK] cfg.c ... [OK] cmd-new-session.c ... [OK] cmd-send-k
 [OK] Installing tmux
 ```
 
-`--verbosity quiet|normal|verbose` is supported by both generic builders and `run-tests.sh`, with `normal` as the default. In normal mode Autoconf results are normalized and de-duplicated before display: header usability/presence/final triples collapse to one header token, `whether`/`working` boilerplate is removed, common compiler names are shortened, cached booleans join the yes/no groups, and the internal `.screen2tmux-cc` wrapper path is replaced with the real compiler. `yes` names are grouped in green, `no` names in red, and all other results are comma-separated `name=value` entries. Each group wraps at the measured console width. Compiler success markers are collected into one width-wrapped `Compiling ...` stream. Full raw build diagnostics remain in each build directory's `build.log`; selective color follows `SCREEN2TMUX_COLOR` / `NO_COLOR`.
+`--verbosity quiet|normal|verbose` is supported by both generic builders and `run-tests.sh`, with `normal` as the default. In normal mode Autoconf results are normalized and de-duplicated before display: header usability/presence/final triples collapse to one header token, `whether`/`working` boilerplate is removed, common compiler names are shortened, cached booleans join the yes/no groups, and the internal `.screen2tmux-cc` wrapper path is replaced with the real compiler. `yes` names are grouped in green, `no` names in red, and all other results are comma-separated `name=value` entries. Each group wraps at the measured console width. Compiler success markers are collected into width-wrapped `Compiling ...` lines. A completed display line is emitted immediately as compilation proceeds instead of waiting for the whole compile stage; the stage header is also line-flushed. Configure results remain intentionally grouped until configure completes. Full raw build diagnostics remain in each build directory's `build.log`; selective color follows `SCREEN2TMUX_COLOR` / `NO_COLOR`.
 
 `run-tests.sh --build` builds patched 3.7c before testing. Versions following `--build` may be comma- or space-separated. `--compile-original` additionally compiles the pristine original for each requested version. Build failures set the eventual run status to FAIL but do not prevent discovery/testing of other variants that completed successfully.
 

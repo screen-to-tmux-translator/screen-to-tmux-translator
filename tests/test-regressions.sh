@@ -21,9 +21,21 @@ if [ "$_color_enabled" -eq 1 ]; then
     G='\033[32m'; R='\033[31m'; C='\033[36m'; Z='\033[0m'
 else G=; R=; C=; Z=; fi
 P=0; F=0
+SHOW_PASS=${SCREEN2TMUX_SHOW_REGRESSION_TEST_PASS:-0}
+case "$SHOW_PASS" in 0|1) : ;; *) SHOW_PASS=0 ;; esac
 
-pass(){ P=$((P+1)); printf '%b[PASS]%b %s\n' "$G" "$Z" "$1"; }
-fail(){ F=$((F+1)); printf '%b[FAIL]%b %s\n' "$R" "$Z" "$1"; }
+pass()
+{
+    P=$((P+1))
+    printf 'RESULT\tPASS\t%s\n' "$1" >> "$REG_LOG"
+    [ "$SHOW_PASS" -eq 0 ] || printf '%b[PASS]%b %s\n' "$G" "$Z" "$1"
+}
+fail()
+{
+    F=$((F+1))
+    printf 'RESULT\tFAIL\t%s\n' "$1" >> "$REG_LOG"
+    printf '%b[FAIL]%b %s\n' "$R" "$Z" "$1"
+}
 
 capture()
 {
@@ -815,6 +827,32 @@ else
     fail "$CURRENT_NAME"
 fi
 
+CURRENT_NAME='focused regressions hide PASS rows unless explicitly requested'
+if grep -F 'SHOW_PASS=${SCREEN2TMUX_SHOW_REGRESSION_TEST_PASS:-0}' "$PROJECT/tests/test-regressions.sh" >/dev/null 2>&1 && \
+   grep -F '[ "$SHOW_PASS" -eq 0 ] || printf' "$PROJECT/tests/test-regressions.sh" >/dev/null 2>&1 && \
+   grep -F 'RESULT\tPASS\t%s' "$PROJECT/tests/test-regressions.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='run-tests exposes show-regression-test-pass option'
+if grep -F -- '--show-regression-test-pass' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'SCREEN2TMUX_SHOW_REGRESSION_TEST_PASS="$SHOW_REGRESSION_PASS"' "$PROJECT/run-tests.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='console and build formatters flush progress incrementally'
+if grep -F 'function emit(s) { print s; fflush() }' "$PROJECT/run-tests.sh" >/dev/null 2>&1 && \
+   grep -F 'function add_compile(item,' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
+   grep -F 'function emit(s) { print s; fflush() }' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
 CURRENT_NAME='compiled tmux integration contains no embedded shell bridge'
 _CFILE=$PROJECT/tmux-integration/screen-compat.c
 _CINCLUDES=$(grep '^#include ' "$_CFILE" || :)
@@ -914,7 +952,7 @@ if grep -F 'emit_items("Configure yes", yes, ny, "  ")' "$PROJECT/scripts/build-
    grep -F 'sub(/ presence$/, "", name)' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
    grep -F 'function emit_compile' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
    grep -F 'prefix = "Compiling "' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1 && \
-   grep -F 'comp[++nc] = $0 " ... [OK]"' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
+   grep -F 'add_compile($0 " ... [OK]")' "$PROJECT/scripts/build-tmux-one.sh" >/dev/null 2>&1; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
