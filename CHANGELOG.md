@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.27 — 2026-10-07
+
+- Rebuilt `bin/screen-function-source.sh` as the sourceable form of the cleaned standalone `bin/screen.sh`: it now has the same screen-first 55-function implementation/helper order, defines only `screen()`, and differs operationally by omitting the standalone EOF invocation. The direct-execution filename guard remains so `sh bin/screen-function-source.sh` explains the required POSIX dot command.
+- Regenerated `bin/screen-function-source-minified.sh` mechanically from the new readable sourceable implementation by removing full-line comments and blank lines only. It has the same function order and public `screen()` entry point and no `screen2tmux()` wrapper or `SCREEN2TMUX_NO_SCREEN_FUNCTION` gate.
+- Added regressions proving both normal source files mirror the standalone function structure, remain inert when sourced even when the caller already has positional parameters, and keep the minified file mechanically synchronized with the readable source. Focused regressions are now 160 PASS.
+
 ## 0.4.26 — 2026-10-07
 
 - Rewrote `bin/screen.sh` as an independent, readable POSIX-shell implementation instead of an embedded copy of the source-function translator. The file now starts with the public `screen ()` function, has no `screen2tmux()` wrapper or `SCREEN2TMUX_NO_SCREEN_FUNCTION` gate, and ends by invoking `screen "$@"` as the standalone entry point.

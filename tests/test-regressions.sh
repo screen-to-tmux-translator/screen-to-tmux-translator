@@ -637,6 +637,57 @@ else
     fail "$CURRENT_NAME (first=$_s2t_first_function last=$_s2t_screen_last)"
 fi
 
+CURRENT_NAME='normal source files mirror standalone screen structure'
+_s2t_structure_ok=1
+_s2t_screen_defs=${TMPDIR:-/tmp}/screen2tmux-screen-defs-$$
+_s2t_source_defs=${TMPDIR:-/tmp}/screen2tmux-source-defs-$$
+_s2t_min_defs=${TMPDIR:-/tmp}/screen2tmux-min-defs-$$
+grep -E '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)$' "$PROJECT/bin/screen.sh" > "$_s2t_screen_defs"
+grep -E '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)$' "$PROJECT/bin/screen-function-source.sh" > "$_s2t_source_defs"
+grep -E '^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)$' "$PROJECT/bin/screen-function-source-minified.sh" > "$_s2t_min_defs"
+cmp -s "$_s2t_screen_defs" "$_s2t_source_defs" || _s2t_structure_ok=0
+cmp -s "$_s2t_screen_defs" "$_s2t_min_defs" || _s2t_structure_ok=0
+[ "$(head -n 1 "$_s2t_source_defs" | sed 's/[[:space:]]*()$//')" = screen ] || _s2t_structure_ok=0
+[ "$(head -n 1 "$_s2t_min_defs" | sed 's/[[:space:]]*()$//')" = screen ] || _s2t_structure_ok=0
+for _s2t_source_file in screen-function-source.sh screen-function-source-minified.sh; do
+    if grep -E '^screen2tmux[[:space:]]*\(\)' "$PROJECT/bin/$_s2t_source_file" >/dev/null 2>&1; then
+        _s2t_structure_ok=0
+    fi
+    if grep -F 'SCREEN2TMUX_NO_SCREEN_FUNCTION' "$PROJECT/bin/$_s2t_source_file" >/dev/null 2>&1; then
+        _s2t_structure_ok=0
+    fi
+    if [ "$(tail -n 1 "$PROJECT/bin/$_s2t_source_file")" = 'screen "$@"' ]; then
+        _s2t_structure_ok=0
+    fi
+done
+rm -f "$_s2t_screen_defs" "$_s2t_source_defs" "$_s2t_min_defs"
+if [ "$_s2t_structure_ok" -eq 1 ]; then pass "$CURRENT_NAME"; else fail "$CURRENT_NAME"; fi
+
+CURRENT_NAME='sourcing normal source files is inert with caller positional parameters'
+_s2t_inert_ok=1
+for _s2t_source_file in screen-function-source.sh screen-function-source-minified.sh; do
+    OUT=$(NO_COLOR=1 sh -c '_src=$1; set -- -d -m bash; . "$_src"; printf "LOADED:%s:%s:%s\\n" "$1" "$2" "$3"' sh "$PROJECT/bin/$_s2t_source_file" 2>&1)
+    RC=$?
+    case "$OUT" in LOADED:-d:-m:bash) : ;; *) _s2t_inert_ok=0 ;; esac
+    [ "$RC" -eq 0 ] || _s2t_inert_ok=0
+done
+if [ "$_s2t_inert_ok" -eq 1 ]; then pass "$CURRENT_NAME"; else fail "$CURRENT_NAME"; fi
+
+CURRENT_NAME='normal minified source is comment-and-blank stripped sourceable implementation'
+_s2t_expected_min=${TMPDIR:-/tmp}/screen2tmux-minified-expected-$$
+awk '
+    NR == 1 { print; next }
+    /^[[:space:]]*#/ { next }
+    /^[[:space:]]*$/ { next }
+    { sub(/[[:space:]]+$/, ""); print }
+' "$PROJECT/bin/screen-function-source.sh" > "$_s2t_expected_min"
+if cmp -s "$_s2t_expected_min" "$PROJECT/bin/screen-function-source-minified.sh"; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+rm -f "$_s2t_expected_min"
+
 CURRENT_NAME='screen-function-source.sh defines callable screen function when sourced'
 OUT=$(NO_COLOR=1 sh -c '. "$1"; screen --dryrun -d -m bash' sh "$PROJECT/bin/screen-function-source.sh" 2>&1)
 RC=$?
