@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.26 — 2026-10-07
+
+- Rewrote `bin/screen.sh` as an independent, readable POSIX-shell implementation instead of an embedded copy of the source-function translator. The file now starts with the public `screen ()` function, has no `screen2tmux()` wrapper or `SCREEN2TMUX_NO_SCREEN_FUNCTION` gate, and ends by invoking `screen "$@"` as the standalone entry point.
+- Mirrored the native `screen-compat.c` phase structure where it is useful in shell: option parsing, parsed-policy checks, list/wipe handling, attach/detach handling, startup policy, external serial/Telnet endpoints, ordinary creation, `-Q`, and ten semantic `-X` families (`window`, `pane`, `session`, `buffer`, `logging`, `config`, `status`, `access`, `inspect`, `layout`). POSIX-shell argv handling remains shell-native rather than imitating the C argv builder.
+- Replaced shell-origin state names such as `Aflag`, `Uflag`, `mflag`, `xflag`, and `af` in the standalone implementation with descriptive names, removed unused compatibility-only helpers, and documented the standalone control flow and function-family map at the top of the file.
+- Added a focused regression requiring `screen` to be the first standalone function, rejecting a `screen2tmux()` function and the source-only function gate, and requiring the C-aligned command-family/top-level helper structure. Focused regressions are now 157 PASS.
+
 ## 0.4.25 — 2026-10-07
 
 - Expanded the top of `tmux-integration/screen-compat.c` into a maintainer-oriented architecture guide with fixed-width control-flow diagrams, a complete one-line-per-function purpose index, and a second complete one-line-per-function usage/caller index. The header also records the mapping-policy and tmux/BSD-C style contracts that future changes should preserve.

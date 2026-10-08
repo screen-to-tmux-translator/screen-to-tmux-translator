@@ -599,6 +599,44 @@ else
     fail "$CURRENT_NAME (rc=$RC output=$OUT)"
 fi
 
+CURRENT_NAME='standalone screen.sh is screen-first and C-aligned'
+_s2t_first_function=$(awk '
+    /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)$/ {
+        name=$0
+        getline nextline
+        if (nextline == "{") {
+            sub(/[[:space:]]*\(\)$/, "", name)
+            print name
+            exit
+        }
+    }
+' "$PROJECT/bin/screen.sh")
+_s2t_screen_structure_ok=1
+[ "$_s2t_first_function" = screen ] || _s2t_screen_structure_ok=0
+if grep -E '^screen2tmux[[:space:]]*\(\)' "$PROJECT/bin/screen.sh" >/dev/null 2>&1; then
+    _s2t_screen_structure_ok=0
+fi
+if grep -F 'SCREEN2TMUX_NO_SCREEN_FUNCTION' "$PROJECT/bin/screen.sh" >/dev/null 2>&1; then
+    _s2t_screen_structure_ok=0
+fi
+for _s2t_required_function in \
+    _s2t_x_window _s2t_x_pane _s2t_x_session _s2t_x_buffer \
+    _s2t_x_logging _s2t_x_config _s2t_x_status _s2t_x_access \
+    _s2t_x_inspect _s2t_x_layout _s2t_xcommand _s2t_parse_options \
+    _s2t_top_list _s2t_top_attach _s2t_check_startup_policy \
+    _s2t_top_external _s2t_top_create
+do
+    grep -E "^${_s2t_required_function}[[:space:]]*\\(\\)$" \
+        "$PROJECT/bin/screen.sh" >/dev/null 2>&1 || _s2t_screen_structure_ok=0
+done
+_s2t_screen_last=$(tail -n 1 "$PROJECT/bin/screen.sh")
+[ "$_s2t_screen_last" = 'screen "$@"' ] || _s2t_screen_structure_ok=0
+if [ "$_s2t_screen_structure_ok" -eq 1 ] && sh -n "$PROJECT/bin/screen.sh"; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME (first=$_s2t_first_function last=$_s2t_screen_last)"
+fi
+
 CURRENT_NAME='screen-function-source.sh defines callable screen function when sourced'
 OUT=$(NO_COLOR=1 sh -c '. "$1"; screen --dryrun -d -m bash' sh "$PROJECT/bin/screen-function-source.sh" 2>&1)
 RC=$?
