@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.4.29
+# screen-to-tmux-translator 0.4.30
 # Self-contained GNU Screen-compatible command front-end for tmux.
 #
 # This file deliberately mirrors tmux-integration/screen-compat.c at the level
@@ -71,7 +71,7 @@
 # Remaining _s2t_* helpers handle diagnostics, rendering, selectors and tmux
 # execution and intentionally stay small and shell-native.
 
-SCREEN2TMUX_VERSION=0.4.29
+SCREEN2TMUX_VERSION=0.4.30
 
 screen ()
 {

@@ -205,7 +205,7 @@
 
 #include "tmux.h"
 
-#define SCREEN_COMPAT_VERSION "0.4.29"
+#define SCREEN_COMPAT_VERSION "0.4.30"
 
 struct screen_compat_cmd {
 	char	**argv;
@@ -326,7 +326,7 @@ static void	 screen_compat_approx_exec(struct screen_compat *, const char *,
 static void	 screen_compat_external_exec(struct screen_compat *, const char *,
 	    const char *, const char *, struct screen_compat_cmd *);
 static void	 screen_compat_external_launch(struct screen_compat *, const char *,
-	    const char *, const char *, int, char **);
+	    const char *, const char *, int, const char *const *);
 static int	 screen_compat_known_internal(const char *);
 static void	 screen_compat_query(struct screen_compat *, int, char **);
 static int	 screen_compat_x_window(struct screen_compat *, const char *, int,
@@ -519,7 +519,7 @@ static const char screen_compat_info_format[] =
     "#{pane_width}x#{pane_height} #{pane_current_command}";
 
 static const char screen_compat_help_text[] =
-	"screen-to-tmux compatibility help (translator 0.4.29)\n"
+	"screen-to-tmux compatibility help (translator 0.4.30)\n"
 	"GNU Screen 5.0.x-style command-line syntax translated to tmux when a safe "
 	"mapping exists.\n"
 	"This is compatibility help, not byte-for-byte native GNU Screen help.\n"
@@ -1130,12 +1130,13 @@ screen_compat_external_exec(struct screen_compat *sc, const char *helper,
 
 static void
 screen_compat_external_launch(struct screen_compat *sc, const char *helper,
-    const char *reason, const char *suggestion, int argc, char **argv)
+    const char *reason, const char *suggestion, int argc,
+    const char *const *argv)
 {
 	struct screen_compat_cmd	 cmd;
 	char			*session = NULL, *title = NULL;
 	const char		*tmux;
-	int			 detached;
+	int			 detached, i;
 
 	screen_compat_cmd_init(&cmd);
 	tmux = getenv("TMUX");
@@ -1147,7 +1148,8 @@ screen_compat_external_launch(struct screen_compat *sc, const char *helper,
 			screen_compat_cmd_add(&cmd, "-n");
 			screen_compat_cmd_add(&cmd, title);
 		}
-		screen_compat_cmd_add_argv(&cmd, argc, argv);
+		for (i = 0; i < argc; i++)
+			screen_compat_cmd_add(&cmd, argv[i]);
 		screen_compat_cmd_prepend_u(sc, &cmd);
 		screen_compat_external_exec(sc, helper, reason, suggestion, &cmd);
 		return;
@@ -1170,7 +1172,8 @@ screen_compat_external_launch(struct screen_compat *sc, const char *helper,
 		screen_compat_cmd_add(&cmd, "-n");
 		screen_compat_cmd_add(&cmd, title);
 	}
-	screen_compat_cmd_add_argv(&cmd, argc, argv);
+	for (i = 0; i < argc; i++)
+		screen_compat_cmd_add(&cmd, argv[i]);
 	screen_compat_cmd_prepend_u(sc, &cmd);
 	screen_compat_external_exec(sc, helper, reason, suggestion, &cmd);
 }
@@ -3312,8 +3315,8 @@ screen_compat_check_startup_policy(struct screen_compat *sc)
 static int
 screen_compat_top_external(struct screen_compat *sc)
 {
-	char		*text, *helper_argv[5];
-	const char	*host, *port, *dev, *baud;
+	char		*text;
+	const char	*helper_argv[5], *host, *port, *dev, *baud;
 	int		 i, remaining;
 
 	remaining = sc->argc - sc->arg_index;
@@ -3345,9 +3348,9 @@ screen_compat_top_external(struct screen_compat *sc)
 		helper_argv[i++] = "picocom";
 		if (baud != NULL) {
 			helper_argv[i++] = "-b";
-			helper_argv[i++] = (char *)baud;
+			helper_argv[i++] = baud;
 		}
-		helper_argv[i++] = (char *)dev;
+		helper_argv[i++] = dev;
 		xasprintf(&text,
 		    "Screen can attach its window directly to %s; tmux panes always run a "
 		    "process on a PTY, so a serial client is required.",
@@ -3373,9 +3376,9 @@ screen_compat_top_external(struct screen_compat *sc)
 			helper_argv[i++] = "-4";
 		else if (sc->address_family == 6)
 			helper_argv[i++] = "-6";
-		helper_argv[i++] = (char *)host;
+		helper_argv[i++] = host;
 		if (port != NULL)
-			helper_argv[i++] = (char *)port;
+			helper_argv[i++] = port;
 		screen_compat_external_launch(sc, "telnet",
 		    "Screen's //telnet is built in; tmux has no Telnet client but can run "
 		    "one as the pane process.",

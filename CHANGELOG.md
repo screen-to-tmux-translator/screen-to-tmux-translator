@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.30 — 2026-10-08
+
+- Made the native serial/telnet helper argv path const-correct so current tmux builds using stricter string-literal warnings no longer emit `-Wdiscarded-qualifiers` warnings for `"picocom"`, `"-b"`, `"telnet"`, `"-4"`, or `"-6"`.
+- `screen_compat_external_launch()` now accepts a read-only argv vector and copies each argument into the owned tmux command builder; the temporary helper vector is `const char *[...]`, so no casts are needed.
+- Added a focused regression that locks in const-correct helper argv handling. Focused regressions are now 163 PASS.
+
 ## 0.4.29 — 2026-10-08
 
 - Restored the complete literal contents of `bin/screen-function-source-minified.oneliner.sh` to the top of the README inside a `sh` fenced block so the front page again provides the full ready-to-paste `screen () { ... }` definition.

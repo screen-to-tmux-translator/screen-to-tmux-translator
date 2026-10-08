@@ -899,6 +899,17 @@ else
 fi
 unset _CFILE
 
+CURRENT_NAME='native external helper argv is const-correct for strict tmux builds'
+_CFILE=$PROJECT/tmux-integration/screen-compat.c
+if grep -F 'const char *const *argv)' "$_CFILE" >/dev/null 2>&1 && \
+   grep -F '*helper_argv[5], *host, *port, *dev, *baud;' "$_CFILE" >/dev/null 2>&1 && \
+   ! grep -F 'helper_argv[i++] = (char *)' "$_CFILE" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+unset _CFILE
+
 CURRENT_NAME='native executable mappings terminate parser branch after argv install'
 _CFILE=$PROJECT/tmux-integration/screen-compat.c
 if awk '
