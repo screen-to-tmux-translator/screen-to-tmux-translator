@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.29 — 2026-10-08
+
+- Restored the complete literal contents of `bin/screen-function-source-minified.oneliner.sh` to the top of the README inside a `sh` fenced block so the front page again provides the full ready-to-paste `screen () { ... }` definition.
+- Removed the explanatory text that replaced the embedded one-liner in 0.4.28. The README copy is generated directly from the packaged one-line artifact and regression-checked for exact byte equality.
+
 ## 0.4.28 — 2026-10-08
 
 - Rewrote the README after the one-command build/test quick start into a user-to-developer guide: common Screen usage first, then `bin/` artifacts, build/test entry points, POSIX-shell internals, native tmux internals, and a tmux-developer integration/build section.

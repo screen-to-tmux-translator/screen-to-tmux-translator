@@ -1000,15 +1000,23 @@ else
     fail "$CURRENT_NAME"
 fi
 
-CURRENT_NAME='README links literal one-liner without embedding giant payload'
-if grep -F 'bin/screen-function-source-minified.oneliner.sh' "$PROJECT/README.md" >/dev/null 2>&1 && \
-   grep -F 'does **not** inline' "$PROJECT/README.md" >/dev/null 2>&1 && \
-   ! grep -F 'screen () { _s2t_dry_run=0;' "$PROJECT/README.md" >/dev/null 2>&1 && \
-   [ "$(wc -l < "$PROJECT/bin/screen-function-source-minified.oneliner.sh" | awk '{print $1}')" -eq 1 ]; then
+CURRENT_NAME='README embeds exact literal minified one-liner as paste-to-run block'
+_README_ONE="$REG_LOG.readme-oneliner"
+awk '
+BEGIN { inside = 0; seen = 0 }
+/^```sh$/ && !seen { inside = 1; seen = 1; next }
+inside && /^```$/ { exit }
+inside { print }
+' "$PROJECT/README.md" > "$_README_ONE"
+if [ "$(wc -l < "$PROJECT/bin/screen-function-source-minified.oneliner.sh" | awk '{print $1}')" -eq 1 ] && \
+   grep -F 'The complete ready-to-paste one-line shell function definition is:' "$PROJECT/README.md" >/dev/null 2>&1 && \
+   cmp -s "$_README_ONE" "$PROJECT/bin/screen-function-source-minified.oneliner.sh"; then
     pass "$CURRENT_NAME"
 else
     fail "$CURRENT_NAME"
 fi
+rm -f "$_README_ONE"
+unset _README_ONE
 
 CURRENT_NAME='README includes packaged command conversion chart and architecture guide'
 if [ -s "$PROJECT/docs/command-conversion-chart.png" ] && \
