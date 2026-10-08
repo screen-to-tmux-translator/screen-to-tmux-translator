@@ -1000,6 +1000,27 @@ else
     fail "$CURRENT_NAME"
 fi
 
+CURRENT_NAME='README links literal one-liner without embedding giant payload'
+if grep -F 'bin/screen-function-source-minified.oneliner.sh' "$PROJECT/README.md" >/dev/null 2>&1 && \
+   grep -F 'does **not** inline' "$PROJECT/README.md" >/dev/null 2>&1 && \
+   ! grep -F 'screen () { _s2t_dry_run=0;' "$PROJECT/README.md" >/dev/null 2>&1 && \
+   [ "$(wc -l < "$PROJECT/bin/screen-function-source-minified.oneliner.sh" | awk '{print $1}')" -eq 1 ]; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
+CURRENT_NAME='README includes packaged command conversion chart and architecture guide'
+if [ -s "$PROJECT/docs/command-conversion-chart.png" ] && \
+   grep -F 'docs/command-conversion-chart.png' "$PROJECT/README.md" >/dev/null 2>&1 && \
+   grep -F '## How the POSIX shell implementation works' "$PROJECT/README.md" >/dev/null 2>&1 && \
+   grep -F '## How the native tmux patch works' "$PROJECT/README.md" >/dev/null 2>&1 && \
+   grep -F '## For tmux developers: what the patch changes' "$PROJECT/README.md" >/dev/null 2>&1; then
+    pass "$CURRENT_NAME"
+else
+    fail "$CURRENT_NAME"
+fi
+
 CURRENT_NAME='focused regressions hide PASS rows unless explicitly requested'
 if grep -F 'SHOW_PASS=${SCREEN2TMUX_SHOW_REGRESSION_TEST_PASS:-0}' "$PROJECT/tests/test-regressions.sh" >/dev/null 2>&1 && \
    grep -F '[ "$SHOW_PASS" -eq 0 ] || printf' "$PROJECT/tests/test-regressions.sh" >/dev/null 2>&1 && \

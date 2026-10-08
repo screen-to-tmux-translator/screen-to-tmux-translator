@@ -1,5 +1,5 @@
 #!/bin/sh
-# screen-to-tmux-translator 0.4.27
+# screen-to-tmux-translator 0.4.28
 # Sourceable GNU Screen-compatible POSIX-shell function for tmux.
 #
 # Source this file to define screen() and its private _s2t_* helpers. It is the
@@ -76,7 +76,7 @@
 # Remaining _s2t_* helpers handle diagnostics, rendering, selectors and tmux
 # execution and intentionally stay small and shell-native.
 
-SCREEN2TMUX_VERSION=0.4.27
+SCREEN2TMUX_VERSION=0.4.28
 
 case ${0##*/} in
     screen-function-source.sh|screen-function-source-minified.sh|screen-function-source.oneliner.sh|screen-function-source-minified.oneliner.sh)

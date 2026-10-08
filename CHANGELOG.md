@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.28 — 2026-10-08
+
+- Rewrote the README after the one-command build/test quick start into a user-to-developer guide: common Screen usage first, then `bin/` artifacts, build/test entry points, POSIX-shell internals, native tmux internals, and a tmux-developer integration/build section.
+- Stopped embedding the ~80 KiB minified one-line function directly in the README. The front page now links to the literal one-physical-line artifact so browser/GitHub visual wrapping cannot make it appear to be a multiline source file.
+- Added `docs/command-conversion-chart.png`, the colored tested command-conversion chart, and placed it immediately after the common-command overview.
+- Documented the parallel POSIX-shell and native-C execution diagrams directly on the front page and added manual plus build-system-assisted tmux integration instructions.
+
 ## 0.4.27 — 2026-10-07
 
 - Rebuilt `bin/screen-function-source.sh` as the sourceable form of the cleaned standalone `bin/screen.sh`: it now has the same screen-first 55-function implementation/helper order, defines only `screen()`, and differs operationally by omitting the standalone EOF invocation. The direct-execution filename guard remains so `sh bin/screen-function-source.sh` explains the required POSIX dot command.
